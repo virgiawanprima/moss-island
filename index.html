@@ -1,0 +1,539 @@
+<!doctype html>
+<html lang="id">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>moss island · Dynamic Island</title>
+    <link rel="stylesheet" href="/src/styles.css" />
+    <script type="module" src="/src/main.ts" defer></script>
+  </head>
+  <body>
+    <!-- 1. Desktop Wallpaper Environment (from Figma Try/Focus.svg) -->
+    <div class="desktop-env">
+      <!-- Top Desktop Status Bar -->
+      <header class="desktop-top-bar">
+        <div class="top-bar-left">moss / workspace</div>
+        <div class="top-bar-center">Windows · Linux</div>
+        <div class="top-bar-right" id="desktop-date-clock">Tue 20 Oct · 10:24</div>
+      </header>
+
+      <!-- Center Ambient Elements -->
+      <div class="ambient-center-area">
+        <!-- Left: Big Ambient Clock -->
+        <div class="ambient-clock-box">
+          <div class="ambient-time" id="ambient-time">10:24</div>
+          <div class="ambient-caption">Take your time. Grow a little.</div>
+        </div>
+
+        <!-- Right: Desktop Guide Info -->
+        <div class="ambient-guide-box">
+          <h2 class="guide-title">Make room for little joys.</h2>
+          <ul class="guide-list">
+            <li>Klik island untuk membuka panel.</li>
+            <li>Gunakan tab untuk berganti aktivitas.</li>
+            <li>Tombol − meringkas, × menyembunyikan.</li>
+          </ul>
+        </div>
+      </div>
+
+      <!-- Bottom Forest Horizon Silhouette -->
+      <div class="forest-horizon"></div>
+
+      <!-- Bottom Center Dock Bar -->
+      <div class="desktop-dock">
+        <button class="dock-btn" title="Workspace">▫</button>
+        <button class="dock-btn" title="Catatan">▫</button>
+        <button class="dock-btn active" id="dock-btn-music" title="Pemutar Musik">♫</button>
+        <button class="dock-btn" id="dock-btn-focus" title="Fokus Pomodoro">⚅</button>
+        <button class="dock-btn" id="dock-btn-settings" title="Pengaturan">⚙</button>
+      </div>
+    </div>
+
+    <!-- 2. Dynamic Island Widget Container (Top Center Notch) -->
+    <div id="dynamic-island" class="island-widget state-expanded expanded-ready tab-focus" role="region" aria-label="Dynamic Island">
+
+      <!-- ============================================== -->
+      <!-- VIEW A: MINIMAL / HIDDEN NOTCH STATE (Try/Hidden.svg) -->
+      <!-- ============================================== -->
+      <div class="view-minimal" id="view-minimal" data-tauri-drag-region title="Klik untuk membuka Dynamic Island">
+        <div class="minimal-notch-handle"></div>
+        <div class="vital-dot" id="vital-dot"></div>
+      </div>
+
+      <!-- ============================================== -->
+      <!-- VIEW B: COMPACT NOTCH STATE (Try/Compact.svg) -->
+      <!-- ============================================== -->
+      <div class="view-compact" id="view-compact" data-tauri-drag-region title="Klik untuk memperluas panel">
+        <div class="compact-left">
+          <!-- Mini Momo Pixel Avatar (1:1 Try/Compact.svg) -->
+          <div class="compact-momo-badge">
+            <svg width="16" height="24" viewBox="23 27 20 30" fill="none" style="shape-rendering: crispEdges;">
+              <path d="M29 27H31V29H29V27ZM31 27H33V29H31V27ZM27 29H29V31H27V29ZM29 29H31V31H29V29ZM31 29H33V31H31V29ZM29 31H31V33H29V31ZM31 31H33V33H31V31ZM33 31H35V33H33V31ZM25 35H27V37H25V35ZM27 35H29V37H27V35ZM29 35H31V37H29V35ZM31 35H33V37H31V35ZM33 35H35V37H33V35ZM35 35H37V37H35V35ZM37 35H39V37H37V35ZM39 35H41V37H39V35ZM23 37H25V39H23V37ZM41 37H43V39H41V37ZM23 39H25V41H23V39ZM41 39H43V41H41V39ZM23 41H25V43H23V41ZM41 41H43V43H41V41ZM23 43H25V45H23V43ZM41 43H43V45H41V43ZM25 45H27V47H25V45ZM39 45H41V47H39V45ZM27 47H29V49H27V47ZM29 47H31V49H29V47ZM31 47H33V49H31V47ZM33 47H35V49H33V47ZM35 47H37V49H35V47ZM37 47H39V49H37V47ZM25 49H27V51H25V49ZM27 49H29V51H27V49ZM29 49H31V51H29V49ZM31 49H33V51H31V49ZM33 49H35V51H33V49ZM35 49H37V51H35V49ZM37 49H39V51H37V49ZM39 49H41V51H39V49ZM25 51H27V53H25V51ZM29 51H31V53H29V51ZM31 51H33V53H31V51ZM33 51H35V53H33V51ZM35 51H37V53H35V51ZM39 51H41V53H39V51ZM29 53H31V55H29V53ZM35 53H37V55H35V53ZM27 55H29V57H27V55ZM29 55H31V57H29V55ZM35 55H37V57H35V55ZM37 55H39V57H37V55Z" fill="#71BA83"/>
+              <path d="M37 29H39V31H37V29ZM39 29H41V31H39V29ZM35 31H37V33H35V31ZM37 31H39V33H37V31ZM25 37H27V39H25V37ZM27 37H29V39H27V37ZM29 37H31V39H29V37ZM31 37H33V39H31V37ZM33 37H35V39H33V37ZM35 37H37V39H35V37ZM37 37H39V39H37V37ZM39 37H41V39H39V37ZM25 39H27V41H25V39ZM27 39H29V41H27V39ZM29 39H31V41H29V39ZM31 39H33V41H31V39ZM33 39H35V41H33V39ZM35 39H37V41H35V39ZM37 39H39V41H37V39ZM39 39H41V41H39V39ZM25 41H27V43H25V41ZM29 41H31V43H29V41ZM31 41H33V43H31V41ZM35 41H37V43H35V41ZM37 41H39V43H37V41ZM25 43H27V45H25V43ZM27 43H29V45H27V43ZM29 43H31V45H29V43ZM31 43H33V45H31V43ZM33 43H35V45H33V43ZM35 43H37V45H35V43ZM37 43H39V45H37V43ZM39 43H41V45H39V43ZM27 45H29V47H27V45ZM29 45H31V47H29V45ZM35 45H37V47H35V45ZM37 45H39V47H37V45Z" fill="#C4F59B"/>
+              <path d="M31 33H33V35H31V33ZM33 33H35V35H33V33Z" fill="#AF8055"/>
+              <path d="M27 41H29V43H27V41ZM33 41H35V43H33V41ZM39 41H41V43H39V41ZM31 45H33V47H31V45ZM33 45H35V47H33V45Z" fill="#15221A"/>
+            </svg>
+          </div>
+          <span class="compact-timer-val" id="compact-time">30:00</span>
+        </div>
+
+        <div class="compact-center" data-tauri-drag-region="false">
+          <span class="compact-water-drop" id="compact-water-drop" title="Waktunya minum air! (Klik untuk membuka tab minum)">💧</span>
+          <img id="compact-album-thumb" class="compact-album-thumb" style="display: none;" alt="Cover Mini" />
+          <span class="compact-track-name" id="compact-track">A Walk in the Moss</span>
+          <div class="compact-equalizer">
+            <span class="eq-bar eq-1"></span>
+            <span class="eq-bar eq-2"></span>
+            <span class="eq-bar eq-3"></span>
+          </div>
+        </div>
+
+        <div class="compact-right" data-tauri-drag-region="false">
+          <button class="compact-btn" id="btn-compact-expand" title="Perluas Panel" data-tauri-drag-region="false">▾</button>
+          <button class="compact-btn" id="btn-compact-close" title="Sembunyikan" data-tauri-drag-region="false">×</button>
+        </div>
+      </div>
+
+      <!-- ============================================== -->
+      <!-- VIEW C: EXPANDED PANEL STATE (960x296 Pixel Exact) -->
+      <!-- ============================================== -->
+      <div class="view-expanded" id="view-expanded">
+        
+        <!-- Header Bar: Brand + Pill Tabs + Window Controls -->
+        <header class="panel-header" data-tauri-drag-region>
+          <!-- Brand Logo (Left) -->
+          <div class="brand-group" data-tauri-drag-region="false">
+            <div class="brand-momo-icon">
+              <!-- Inline Momo Face Pixel Art (1:1 Focus.svg baris 4-7) -->
+              <svg width="20" height="30" viewBox="23 27 20 30" fill="none" style="shape-rendering: crispEdges;">
+                <path d="M29 27H31V29H29V27ZM31 27H33V29H31V27ZM27 29H29V31H27V29ZM29 29H31V31H29V29ZM31 29H33V31H31V29ZM29 31H31V33H29V31ZM31 31H33V33H31V31ZM33 31H35V33H33V31ZM25 35H27V37H25V35ZM27 35H29V37H27V35ZM29 35H31V37H29V35ZM31 35H33V37H31V35ZM33 35H35V37H33V35ZM35 35H37V37H35V35ZM37 35H39V37H37V35ZM39 35H41V37H39V35ZM23 37H25V39H23V37ZM41 37H43V39H41V37ZM23 39H25V41H23V39ZM41 39H43V41H41V39ZM23 41H25V43H23V41ZM41 41H43V43H41V41ZM23 43H25V45H23V43ZM41 43H43V45H41V43ZM25 45H27V47H25V45ZM39 45H41V47H39V45ZM27 47H29V49H27V47ZM29 47H31V49H29V47ZM31 47H33V49H31V47ZM33 47H35V49H33V47ZM35 47H37V49H35V47ZM37 47H39V49H37V47ZM25 49H27V51H25V49ZM27 49H29V51H27V49ZM29 49H31V51H29V49ZM31 49H33V51H31V49ZM33 49H35V51H33V49ZM35 49H37V51H35V49ZM37 49H39V51H37V49ZM39 49H41V51H39V49ZM25 51H27V53H25V51ZM29 51H31V53H29V51ZM31 51H33V53H31V51ZM33 51H35V53H33V51ZM35 51H37V53H35V51ZM39 51H41V53H39V51ZM29 53H31V55H29V53ZM35 53H37V55H35V53ZM27 55H29V57H27V55ZM29 55H31V57H29V55ZM35 55H37V57H35V55ZM37 55H39V57H37V55Z" fill="#71BA83"/>
+                <path d="M37 29H39V31H37V29ZM39 29H41V31H39V29ZM35 31H37V33H35V31ZM37 31H39V33H37V31ZM25 37H27V39H25V37ZM27 37H29V39H27V37ZM29 37H31V39H29V37ZM31 37H33V39H31V37ZM33 37H35V39H33V37ZM35 37H37V39H35V37ZM37 37H39V39H37V37ZM39 37H41V39H39V37ZM25 39H27V41H25V39ZM27 39H29V41H27V39ZM29 39H31V41H29V39ZM31 39H33V41H31V39ZM33 39H35V41H33V39ZM35 39H37V41H35V39ZM37 39H39V41H37V39ZM39 39H41V41H39V39ZM25 41H27V43H25V41ZM29 41H31V43H29V41ZM31 41H33V43H31V41ZM35 41H37V43H35V41ZM37 41H39V43H37V41ZM25 43H27V45H25V43ZM27 43H29V45H27V43ZM29 43H31V45H29V43ZM31 43H33V45H31V43ZM33 43H35V45H33V43ZM35 43H37V45H35V43ZM37 43H39V45H37V43ZM39 43H41V45H39V43ZM27 45H29V47H27V45ZM29 45H31V47H29V45ZM35 45H37V47H35V45ZM37 45H39V47H37V45Z" fill="#C4F59B"/>
+                <path d="M31 33H33V35H31V33ZM33 33H35V35H33V33Z" fill="#AF8055"/>
+                <path d="M27 41H29V43H27V41ZM33 41H35V43H33V41ZM39 41H41V43H39V41ZM31 45H33V47H31V45ZM33 45H35V47H33V45Z" fill="#15221A"/>
+              </svg>
+            </div>
+            <h1 class="brand-title">moss island</h1>
+          </div>
+
+          <!-- Pill Tabs Container (Center) -->
+          <nav class="pill-tabs-nav" aria-label="Mode Navigasi" data-tauri-drag-region="false">
+            <button class="pill-tab-btn" data-tab="music" id="tab-btn-music">Musik</button>
+            <button class="pill-tab-btn active" data-tab="focus" id="tab-btn-focus">Fokus</button>
+            <button class="pill-tab-btn" data-tab="hydration" id="tab-btn-hydration">Minum</button>
+          </nav>
+
+          <!-- Window Controls (Right: Exactly 2 buttons Collapse & Hide from Figma) -->
+          <div class="window-controls-group" data-tauri-drag-region="false">
+            <button class="win-control-btn" id="btn-minimize-notch" title="Kecilkan ke Notch Meringkas">−</button>
+            <button class="win-control-btn" id="btn-close-notch" title="Sembunyikan ke Notch Minimal">×</button>
+            <button class="win-control-btn btn-quit" id="btn-header-quit" title="Keluar Aplikasi">⏻</button>
+          </div>
+        </header>
+
+        <!-- ============================================== -->
+        <!-- TAB 1: FOKUS (Focus.svg 1:1 Figma Match) -->
+        <!-- ============================================== -->
+        <main class="panel-body tab-panel active" id="panel-focus">
+          <!-- Column Left: Timer & Session Info (Timer wing) -->
+          <div class="col-left">
+            <div class="session-pill-row" id="session-pill-clickable" title="Klik untuk membuka pengaturan sesi Pomodoro" style="cursor: pointer;" tabindex="0" role="button">
+              <span class="session-badge" id="session-tag">FOKUS · SESI 01</span>
+              <span class="session-duration" id="session-duration-tag">30 / 10 menit</span>
+            </div>
+
+            <!-- Big Retro Pixel Clock (52px exact from Figma) -->
+            <div class="timer-digits-display" id="timer-display">30:00</div>
+
+            <!-- Sub Stats (2 lines exact from Figma) -->
+            <div class="stat-meta-group">
+              <div class="stat-line-title" id="stat-total-title">TOTAL 4 JAM</div>
+              <div class="stat-line-desc" id="stat-total-desc">3 jam fokus + 1 jam istirahat</div>
+            </div>
+          </div>
+
+          <!-- Column Center: Canvas 2D Isometric Island + Progress (Garden wing) -->
+          <div class="col-center">
+            <div class="canvas-wrapper">
+              <canvas id="island-canvas" width="360" height="160"></canvas>
+            </div>
+
+            <!-- Island Subtitle & Progress Bar -->
+            <div class="island-progress-meta">
+              <div class="growth-caption-row">
+                <span class="growth-caption" id="growth-caption">Oak kecilmu sedang tumbuh</span>
+                <span class="forest-gen-badge" id="forest-gen-badge" title="Pencapaian Generasi Hutan">Hutan ke-1 · 0/14 pohon</span>
+              </div>
+              <span class="growth-percent" id="growth-percent">0%</span>
+            </div>
+            <div class="progress-bar-track">
+              <div class="progress-bar-fill" id="focus-progress-fill" style="width: 0%;"></div>
+            </div>
+          </div>
+
+          <!-- Column Right: Action Buttons & Auto-loop meta (Focus actions wing) -->
+          <div class="col-right">
+            <div class="actions-stack">
+              <!-- Primary Action Button: Jeda / Mulai -->
+              <button class="btn-action-primary" id="btn-toggle-timer">Mulai</button>
+              <!-- Secondary Action Button: Selesai -->
+              <button class="btn-action-secondary" id="btn-finish-timer">Selesai</button>
+            </div>
+
+            <!-- Auto Loop Info (Exact from Figma) -->
+            <div class="auto-loop-meta" id="auto-loop-meta">
+              <p id="auto-loop-p1">Otomatis: fokus 30m &gt; istirahat 10m</p>
+              <p id="auto-loop-p2">6 putaran, berhenti setelah 4 jam.</p>
+            </div>
+          </div>
+        </main>
+
+        <!-- ============================================== -->
+        <!-- TAB 2: MINUM / HIDRASI (Hydration.svg Exact Match) -->
+        <!-- ============================================== -->
+        <section class="panel-body tab-panel" id="panel-hydration">
+          <!-- Column Left: Hydration Headline -->
+          <div class="col-left">
+            <span class="session-badge badge-blue" id="hydration-badge">WAKTUNYA ISI ULANG</span>
+            <h2 class="sub-heading-text" id="hydration-heading">Seteguk dulu, yuk.</h2>
+            <p class="sub-paragraph-text" id="hydration-desc">Beri jeda untuk dirimu dan segelas air.</p>
+          </div>
+
+          <!-- Column Center: Steaming Cup Visual + Momo -->
+          <div class="col-center">
+            <div class="tea-cup-scene" id="tea-cup-scene">
+              <div class="pixel-tea-cup" id="pixel-tea-cup">
+                <!-- Steaming Vapors -->
+                <div class="pixel-steam steam-left" id="steam-left"></div>
+                <div class="pixel-steam steam-right" id="steam-right"></div>
+                <!-- Pixel Cup Body -->
+                <div class="pixel-cup-art" id="pixel-cup-art">
+                  <svg width="64" height="48" viewBox="0 0 64 48" fill="none">
+                    <rect x="10" y="14" width="38" height="26" rx="4" fill="#C9935A"/>
+                    <rect x="14" y="18" width="30" height="20" rx="2" fill="#E6AC70"/>
+                    <rect id="cup-water-fill" x="16" y="22" width="26" height="15" rx="1" fill="#7EC8E3"/>
+                    <rect x="48" y="20" width="8" height="14" rx="3" fill="#C9935A"/>
+                    <rect x="50" y="23" width="4" height="8" rx="1" fill="#17231F"/>
+                    <rect x="8" y="40" width="42" height="4" rx="2" fill="#8C6438"/>
+                  </svg>
+                </div>
+              </div>
+
+              <div class="cup-meta-tag" id="cup-meta-tag">+250 ml</div>
+
+              <!-- Happy Momo with water drop & Toast Sparkles -->
+              <div class="momo-hydrated-sprite momo-pose-relaxed" id="momo-hydration-actor">
+                <div class="toast-sparkles" id="toast-sparkles">
+                  <span class="sparkle s-1">✦</span>
+                  <span class="sparkle s-2">✦</span>
+                  <span class="sparkle s-3">✦</span>
+                </div>
+                <svg width="36" height="54" viewBox="565 140.2 40 60" fill="none" style="shape-rendering: crispEdges;">
+                  <path d="M577 140.2H581V144.2H577V140.2ZM581 140.2H585V144.2H581V140.2ZM573 144.2H577V148.2H573V144.2ZM577 144.2H581V148.2H577V144.2ZM581 144.2H585V148.2H581V144.2ZM577 148.2H581V152.2H577V148.2ZM581 148.2H585V152.2H581V148.2ZM585 148.2H589V152.2H585V148.2ZM569 156.2H573V160.2H569V156.2ZM573 156.2H577V160.2H573V156.2ZM577 156.2H581V160.2H577V156.2ZM581 156.2H585V160.2H581V156.2ZM585 156.2H589V160.2H585V156.2ZM589 156.2H593V160.2H589V156.2ZM593 156.2H597V160.2H593V156.2ZM597 156.2H601V160.2H597V156.2ZM565 160.2H569V164.2H565V160.2ZM601 160.2H605V164.2H601V160.2ZM565 164.2H569V168.2H565V164.2ZM601 164.2H605V168.2H601V164.2ZM565 168.2H569V172.2H565V168.2ZM601 168.2H605V172.2H601V168.2ZM565 172.2H569V176.2H565V172.2ZM601 172.2H605V176.2H601V172.2ZM569 176.2H573V180.2H569V176.2ZM597 176.2H601V180.2H597V176.2ZM573 180.2H577V184.2H573V180.2ZM577 180.2H581V184.2H577V180.2ZM581 180.2H585V184.2H581V180.2ZM569 184.2H573V188.2H569V184.2ZM573 184.2H577V188.2H573V184.2ZM577 184.2H581V188.2H577V184.2ZM581 184.2H585V188.2H581V184.2ZM585 184.2H589V188.2H585V184.2ZM589 184.2H593V188.2H589V184.2ZM593 184.2H597V188.2H593V184.2ZM597 184.2H601V188.2H597V184.2ZM569 188.2H573V192.2H569V188.2ZM577 188.2H581V192.2H577V188.2ZM581 188.2H585V192.2H581V188.2ZM585 188.2H589V192.2H585V188.2ZM589 188.2H593V192.2H589V188.2ZM597 188.2H601V192.2H597V188.2ZM577 192.2H581V196.2H577V192.2ZM589 192.2H593V196.2H589V192.2ZM573 196.2H577V200.2H573V196.2ZM577 196.2H581V200.2H577V196.2ZM589 196.2H593V200.2H589V196.2ZM593 196.2H597V200.2H593V196.2Z" fill="#71BA83"/>
+                  <path d="M593 144.2H597V148.2H593V144.2ZM597 144.2H601V148.2H597V144.2ZM589 148.2H593V152.2H589V148.2ZM593 148.2H597V152.2H593V148.2ZM569 160.2H573V164.2H569V160.2ZM573 160.2H577V164.2H573V160.2ZM577 160.2H581V164.2H577V160.2ZM581 160.2H585V164.2H581V160.2ZM585 160.2H589V164.2H585V160.2ZM589 160.2H593V164.2H589V160.2ZM593 160.2H597V164.2H593V160.2ZM597 160.2H601V164.2H597V160.2ZM569 164.2H573V168.2H569V164.2ZM573 164.2H577V168.2H573V164.2ZM577 164.2H581V168.2H577V164.2ZM581 164.2H585V168.2H581V164.2ZM585 164.2H589V168.2H585V164.2ZM589 164.2H593V168.2H589V164.2ZM593 164.2H597V168.2H593V164.2ZM597 164.2H601V168.2H597V164.2ZM569 168.2H573V172.2H569V168.2ZM577 168.2H581V172.2H577V168.2ZM581 168.2H585V172.2H581V168.2ZM589 168.2H593V172.2H589V168.2ZM593 168.2H597V172.2H593V168.2ZM569 172.2H573V176.2H569V172.2ZM573 172.2H577V176.2H573V172.2ZM577 172.2H581V176.2H577V172.2ZM581 172.2H585V176.2H581V172.2ZM585 172.2H589V176.2H585V172.2ZM589 172.2H593V176.2H589V172.2ZM593 172.2H597V176.2H593V172.2ZM597 172.2H601V176.2H597V172.2ZM573 176.2H577V180.2H573V176.2ZM577 176.2H581V180.2H577V176.2Z" fill="#C4F59B"/>
+                  <path d="M581 152.2H585V156.2H581V152.2ZM585 152.2H589V156.2H585V152.2Z" fill="#AF8055"/>
+                  <path d="M573 168.2H577V172.2H573V168.2ZM585 168.2H589V172.2H585V168.2ZM597 168.2H601V172.2H597V168.2ZM581 176.2H585V180.2H581V176.2Z" fill="#15221A"/>
+                  <path d="M585 176.2H589V180.2H585V176.2ZM589 176.2H593V180.2H589V176.2ZM593 176.2H597V180.2H593V176.2ZM585 180.2H589V184.2H585V180.2ZM589 180.2H593V184.2H589V180.2ZM593 180.2H597V184.2H593V180.2Z" fill="#A8D9E6"/>
+                </svg>
+              </div>
+            </div>
+          </div>
+
+          <!-- Column Right: Drink Tracker & Action -->
+          <div class="col-right">
+            <div class="tracker-status-row">
+              <span class="status-vol" id="hydration-vol">1.250 / 2.000 ml</span>
+              <span class="status-glasses" id="hydration-glasses">5 / 8 gelas</span>
+            </div>
+
+            <!-- 8 Segmented Pills -->
+            <div class="segmented-glasses-bar" id="segmented-glasses">
+              <span class="glass-seg filled"></span>
+              <span class="glass-seg filled"></span>
+              <span class="glass-seg filled"></span>
+              <span class="glass-seg filled"></span>
+              <span class="glass-seg filled"></span>
+              <span class="glass-seg"></span>
+              <span class="glass-seg"></span>
+              <span class="glass-seg"></span>
+            </div>
+
+            <div class="actions-stack">
+              <button class="btn-action-primary" id="btn-drink-water">Minum +250 ml</button>
+              <button class="btn-action-secondary" id="btn-snooze-water">Tunda 10 m</button>
+            </div>
+
+            <div class="auto-loop-meta">
+              <p>Pengingat tiap 45 menit · Jam aktif 08-22</p>
+            </div>
+          </div>
+        </section>
+
+        <!-- ============================================== -->
+        <!-- TAB 3: MUSIK (Music.svg Exact Match) -->
+        <!-- ============================================== -->
+        <section class="panel-body tab-panel" id="panel-music">
+          <!-- Column Left: Album Art & Track Meta -->
+          <div class="col-left">
+            <div class="album-cover-box">
+              <div class="album-art-pine" id="music-album-art">
+                <svg width="42" height="42" viewBox="0 0 32 32" fill="none">
+                  <rect width="32" height="32" rx="4" fill="#58486e"/>
+                  <polygon points="16,6 8,18 24,18" fill="#71BA83"/>
+                  <polygon points="16,12 6,24 26,24" fill="#355e3b"/>
+                  <rect x="14" y="24" width="4" height="5" fill="#8c6438"/>
+                </svg>
+              </div>
+              <div class="album-info-meta">
+                <span class="session-badge badge-purple" id="music-source-badge">AMBIENT FOREST</span>
+                <div class="track-title" id="music-track-title">A Walk in the Moss</div>
+                <div class="track-artist-row" id="track-artist-row">
+                  <img id="music-artist-avatar" class="artist-avatar-mini" style="display: none;" alt="Foto Artis" />
+                  <div class="track-artist" id="music-track-artist">Moss Radio · Forest tapes</div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Audio Timeline Bar -->
+            <div class="music-timeline-box">
+              <div class="music-progress-track" id="music-progress-track" style="cursor: pointer;" title="Klik untuk menggeser posisi pemutaran lagu">
+                <div class="music-progress-fill" id="music-progress-fill" style="width: 0%;"></div>
+              </div>
+              <div class="music-time-labels">
+                <span id="music-time-current">00:00</span>
+                <span id="music-time-total">00:00</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Column Center: Lyrics / Demo Original Card -->
+          <div class="col-center">
+            <div class="lyrics-card" id="music-lyrics-card">
+              <div class="lyrics-tag" id="music-card-tag">LYRICS / AMBIENT</div>
+              <div class="lyrics-viewport" id="lyrics-viewport">
+                <div class="lyrics-track" id="lyrics-track">
+                  <div class="lyrics-row row-prev">
+                    <p class="lyrics-line" id="music-card-line1">Di antara riuh dunia,</p>
+                  </div>
+                  <div class="lyrics-row row-active">
+                    <p class="lyrics-line-highlight" id="music-card-highlight">kita tumbuh perlahan.</p>
+                    <div class="pixel-instrumental-dots" id="lyrics-instrumental-dots" style="display: none;" aria-label="Instrumental">
+                      <span class="pixel-dot dot-1">▪</span>
+                      <span class="pixel-dot dot-2">▪</span>
+                      <span class="pixel-dot dot-3">▪</span>
+                    </div>
+                  </div>
+                  <div class="lyrics-row row-next">
+                    <p class="lyrics-line" id="music-card-line2">Satu langkah, satu cerita.</p>
+                  </div>
+                  <div class="lyrics-row row-incoming" aria-hidden="true">
+                    <p class="lyrics-line" id="music-card-incoming"></p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Column Right: Dancing Momo & Playback Controls -->
+          <div class="col-right">
+            <div class="music-momo-stage" id="music-momo-stage">
+              <span class="pixel-music-note note-1">♪</span>
+              <div class="dancing-momo" id="dancing-momo" title="Momo menikmati alunan musik">
+                <!-- Momo sprite dancing dengan Headphone Pixel Art -->
+                <svg width="42" height="49" viewBox="795 89 52 60" fill="none" style="shape-rendering: crispEdges;">
+                  <!-- Tubuh & Tunas Momo -->
+                  <path d="M813 89H817V93H813V89ZM817 89H821V93H817V89ZM809 93H813V97H809V93ZM813 93H817V97H813V93ZM817 93H821V97H817V93ZM813 97H817V101H813V97ZM817 97H821V101H817V97ZM821 97H825V101H821V97ZM805 105H809V109H805V105ZM809 105H813V109H809V105ZM813 105H817V109H813V105ZM817 105H821V109H817V105ZM821 105H825V109H821V105ZM825 105H829V109H825V105ZM829 105H833V109H829V105ZM833 105H837V109H833V105ZM801 109H805V113H801V109ZM837 109H841V113H837V109ZM801 113H805V117H801V113ZM837 113H841V117H837V113ZM801 117H805V121H801V117ZM837 117H841V121H837V117ZM801 121H805V125H801V121ZM837 121H841V125H837V121ZM805 125H809V129H805V125ZM833 125H837V129H833V125ZM809 129H813V133H809V129ZM813 129H817V133H813V129ZM817 129H821V133H817V129ZM821 129H825V133H821V129ZM825 129H829V133H825V129ZM829 129H833V133H829V129ZM805 133H809V137H805V133ZM809 133H813V137H809V133ZM813 133H817V137H813V133ZM817 133H821V137H817V133ZM821 133H825V137H821V133ZM825 133H829V137H825V133ZM829 133H833V137H829V133ZM833 133H837V137H833V133ZM801 137H805V141H801V137ZM805 137H809V141H805V137ZM813 137H817V141H813V137ZM817 137H821V141H817V137ZM821 137H825V141H821V137ZM825 137H829V141H825V137ZM833 137H837V141H833V137ZM837 137H841V141H837V137ZM809 141H813V145H809V141ZM813 141H817V145H813V141ZM825 141H829V145H825V141ZM829 141H833V145H829V141ZM809 145H813V149H809V145ZM813 145H817V149H813V145ZM825 145H829V149H825V145ZM829 145H833V149H829V145Z" fill="#71BA83"/>
+                  <path d="M829 93H833V97H829V93ZM833 93H837V97H833V93ZM825 97H829V101H825V97ZM829 97H833V101H829V97ZM805 109H809V113H805V109ZM809 109H813V113H809V109ZM813 109H817V113H813V109ZM817 109H821V113H817V109ZM821 109H825V113H821V109ZM825 109H829V113H825V109ZM829 109H833V113H829V109ZM833 109H837V113H833V109ZM805 113H809V117H805V113ZM809 113H813V117H809V113ZM813 113H817V117H813V113ZM817 113H821V117H817V113ZM821 113H825V117H821V113ZM825 113H829V117H825V113ZM829 113H833V117H829V113ZM833 113H837V117H833V113ZM805 117H809V121H805V117ZM813 117H817V121H813V117ZM817 117H821V121H817V117ZM825 117H829V121H825V117ZM829 117H833V121H829V117ZM805 121H809V125H805V121ZM809 121H813V125H809V121ZM813 121H817V125H813V121ZM817 121H821V125H817V121ZM821 121H825V125H821V121ZM825 121H829V125H825V121ZM829 121H833V125H829V121ZM833 121H837V125H833V121ZM809 125H813V129H809V125ZM813 125H817V129H813V125ZM825 125H829V129H825V125ZM829 125H833V129H829V125Z" fill="#C4F59B"/>
+                  <path d="M817 101H821V105H817V101ZM821 101H825V105H821V101Z" fill="#AF8055"/>
+                  <path d="M809 117H813V121H809V117ZM821 117H825V121H821V117ZM833 117H837V121H833V117ZM817 125H821V129H817V125ZM821 125H825V129H821V125Z" fill="#15221A"/>
+                  
+                  <!-- Headphone Pixel Art (Band di atas & Earcup di samping) -->
+                  <g id="momo-headphone-gear" class="momo-headphone-gear">
+                    <path d="M811 101H831V105H811V101Z" fill="#58486e"/>
+                    <path d="M797 111H805V123H797V111ZM837 111H845V123H837V111Z" fill="#F28B82"/>
+                    <path d="M801 113H805V121H801V113ZM837 113H841V121H837V113Z" fill="#15221A"/>
+                  </g>
+                </svg>
+              </div>
+              <span class="pixel-music-note note-2">♫</span>
+            </div>
+
+            <!-- Player Transport Buttons -->
+            <div class="music-controls-row">
+              <button class="transport-btn" id="btn-music-prev" title="Lagu Sebelumnya">|◀</button>
+              <button class="transport-btn btn-play" id="btn-music-toggle" title="Putar atau Jeda">❚❚</button>
+              <button class="transport-btn" id="btn-music-next" title="Lagu Berikutnya">▶|</button>
+            </div>
+
+            <div class="auto-loop-meta">
+              <p>Momo ikut menari mengikuti irama.</p>
+            </div>
+          </div>
+        </section>
+
+      </div>
+    </div>
+
+    <!-- Quick State Switcher Widget (Bottom Right for testing all notch states) -->
+    <aside class="state-tester-bar" aria-label="Pengalih Status Notch">
+      <span class="tester-label">Status Notch:</span>
+      <button class="state-btn" data-state="hidden" id="btn-test-hidden">Hidden</button>
+      <button class="state-btn" data-state="compact" id="btn-test-compact">Compact</button>
+      <button class="state-btn active" data-state="expanded" id="btn-test-expanded">Expanded</button>
+    </aside>
+
+    <!-- ============================================== -->
+    <!-- 4. MODAL DIALOG: PENGATURAN POMODORO & WIDGET -->
+    <!-- ============================================== -->
+    <!-- ============================================== -->
+    <!-- 4. MODAL DIALOG: PENGATURAN POMODORO FIGMA 1:1 -->
+    <!-- ============================================== -->
+    <div class="modal-overlay" id="modal-settings" role="dialog" aria-modal="true" aria-labelledby="modal-settings-heading">
+      <div class="modal-dialog figma-settings-modal">
+        <!-- Top Subheader -->
+        <div class="modal-top-meta">
+          <span class="modal-brand-tag">moss island / fokus</span>
+          <span class="modal-sub-tag">TOTAL TERMASUK ISTIRAHAT</span>
+          <button class="modal-close-btn" id="btn-close-settings" title="Tutup">×</button>
+        </div>
+
+        <!-- Heading -->
+        <h2 class="modal-main-heading" id="modal-settings-heading">Hari ini mau belajar berapa lama?</h2>
+
+        <!-- 3-Column Inputs Row -->
+        <div class="settings-inputs-row">
+          <div class="settings-input-block">
+            <span class="settings-input-label">Waktu sekali duduk</span>
+            <div class="settings-input-combo">
+              <input type="number" id="setting-total-hours" class="settings-mini-input" min="0" max="24" value="4" />
+              <span class="input-unit">jam</span>
+              <select id="setting-total-mins" class="settings-select">
+                <option value="0">00 menit</option>
+                <option value="15">15 menit</option>
+                <option value="30">30 menit</option>
+                <option value="45">45 menit</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="settings-input-block">
+            <span class="settings-input-label">Durasi fokus</span>
+            <div class="settings-input-combo">
+              <input type="number" id="setting-focus-mins" class="settings-mini-input" min="1" max="180" value="30" />
+              <span class="input-unit">menit</span>
+            </div>
+          </div>
+
+          <div class="settings-input-block">
+            <span class="settings-input-label">Durasi istirahat</span>
+            <div class="settings-input-combo">
+              <input type="number" id="setting-break-mins" class="settings-mini-input" min="1" max="60" value="10" />
+              <span class="input-unit">menit</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- 3-Card Summary Row -->
+        <div class="settings-summary-cards-row">
+          <div class="summary-card">
+            <span class="summary-card-label">Total waktu</span>
+            <span class="summary-card-val" id="summary-card-total">4 jam</span>
+          </div>
+          <div class="summary-card">
+            <span class="summary-card-label">Fokus</span>
+            <span class="summary-card-val" id="summary-card-focus">3 jam</span>
+          </div>
+          <div class="summary-card">
+            <span class="summary-card-label">Istirahat</span>
+            <span class="summary-card-val" id="summary-card-break">1 jam</span>
+          </div>
+        </div>
+
+        <!-- Timeline Section -->
+        <div class="modal-timeline-section">
+          <div class="modal-timeline-header">
+            <span class="timeline-sessions-title" id="preview-plan-summary">6 sesi Fokus</span>
+            <div class="timeline-legend">
+              <span class="legend-item"><span class="legend-box focus"></span> Fokus</span>
+              <span class="legend-item"><span class="legend-box break"></span> Istirahat</span>
+            </div>
+          </div>
+
+          <div class="timeline-track figma-timeline-track" id="modal-preview-timeline-track"></div>
+
+          <div class="timeline-range-meta">
+            <span>Mulai</span>
+            <span id="preview-total-duration-label">240 menit</span>
+          </div>
+
+          <div class="timeline-active-session-text" id="preview-active-session-text">
+            Putaran 1 · Fokus 30 menit · Menit 0-30
+          </div>
+          <div id="preview-shortened-alert" style="display: none;" class="shortened-alert-tag">
+            Fase terakhir diperpendek agar tepat sesuai total waktu.
+          </div>
+        </div>
+
+        <!-- Autostart Checkboxes Row -->
+        <div class="modal-checkboxes-section">
+          <label class="figma-checkbox-row">
+            <input type="checkbox" id="setting-auto-break" class="settings-checkbox" checked />
+            <div class="checkbox-text-group">
+              <span class="checkbox-title">Istirahat dimulai otomatis</span>
+              <span class="checkbox-subtitle">Fokus menjadi Istirahat menjadi Fokus · otomatis</span>
+            </div>
+          </label>
+
+          <label class="figma-checkbox-row">
+            <input type="checkbox" id="setting-auto-focus" class="settings-checkbox" checked />
+            <div class="checkbox-text-group">
+              <span class="checkbox-title">Fokus berikutnya dimulai otomatis</span>
+              <span class="checkbox-subtitle">Termasuk istirahat terakhir.</span>
+            </div>
+          </label>
+
+          <label class="figma-checkbox-row">
+            <input type="checkbox" id="setting-autostart-app" class="settings-checkbox" />
+            <div class="checkbox-text-group">
+              <span class="checkbox-title">Mulai aplikasi otomatis saat login desktop</span>
+              <span class="checkbox-subtitle">Buka widget ke notch saat komputer menyala (Windows & Linux).</span>
+            </div>
+          </label>
+        </div>
+
+        <!-- Pengaturan Musim Pulau -->
+        <div class="settings-season-section">
+          <div class="season-section-header">
+            <span class="season-header-title">Musim Hutan Pulau</span>
+            <span class="season-status-badge" id="season-status-badge">Siklus 0/6 Sesi</span>
+          </div>
+          <div class="season-mode-row">
+            <label class="season-mode-radio">
+              <input type="radio" name="season-mode" id="season-mode-cycle" value="cycle" checked />
+              <span>Bergilir Otomatis (Tiap 6 Sesi)</span>
+            </label>
+            <label class="season-mode-radio">
+              <input type="radio" name="season-mode" id="season-mode-manual" value="manual" />
+              <span>Pilihan Manual</span>
+            </label>
+          </div>
+          <div class="season-select-wrapper" id="season-select-wrapper" style="display: none;">
+            <select id="setting-manual-season" class="settings-season-dropdown">
+              <option value="spring">Musim Semi (Bunga & Hijau Muda)</option>
+              <option value="summer">Musim Panas (Hijau Zamrud & Cahaya Hangat)</option>
+              <option value="autumn">Musim Gugur (Daun Jingga Keemasan)</option>
+              <option value="winter">Musim Dingin (Tanah Bersalju & Keping Salju)</option>
+            </select>
+          </div>
+        </div>
+
+        <!-- Big CTA Button & Footer Stats -->
+        <div class="modal-cta-section">
+          <button class="btn-figma-start-session" id="btn-save-settings">Mulai sesi</button>
+          <div class="modal-footer-caption" id="modal-footer-stats">
+            240 menit total · 180 menit fokus · 60 menit istirahat
+          </div>
+        </div>
+      </div>
+    </div>
+  </body>
+</html>

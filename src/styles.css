@@ -1,0 +1,2490 @@
+/* ==========================================================================
+   MOSS ISLAND · Dynamic Island Desktop Stylesheet
+   Dirancang presisi pixel art tema hutan lumut
+   ========================================================================== */
+
+/* 1. Bundel Font Departure Mono Lokal (https://departuremono.com/) */
+@font-face {
+  font-family: 'Departure Mono';
+  src: url('/fonts/DepartureMono-Regular.woff2') format('woff2'),
+       url('/fonts/DepartureMono-Regular.woff') format('woff'),
+       url('/fonts/DepartureMono-Regular.otf') format('opentype');
+  font-weight: 400 700;
+  font-style: normal;
+  font-display: swap;
+}
+
+:root {
+  /* Palet Dasar Resmi */
+  --color-bg: #101917;
+  --color-panel: #17231F;
+  --color-surface-raised: #22332C;
+  --color-border: #35483E;
+  --color-accent-mint: #C4F59B;
+  --color-accent-green: #71BA83;
+  --color-text-main: #F2F1DC;
+  --color-text-secondary: #A6B3A6;
+  --color-break: #C5BAF4;
+  --color-water: #A8D9E6;
+  --color-ground: #AF8055;
+
+  /* Aliases & Kompatibilitas Style */
+  --color-island-bg: var(--color-panel);
+  --color-island-border: var(--color-border);
+  --color-tab-container: var(--color-bg);
+  --color-tab-active: var(--color-surface-raised);
+  --color-accent-lime: var(--color-accent-mint);
+  --color-accent-moss: var(--color-accent-green);
+  --color-text-cream: var(--color-text-main);
+  --color-text-muted: var(--color-text-secondary);
+  --color-water-blue: var(--color-water);
+  --color-brown-cliff-light: #8C6438;
+  --color-brown-cliff-dark: #604B2D;
+  --color-ambient-clock: #d6f2c2;
+  --color-desktop-bg-center: #15241d;
+  --color-desktop-bg-edge: #09120e;
+  --color-desktop-bg-dark: #040906;
+
+  /* Pixel Typography */
+  --font-pixel: 'Departure Mono', monospace;
+
+  font-family: var(--font-pixel);
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+  image-rendering: pixelated;
+  -webkit-font-smoothing: none;
+  -moz-osx-font-smoothing: none;
+  text-rendering: geometricPrecision;
+}
+
+body, html {
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background-color: var(--color-desktop-bg-edge);
+  color: var(--color-text-cream);
+  font-family: var(--font-pixel);
+}
+
+body.is-tauri-native,
+html.is-tauri-native {
+  background: transparent !important;
+  background-color: transparent !important;
+}
+
+body.is-tauri-native .desktop-env {
+  display: none !important;
+}
+
+/* ==========================================================================
+   1. DESKTOP WALLPAPER ENVIRONMENT (Try/Focus.svg Exact Match)
+   ========================================================================== */
+.desktop-env {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  background: radial-gradient(circle at 50% 25%, var(--color-desktop-bg-center) 0%, var(--color-desktop-bg-edge) 65%, var(--color-desktop-bg-dark) 100%);
+  z-index: 1;
+}
+
+/* Top Desktop Status Bar */
+.desktop-top-bar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px 24px;
+  font-size: 0.72rem;
+  color: var(--color-text-muted);
+  letter-spacing: 0.5px;
+  opacity: 0.85;
+}
+
+/* Center Area: Big Clock (Left) + Guide Text (Right) */
+.ambient-center-area {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0 8vw;
+  margin-top: -30px;
+  z-index: 2;
+}
+
+.ambient-clock-box {
+  display: flex;
+  flex-direction: column;
+}
+
+.ambient-time {
+  font-size: clamp(4.5rem, 8vw, 7rem);
+  font-weight: 700;
+  letter-spacing: -2px;
+  color: var(--color-ambient-clock);
+  text-shadow: 0 0 45px rgba(196, 245, 155, 0.22);
+  line-height: 1;
+}
+
+.ambient-caption {
+  font-size: 0.9rem;
+  color: var(--color-text-muted);
+  margin-top: 10px;
+  letter-spacing: 0.5px;
+}
+
+.ambient-guide-box {
+  max-width: 380px;
+  background: rgba(16, 25, 23, 0.45);
+  border: 1px solid rgba(53, 72, 62, 0.35);
+  border-radius: 12px;
+  padding: 18px 22px;
+  backdrop-filter: blur(8px);
+}
+
+.guide-title {
+  font-size: 1.05rem;
+  color: var(--color-text-cream);
+  margin-bottom: 12px;
+  letter-spacing: 0.5px;
+}
+
+.guide-list {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.guide-list li {
+  font-size: 0.75rem;
+  color: var(--color-text-muted);
+  line-height: 1.5;
+}
+
+/* Bottom Forest Horizon Silhouette */
+.forest-horizon {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 240px;
+  background-repeat: repeat-x;
+  background-position: bottom center;
+  background-size: 700px 240px;
+  opacity: 0.45;
+  pointer-events: none;
+  background-image: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 700 240" preserveAspectRatio="none"><path d="M0,240 L0,180 L20,150 L30,165 L50,130 L65,155 L80,105 L95,155 L110,135 L130,170 L150,120 L170,165 L190,85 L210,165 L230,130 L250,160 L270,110 L290,165 L310,135 L330,170 L350,95 L370,160 L390,125 L410,165 L430,115 L450,165 L470,80 L490,165 L510,130 L530,165 L550,110 L570,165 L590,135 L610,170 L630,90 L650,160 L670,125 L700,175 L700,240 Z" fill="%23040906"/><path d="M0,240 L0,200 L30,175 L45,190 L70,155 L85,180 L110,140 L135,185 L160,150 L185,190 L210,120 L235,190 L260,160 L285,190 L310,145 L335,190 L360,165 L385,200 L410,135 L435,190 L460,155 L485,195 L510,110 L535,195 L560,160 L585,195 L610,145 L635,195 L660,170 L700,205 L700,240 Z" fill="%23020503"/></svg>');
+  z-index: 2;
+}
+
+/* Bottom Desktop Dock Bar */
+.desktop-dock {
+  align-self: center;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  background: rgba(16, 25, 23, 0.75);
+  border: 1px solid rgba(53, 72, 62, 0.6);
+  padding: 8px 18px;
+  border-radius: 16px;
+  margin-bottom: 16px;
+  backdrop-filter: blur(12px);
+  z-index: 10;
+}
+
+.dock-btn {
+  background: transparent;
+  border: none;
+  color: var(--color-text-muted);
+  font-family: var(--font-pixel);
+  font-size: 1.1rem;
+  width: 36px;
+  height: 36px;
+  border-radius: 8px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s ease;
+}
+
+.dock-btn:hover {
+  background: var(--color-tab-active);
+  color: var(--color-accent-lime);
+  transform: translateY(-2px);
+}
+
+.dock-btn.active {
+  background: var(--color-tab-active);
+  color: var(--color-accent-lime);
+}
+
+/* ==========================================================================
+   2. DYNAMIC ISLAND WIDGET CONTAINER (Menempel Presisi di Bezel Atas Layar)
+   ========================================================================== */
+.island-widget {
+  position: fixed;
+  top: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  background-color: var(--color-island-bg);
+  border: 1px solid var(--color-island-border);
+  border-top: none;
+  border-top-left-radius: 0;
+  border-top-right-radius: 0;
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.65), 0 3px 8px rgba(0, 0, 0, 0.45);
+  z-index: 100;
+  overflow: hidden;
+  box-sizing: border-box;
+  transition: width 0.2s cubic-bezier(0.16, 1, 0.3, 1),
+              height 0.2s cubic-bezier(0.16, 1, 0.3, 1),
+              border-radius 0.2s ease;
+}
+
+/* Dalam mode Tauri native, widget mengisi jendela secara presisi tanpa margin */
+body.is-tauri-native .island-widget {
+  position: absolute !important;
+  top: 0 !important;
+  left: 0 !important;
+  transform: none !important;
+  width: 100% !important;
+  height: 100% !important;
+}
+
+body.is-tauri-native .island-widget:not(.expanded-ready) {
+  min-height: 0 !important;
+}
+
+/* Transisi kelembutan konten island */
+.view-minimal,
+.view-compact,
+.view-expanded {
+  transition: opacity 0.1s ease-out;
+  opacity: 1;
+}
+
+.island-widget.is-fading-out .view-minimal,
+.island-widget.is-fading-out .view-compact,
+.island-widget.is-fading-out .view-expanded,
+.island-widget.is-morphing .view-minimal,
+.island-widget.is-morphing .view-compact,
+.island-widget.is-morphing .view-expanded {
+  opacity: 0 !important;
+  pointer-events: none !important;
+}
+
+/* --- STATE A: MINIMAL / HIDDEN NOTCH (Menempel Bezel Atas) --- */
+.island-widget.state-hidden {
+  width: 130px;
+  height: 28px;
+  border-top: none;
+  border-top-left-radius: 0;
+  border-top-right-radius: 0;
+  border-bottom-left-radius: 14px;
+  border-bottom-right-radius: 14px;
+  cursor: pointer;
+}
+
+.island-widget.state-hidden .view-minimal { display: flex; }
+.island-widget.state-hidden .view-compact { display: none; }
+.island-widget.state-hidden .view-expanded { display: none; }
+
+.view-minimal {
+  width: 100%;
+  height: 100%;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  background: var(--color-island-bg);
+  transition: background 0.15s ease;
+}
+
+.view-minimal:hover {
+  background: #182721;
+}
+
+.minimal-notch-handle {
+  width: 24px;
+  height: 3px;
+  border-radius: 1.5px;
+  background-color: rgba(196, 245, 155, 0.3);
+}
+
+.vital-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background-color: var(--color-accent-lime);
+  box-shadow: 0 0 6px var(--color-accent-lime);
+  animation: pulse-vital-dot 2.2s infinite ease-in-out;
+}
+
+@keyframes pulse-vital-dot {
+  0%, 100% { opacity: 0.4; transform: scale(0.9); }
+  50% { opacity: 1; transform: scale(1.2); }
+}
+
+/* --- STATE B: COMPACT NOTCH (Menempel Bezel Atas) --- */
+.island-widget.state-compact {
+  width: 460px;
+  height: 42px;
+  border-top: none;
+  border-top-left-radius: 0;
+  border-top-right-radius: 0;
+  border-bottom-left-radius: 18px;
+  border-bottom-right-radius: 18px;
+  cursor: pointer;
+}
+
+.island-widget.state-compact .view-minimal { display: none; }
+.island-widget.state-compact .view-compact { display: flex; }
+.island-widget.state-compact .view-expanded { display: none; }
+
+.view-compact {
+  width: 100%;
+  height: 100%;
+  display: none;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 16px;
+  gap: 12px;
+  box-sizing: border-box;
+}
+
+.compact-left {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.compact-momo-badge {
+  display: flex;
+  align-items: center;
+}
+
+.compact-timer-val {
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: var(--color-accent-lime);
+  letter-spacing: 0.5px;
+}
+
+.compact-center {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  overflow: hidden;
+}
+
+.compact-water-drop {
+  display: none;
+  font-size: 0.85rem;
+  cursor: pointer;
+  animation: drop-pulse 1.8s infinite ease-in-out;
+}
+
+.compact-water-drop.active {
+  display: inline-block;
+}
+
+@keyframes drop-pulse {
+  0%, 100% { transform: scale(1); opacity: 0.65; }
+  50% { transform: scale(1.28); opacity: 1; filter: drop-shadow(0 0 5px #7ec8e3); }
+}
+
+.compact-track-name {
+  font-size: 0.72rem;
+  color: var(--color-text-muted);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  overflow: hidden;
+  max-width: 160px;
+}
+
+.compact-equalizer {
+  display: flex;
+  align-items: flex-end;
+  gap: 2px;
+  height: 12px;
+}
+
+.eq-bar {
+  width: 2px;
+  background-color: var(--color-accent-lime);
+  border-radius: 1px;
+  animation-play-state: paused;
+}
+
+.compact-equalizer.playing .eq-bar {
+  animation-play-state: running;
+}
+
+.eq-1 { height: 60%; animation: eq-bounce 1s infinite alternate ease-in-out; }
+.eq-2 { height: 100%; animation: eq-bounce 0.8s infinite 0.2s alternate ease-in-out; }
+.eq-3 { height: 40%; animation: eq-bounce 1.2s infinite 0.4s alternate ease-in-out; }
+
+@keyframes eq-bounce {
+  from { height: 25%; }
+  to { height: 100%; }
+}
+
+.compact-right {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.compact-btn {
+  background: var(--color-tab-active);
+  border: none;
+  color: var(--color-text-muted);
+  font-family: var(--font-pixel);
+  font-size: 0.8rem;
+  width: 22px;
+  height: 22px;
+  border-radius: 5px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.15s ease;
+}
+
+.compact-btn:hover {
+  color: var(--color-text-cream);
+  background: #2a3d35;
+}
+
+/* --- STATE C: EXPANDED EXACT FIGMA PANEL (Menempel Bezel Atas) --- */
+.island-widget.state-expanded {
+  width: 960px;
+  max-width: 100vw;
+  height: 308px;
+  border-top: none;
+  border-top-left-radius: 0;
+  border-top-right-radius: 0;
+  border-bottom-left-radius: 20px;
+  border-bottom-right-radius: 20px;
+}
+
+.island-widget.state-expanded.expanded-ready {
+  min-height: 308px;
+}
+
+/* Penyesuaian tinggi per tab saat expanded:
+   Tab musik berukuran 960 × 248 px sesuai acuan desain Figma,
+   sedangkan tab fokus dan minum tetap memakai tinggi 308 px untuk ruang hutan isometrik dan hidrasi. */
+.island-widget.state-expanded.tab-focus,
+.island-widget.state-expanded.tab-hydration {
+  height: 308px;
+  max-height: 308px;
+}
+
+.island-widget.state-expanded.expanded-ready.tab-focus,
+.island-widget.state-expanded.expanded-ready.tab-hydration {
+  min-height: 308px;
+  max-height: 308px;
+}
+
+.island-widget.state-expanded.tab-music {
+  box-sizing: border-box;
+  width: 960px;
+  max-width: 100vw;
+  height: 248px;
+  max-height: 248px;
+  background: #17231F;
+  border: 1px solid #35483E;
+  border-top: none;
+  border-top-left-radius: 0;
+  border-top-right-radius: 0;
+  border-bottom-left-radius: 18px;
+  border-bottom-right-radius: 18px;
+}
+
+.island-widget.state-expanded.expanded-ready.tab-music {
+  min-height: 248px;
+  max-height: 248px;
+}
+
+.island-widget.state-expanded .view-minimal { display: none; }
+.island-widget.state-expanded .view-compact { display: none; }
+.island-widget.state-expanded .view-expanded {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  height: 100%;
+  padding: 10px 20px 14px 20px;
+  box-sizing: border-box;
+}
+
+.island-widget.state-expanded.tab-music .view-expanded {
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  padding: 16px;
+  gap: 12px;
+  width: 100%;
+  height: 248px;
+  max-height: 248px;
+}
+
+/* ==========================================================================
+   3. EXPANDED PANEL HEADER (Brand + Pill Tabs + Window Controls)
+   ========================================================================== */
+.panel-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  height: 48px;
+  margin-bottom: 8px;
+}
+
+/* Header tab musik menempel di bagian atas kontainer dengan gap 12 px dari flex parent */
+.island-widget.state-expanded.tab-music .panel-header {
+  width: 100%;
+  height: 48px;
+  margin-bottom: 0;
+  flex-shrink: 0;
+}
+
+/* Brand (Left) */
+.brand-group {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.brand-momo-icon {
+  display: flex;
+  align-items: center;
+}
+
+.brand-title {
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: var(--color-text-cream);
+  letter-spacing: 0.5px;
+}
+
+/* Pill Tabs (Center) */
+.pill-tabs-nav {
+  display: flex;
+  align-items: center;
+  background-color: var(--color-tab-container);
+  padding: 4px;
+  border-radius: 8px;
+  gap: 3px;
+  width: 320px;
+  height: 48px;
+}
+
+.pill-tab-btn {
+  flex: 1;
+  height: 100%;
+  background: transparent;
+  border: none;
+  outline: none;
+  border-radius: 6px;
+  font-family: var(--font-pixel);
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: var(--color-text-muted);
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.pill-tab-btn:hover {
+  color: var(--color-text-cream);
+}
+
+.pill-tab-btn.active {
+  background-color: var(--color-tab-active);
+  color: var(--color-accent-lime);
+}
+
+/* Window Controls (Right: 32x32px square rounded) */
+.window-controls-group {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.win-control-btn {
+  width: 32px;
+  height: 32px;
+  background-color: var(--color-tab-active);
+  border: none;
+  border-radius: 6px;
+  color: var(--color-text-muted);
+  font-family: var(--font-pixel);
+  font-size: 1.1rem;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s ease;
+}
+
+.win-control-btn:hover {
+  color: var(--color-text-cream);
+  background: #2b3e36;
+}
+
+.win-control-btn.btn-quit:hover {
+  color: #fcd0cf;
+  background: #5c2828;
+}
+
+/* ==========================================================================
+   4. PANEL BODY & TAB PANELS (3 COLUMNS)
+   ========================================================================== */
+.panel-body {
+  display: none;
+  grid-template-columns: minmax(200px, 240px) 1fr minmax(180px, 220px);
+  align-items: center;
+  flex: 1;
+  gap: 16px;
+  margin-top: 4px;
+  min-height: 0;
+  width: 100%;
+}
+
+.panel-body.active {
+  display: grid;
+}
+
+/* Penataan khusus panel musik agar rapat, presisi, dan sejajar horizontal */
+#panel-music {
+  width: 100%;
+  height: 156px;
+  min-height: 156px;
+  max-height: 156px;
+  flex: 0 0 156px;
+  margin-top: 0;
+  margin-bottom: 0;
+  gap: 12px;
+  align-items: center;
+  box-sizing: border-box;
+}
+
+#panel-music .col-left {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 8px;
+  min-width: 0;
+  height: 100%;
+}
+
+#panel-music .col-center {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  min-width: 0;
+  height: 100%;
+}
+
+#panel-music .col-right {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  height: 100%;
+}
+
+#panel-music .lyrics-card {
+  width: 100%;
+  max-width: 420px;
+  box-sizing: border-box;
+  padding: 12px 18px;
+  gap: 6px;
+}
+
+#panel-music .music-timeline-box {
+  margin-top: 6px;
+  width: 100%;
+}
+
+#panel-music .music-momo-stage {
+  height: 50px;
+}
+
+#panel-music .music-controls-row {
+  margin-top: 2px;
+}
+
+#panel-music .auto-loop-meta {
+  margin-top: 2px;
+  text-align: center;
+}
+
+.col-left,
+.col-center,
+.col-right {
+  min-width: 0;
+}
+
+/* --- COLUMN LEFT --- */
+.col-left {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 10px;
+}
+
+.session-pill-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.session-badge {
+  display: inline-block;
+  background-color: var(--color-tab-active);
+  color: var(--color-accent-lime);
+  font-size: 0.72rem;
+  padding: 6px 12px;
+  border-radius: 6px;
+  letter-spacing: 0.5px;
+}
+
+.session-badge.badge-blue {
+  color: var(--color-water-blue);
+}
+
+.session-badge.badge-purple {
+  color: #c9b0ea;
+}
+
+.session-badge.badge-green {
+  color: #1ed760;
+}
+
+.session-duration {
+  font-size: 0.72rem;
+  color: var(--color-text-muted);
+}
+
+.timer-digits-display {
+  font-size: 3.2rem;
+  font-weight: 700;
+  color: var(--color-accent-lime);
+  letter-spacing: 1px;
+  line-height: 1;
+}
+
+.stat-meta-group {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.stat-line-title {
+  font-size: 0.75rem;
+  color: var(--color-text-muted);
+  letter-spacing: 0.5px;
+}
+
+.stat-line-desc {
+  font-size: 0.72rem;
+  color: var(--color-text-muted);
+}
+
+/* Headings for other tabs */
+.sub-heading-text {
+  font-size: 1.15rem;
+  color: var(--color-text-cream);
+  line-height: 1.3;
+}
+
+.sub-paragraph-text {
+  font-size: 0.75rem;
+  color: var(--color-text-muted);
+  line-height: 1.4;
+}
+
+/* --- COLUMN CENTER --- */
+.col-center {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+}
+
+.canvas-wrapper {
+  width: 100%;
+  max-width: 380px;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  min-width: 0;
+  overflow: hidden;
+}
+
+#island-canvas {
+  width: 100%;
+  max-width: 380px;
+  height: auto;
+  aspect-ratio: 380 / 185;
+  display: block;
+}
+
+/* Progress Meta & Track */
+.island-progress-meta {
+  width: 100%;
+  max-width: 380px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 0.75rem;
+  margin-top: 2px;
+  margin-bottom: 6px;
+}
+
+.growth-caption {
+  color: var(--color-text-cream);
+}
+
+.growth-percent {
+  color: var(--color-accent-lime);
+  font-weight: 700;
+}
+
+.progress-bar-track {
+  width: 100%;
+  max-width: 380px;
+  height: 4px;
+  background-color: var(--color-tab-container);
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+.progress-bar-fill {
+  height: 100%;
+  background-color: var(--color-accent-lime);
+  border-radius: 2px;
+  box-shadow: 0 0 6px rgba(196, 245, 155, 0.4);
+  transition: width 0.4s ease;
+}
+
+/* --- COLUMN RIGHT --- */
+.col-right {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 12px;
+}
+
+.actions-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+#panel-hydration .actions-stack {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+}
+
+#panel-hydration .btn-action-primary {
+  flex: 1.6;
+  height: 46px;
+  white-space: nowrap;
+}
+
+#panel-hydration .btn-action-secondary {
+  flex: 1;
+  height: 46px;
+  white-space: nowrap;
+}
+
+.btn-action-primary {
+  width: 100%;
+  height: 46px;
+  background-color: var(--color-accent-lime);
+  border: none;
+  border-radius: 8px;
+  color: #15221A;
+  font-family: var(--font-pixel);
+  font-size: 0.9rem;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.btn-action-primary:hover {
+  background-color: #d8ffb3;
+  transform: translateY(-1px);
+}
+
+.btn-action-secondary {
+  width: 100%;
+  height: 40px;
+  background-color: var(--color-tab-active);
+  border: none;
+  border-radius: 8px;
+  color: var(--color-text-cream);
+  font-family: var(--font-pixel);
+  font-size: 0.85rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.btn-action-secondary:hover {
+  background-color: #2b3f36;
+}
+
+.auto-loop-meta {
+  font-size: 0.68rem;
+  color: var(--color-text-muted);
+  line-height: 1.5;
+}
+
+/* ==========================================================================
+   5. TAB 2: HYDRATION SPECIFIC STYLES
+   ========================================================================== */
+.tea-cup-scene {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 20px;
+  padding: 16px 20px;
+  background-color: rgba(16, 25, 23, 0.65);
+  border: 1px solid var(--color-island-border);
+  border-radius: 12px;
+  width: 100%;
+  max-width: 380px;
+  box-sizing: border-box;
+}
+
+.pixel-tea-cup {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  transition: transform 0.3s ease;
+}
+
+#cup-water-fill {
+  transition: height 0.8s ease, y 0.8s ease, opacity 0.6s ease;
+}
+
+.pixel-tea-cup.is-empty #cup-water-fill {
+  height: 0px;
+  y: 37px;
+  opacity: 0;
+}
+
+.pixel-tea-cup.is-empty .pixel-steam {
+  opacity: 0.12;
+  animation-duration: 4.5s;
+}
+
+.tea-cup-scene.is-due .pixel-tea-cup {
+  animation: cup-glow-pulse 2s infinite ease-in-out;
+}
+
+@keyframes cup-glow-pulse {
+  0%, 100% { filter: drop-shadow(0 0 0px rgba(126, 200, 227, 0)); }
+  50% { filter: drop-shadow(0 0 8px rgba(126, 200, 227, 0.65)); }
+}
+
+.pixel-steam {
+  width: 3px;
+  height: 12px;
+  background-color: rgba(242, 241, 220, 0.4);
+  position: absolute;
+  top: -8px;
+  border-radius: 2px;
+  animation: steam-rise 2s infinite ease-out;
+}
+
+.steam-left { left: 22px; animation-delay: 0.2s; }
+.steam-right { left: 34px; animation-delay: 1.1s; }
+
+@keyframes steam-rise {
+  0% { transform: translateY(0) scaleY(0.6); opacity: 0.6; }
+  50% { opacity: 0.8; }
+  100% { transform: translateY(-16px) scaleY(1.3); opacity: 0; }
+}
+
+.cup-meta-tag {
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: var(--color-accent-lime);
+}
+
+/* Momo Hydration Actor Poses */
+.momo-hydrated-sprite {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: transform 0.3s ease;
+}
+
+.momo-pose-relaxed {
+  transform: translateY(2px);
+}
+
+.momo-pose-offer {
+  animation: momo-offer-drink 1.8s infinite ease-in-out;
+}
+
+.momo-pose-sip {
+  animation: momo-sip-drink 1.4s ease-in-out forwards;
+}
+
+.momo-pose-toast {
+  animation: momo-toast-cheers 1.8s ease-in-out forwards;
+}
+
+@keyframes momo-offer-drink {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-6px); }
+}
+
+@keyframes momo-sip-drink {
+  0% { transform: translateY(0) rotate(0deg); }
+  35% { transform: translateY(-3px) rotate(-8deg); }
+  70% { transform: translateY(-4px) rotate(-10deg); }
+  85% { transform: translateY(-1px) rotate(-2deg); }
+  100% { transform: translateY(0) rotate(0deg); }
+}
+
+@keyframes momo-toast-cheers {
+  0% { transform: translateY(0) scale(1); }
+  30% { transform: translateY(-8px) scale(1.08); }
+  60% { transform: translateY(-7px) scale(1.08) rotate(4deg); }
+  100% { transform: translateY(0) scale(1); }
+}
+
+/* Percikan Pixel saat Bersulang (Toast Sparkles) */
+.toast-sparkles {
+  position: absolute;
+  top: -14px;
+  left: -8px;
+  right: -8px;
+  display: flex;
+  justify-content: space-around;
+  pointer-events: none;
+  opacity: 0;
+}
+
+.momo-pose-toast .toast-sparkles {
+  opacity: 1;
+  animation: sparkles-burst-container 1.8s ease-out forwards;
+}
+
+.toast-sparkles .sparkle {
+  font-size: 13px;
+  color: var(--color-accent-lime);
+  display: inline-block;
+  animation: sparkle-float 1.6s ease-out forwards;
+}
+
+.sparkle.s-1 { animation-delay: 0.1s; color: #C4F59B; }
+.sparkle.s-2 { animation-delay: 0.25s; color: #7EC8E3; }
+.sparkle.s-3 { animation-delay: 0.4s; color: #FFE066; }
+
+@keyframes sparkle-float {
+  0% { transform: translateY(8px) scale(0.5); opacity: 0; }
+  35% { opacity: 1; }
+  100% { transform: translateY(-16px) scale(1.2); opacity: 0; }
+}
+
+@keyframes sparkles-burst-container {
+  0% { opacity: 1; }
+  80% { opacity: 1; }
+  100% { opacity: 0; }
+}
+
+/* Denyut tombol minum saat pengingat tiba */
+.btn-action-primary.pulse-action {
+  animation: btn-action-pulse 1.8s infinite ease-in-out;
+}
+
+@keyframes btn-action-pulse {
+  0%, 100% { box-shadow: 0 0 0 rgba(196, 245, 155, 0); }
+  50% { box-shadow: 0 0 14px rgba(196, 245, 155, 0.75); }
+}
+
+.tracker-status-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 0.75rem;
+}
+
+.status-vol {
+  color: var(--color-text-cream);
+  font-weight: 700;
+}
+
+.status-glasses {
+  color: var(--color-text-muted);
+}
+
+.segmented-glasses-bar {
+  display: flex;
+  gap: 5px;
+  width: 100%;
+  height: 8px;
+}
+
+.glass-seg {
+  flex: 1;
+  background-color: #1a2620;
+  border-radius: 4px;
+  transition: background-color 0.4s ease, box-shadow 0.4s ease;
+}
+
+.glass-seg.filled {
+  background-color: #9fe1fa;
+  box-shadow: 0 0 6px rgba(159, 225, 250, 0.45);
+}
+
+/* ==========================================================================
+   6. TAB 3: MUSIC SPECIFIC STYLES
+   ========================================================================== */
+.album-cover-box {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  min-width: 0;
+  width: 100%;
+}
+
+.album-art-pine {
+  width: 64px;
+  height: 64px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.album-info-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+}
+
+.album-art-pine > svg {
+  width: 100%;
+  height: 100%;
+  flex-shrink: 0;
+}
+
+.album-info-meta .track-title,
+.album-info-meta .track-artist {
+  max-width: 100%;
+}
+
+.track-title {
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: var(--color-text-cream);
+  max-width: 100%;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.track-artist {
+  font-size: 0.7rem;
+  color: var(--color-text-muted);
+  max-width: 100%;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.album-art-pine.spotify-art svg {
+  border-radius: 10px;
+  box-shadow: 0 0 12px rgba(30, 215, 96, 0.25);
+  transition: transform 0.2s ease;
+}
+
+.album-art-pine.spotify-art:hover svg {
+  transform: scale(1.05);
+}
+
+.music-timeline-box {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.music-progress-track {
+  width: 100%;
+  height: 4px;
+  background-color: var(--color-tab-container);
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+.music-progress-fill {
+  height: 100%;
+  background-color: #cbbbf4;
+  box-shadow: 0 0 6px rgba(203, 187, 244, 0.4);
+}
+
+.music-time-labels {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.68rem;
+  color: var(--color-text-muted);
+}
+
+/* Lyrics Card (Center) */
+.lyrics-card {
+  width: 100%;
+  max-width: 420px;
+  background-color: rgba(16, 25, 23, 0.65);
+  border: 1px solid var(--color-island-border);
+  border-radius: 10px;
+  padding: 10px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  box-sizing: border-box;
+}
+
+.lyrics-tag {
+  font-size: 0.65rem;
+  color: var(--color-text-muted);
+  letter-spacing: 0.5px;
+  flex-shrink: 0;
+}
+
+/* Viewport 3 baris teks tetap */
+.lyrics-viewport {
+  position: relative;
+  width: 100%;
+  height: 78px;
+  overflow: hidden;
+  transition: opacity 80ms ease-out;
+}
+
+.lyrics-viewport.is-fading {
+  opacity: 0.25;
+}
+
+/* Track baris yang bergeser lembut ke atas selama 200 ms */
+.lyrics-track {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  transform: translateY(0);
+  will-change: transform;
+}
+
+.lyrics-track.is-sliding-up {
+  transform: translateY(-26px);
+  transition: transform 200ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.lyrics-row {
+  height: 26px;
+  min-height: 26px;
+  max-height: 26px;
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+  overflow: hidden;
+}
+
+/* Baris sebelumnya, berikutnya, dan baris yang akan masuk: warna redup tetapi tetap terbaca */
+.lyrics-row.row-prev,
+.lyrics-row.row-next,
+.lyrics-row.row-incoming {
+  color: #859F92;
+  opacity: 0.65;
+  transition: color 200ms ease, opacity 200ms ease;
+}
+
+.lyrics-row.row-prev .lyrics-line,
+.lyrics-row.row-next .lyrics-line,
+.lyrics-row.row-incoming .lyrics-line {
+  font-size: 0.78rem;
+  font-weight: 400;
+  color: inherit;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  margin: 0;
+}
+
+/* Baris aktif di tengah: warna mint terang, penekanan warna konsisten tanpa getaran font */
+.lyrics-row.row-active {
+  color: #A8F0C6;
+  opacity: 1;
+  transition: color 200ms ease, opacity 200ms ease;
+}
+
+.lyrics-row.row-active .lyrics-line-highlight {
+  font-size: 0.84rem;
+  font-weight: 700;
+  color: inherit;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  margin: 0;
+  line-height: 1.2;
+}
+
+/* Animasi perpindahan warna saat track bergeser ke atas */
+.lyrics-track.is-sliding-up .row-prev {
+  opacity: 0;
+  transition: opacity 200ms ease;
+}
+
+.lyrics-track.is-sliding-up .row-active {
+  color: #859F92;
+  opacity: 0.65;
+  transition: color 200ms ease, opacity 200ms ease;
+}
+
+.lyrics-track.is-sliding-up .row-next {
+  color: #A8F0C6;
+  opacity: 1;
+  font-weight: 700;
+  transition: color 200ms ease, opacity 200ms ease;
+}
+
+/* Tiga titik pixel instrumental yang bergerak pelan */
+.pixel-instrumental-dots {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: #A8F0C6;
+  font-family: var(--font-pixel);
+  font-size: 0.95rem;
+  line-height: 1;
+  padding: 2px 0;
+}
+
+.pixel-dot {
+  display: inline-block;
+  animation: pixel-dot-gentle 1.8s infinite ease-in-out;
+}
+
+.pixel-dot.dot-1 {
+  animation-delay: 0s;
+}
+
+.pixel-dot.dot-2 {
+  animation-delay: 0.3s;
+}
+
+.pixel-dot.dot-3 {
+  animation-delay: 0.6s;
+}
+
+@keyframes pixel-dot-gentle {
+  0%, 100% {
+    transform: translateY(0);
+    opacity: 0.35;
+  }
+  50% {
+    transform: translateY(-4px);
+    opacity: 1;
+  }
+}
+
+/* Saat pause: posisi dan animasi titik pixel berhenti */
+.lyrics-card.is-paused .pixel-dot,
+.lyrics-card.is-paused .lyrics-track {
+  animation-play-state: paused !important;
+}
+
+/* Mode prefers-reduced-motion: cukup ganti warna baris aktif tanpa pergeseran */
+@media (prefers-reduced-motion: reduce) {
+  .lyrics-track.is-sliding-up {
+    transform: none !important;
+    transition: none !important;
+  }
+  .lyrics-viewport.is-fading {
+    opacity: 1 !important;
+    transition: none !important;
+  }
+  .pixel-dot {
+    animation: none !important;
+    transform: none !important;
+    opacity: 0.85 !important;
+  }
+}
+
+/* Dancing Momo & Player Controls */
+.music-momo-stage {
+  position: relative;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  height: 54px;
+}
+
+.dancing-momo {
+  animation: momo-dance-groove 7.2s infinite ease-in-out;
+  animation-play-state: paused;
+  transform-origin: center bottom;
+  transition: transform 0.25s ease;
+}
+
+.dancing-momo.turn-head {
+  transform: scaleX(-1);
+}
+
+/* 3 Variasi tarian Momo:
+   0% - 33%: Mengangguk (head-bobbing naik turun)
+   34% - 66%: Goyang kanan-kiri (swaying tilt)
+   67% - 100%: Mengetuk kaki (foot tapping hop)
+*/
+@keyframes momo-dance-groove {
+  /* Fase 1: Mengangguk (Nodding) */
+  0%, 16%, 32% { transform: translateY(0) rotate(0deg); }
+  8%, 24% { transform: translateY(-5px) rotate(0deg); }
+  
+  /* Fase 2: Goyang kanan-kiri (Swaying) */
+  38% { transform: translateX(-4px) translateY(-2px) rotate(-4deg); }
+  46% { transform: translateX(4px) translateY(-2px) rotate(4deg); }
+  54% { transform: translateX(-3px) translateY(-1px) rotate(-3deg); }
+  62% { transform: translateX(3px) translateY(-1px) rotate(3deg); }
+  
+  /* Fase 3: Mengetuk kaki (Foot Tapping) */
+  68% { transform: translateY(-3px) rotate(-1deg); }
+  72% { transform: translateY(0) rotate(0deg); }
+  76% { transform: translateY(-4px) rotate(2deg); }
+  80% { transform: translateY(0) rotate(0deg); }
+  86% { transform: translateY(-5px) rotate(-2deg); }
+  92% { transform: translateY(0) rotate(0deg); }
+  100% { transform: translateY(0) rotate(0deg); }
+}
+
+/* Not musik pixel melayang lembut */
+.pixel-music-note {
+  position: absolute;
+  font-family: monospace;
+  font-size: 13px;
+  font-weight: bold;
+  color: var(--color-accent-lime);
+  pointer-events: none;
+  opacity: 0;
+  animation-play-state: paused;
+}
+
+.music-momo-stage.playing .pixel-music-note {
+  animation-play-state: running;
+}
+
+.pixel-music-note.note-1 {
+  left: 22%;
+  bottom: 18px;
+  animation: float-note-left 3.4s infinite ease-out;
+}
+
+.pixel-music-note.note-2 {
+  right: 20%;
+  bottom: 22px;
+  animation: float-note-right 3.8s infinite 1.6s ease-out;
+}
+
+@keyframes float-note-left {
+  0% { transform: translate(0, 0) scale(0.7); opacity: 0; }
+  25% { opacity: 0.9; }
+  75% { opacity: 0.75; }
+  100% { transform: translate(-12px, -26px) scale(1.1); opacity: 0; }
+}
+
+@keyframes float-note-right {
+  0% { transform: translate(0, 0) scale(0.7); opacity: 0; }
+  25% { opacity: 0.9; }
+  75% { opacity: 0.75; }
+  100% { transform: translate(14px, -28px) scale(1.1); opacity: 0; }
+}
+
+/* Transisi geser singkat saat ganti lagu */
+.track-slide-transition {
+  animation: slide-song-shift 0.35s ease-out;
+}
+
+@keyframes slide-song-shift {
+  0% { transform: translateX(12px); opacity: 0.3; }
+  100% { transform: translateX(0); opacity: 1; }
+}
+
+.music-controls-row {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 10px;
+}
+
+.transport-btn {
+  width: 40px;
+  height: 38px;
+  background-color: var(--color-tab-active);
+  border: none;
+  border-radius: 6px;
+  color: var(--color-text-cream);
+  font-family: var(--font-pixel);
+  font-size: 0.85rem;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s ease;
+}
+
+.transport-btn:hover {
+  background-color: #2e433a;
+}
+
+.transport-btn.btn-play {
+  width: 52px;
+  background-color: var(--color-accent-lime);
+  color: #15221A;
+  font-weight: 700;
+}
+
+.transport-btn.btn-play:hover {
+  background-color: #d8ffb3;
+}
+
+/* ==========================================================================
+   7. STATE TESTER BAR (Bottom Right)
+   ========================================================================== */
+.state-tester-bar {
+  position: fixed;
+  bottom: 16px;
+  right: 20px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: rgba(16, 25, 23, 0.85);
+  border: 1px solid var(--color-island-border);
+  padding: 6px 14px;
+  border-radius: 20px;
+  backdrop-filter: blur(8px);
+  z-index: 200;
+}
+
+.tester-label {
+  font-size: 0.72rem;
+  color: var(--color-text-muted);
+}
+
+.state-btn {
+  background: transparent;
+  border: 1px solid transparent;
+  color: var(--color-text-muted);
+  font-family: var(--font-pixel);
+  font-size: 0.7rem;
+  padding: 4px 10px;
+  border-radius: 12px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.state-btn:hover {
+  color: var(--color-text-cream);
+}
+
+.state-btn.active {
+  background: var(--color-tab-active);
+  border-color: var(--color-island-border);
+  color: var(--color-accent-lime);
+}
+
+/* ==========================================================================
+   8. RESPONSIVE MEDIA QUERIES (DPI Terskala / Layar Laptop)
+   ========================================================================== */
+@media (max-width: 1024px) {
+  .panel-body {
+    gap: 12px;
+    grid-template-columns: minmax(180px, 1.1fr) minmax(220px, 1.8fr) minmax(160px, 1fr);
+  }
+  .timer-digits-display {
+    font-size: 2.8rem;
+  }
+}
+
+@media (max-width: 820px) {
+  .panel-body {
+    gap: 8px;
+    grid-template-columns: minmax(160px, 1fr) minmax(200px, 1.6fr) minmax(150px, 1fr);
+  }
+  .timer-digits-display {
+    font-size: 2.4rem;
+  }
+  .ambient-center-area {
+    flex-direction: column;
+    gap: 20px;
+    margin-top: 100px;
+  }
+}
+
+@media (max-width: 680px) {
+  .island-widget.state-expanded .view-expanded {
+    padding: 10px 14px 12px 14px;
+  }
+  .panel-header {
+    height: 38px;
+    margin-bottom: 4px;
+  }
+  .brand-title {
+    display: none;
+  }
+  .brand-group {
+    gap: 6px;
+  }
+  .pill-tabs-nav {
+    width: 220px;
+    height: 34px;
+    padding: 2px;
+    gap: 2px;
+  }
+  .pill-tab-btn {
+    font-size: 0.72rem;
+    padding: 0 4px;
+  }
+  .window-controls-group {
+    gap: 4px;
+  }
+  .win-control-btn {
+    width: 26px;
+    height: 26px;
+    font-size: 0.9rem;
+    border-radius: 4px;
+  }
+  .panel-body {
+    grid-template-columns: minmax(140px, 1fr) minmax(180px, 1.5fr) minmax(135px, 1fr);
+    gap: 8px;
+    margin-top: 2px;
+  }
+  .col-left {
+    gap: 5px;
+  }
+  .session-pill-row {
+    gap: 4px;
+  }
+  .session-badge {
+    padding: 3px 6px;
+    font-size: 0.65rem;
+  }
+  .session-duration {
+    font-size: 0.65rem;
+  }
+  .timer-digits-display {
+    font-size: 1.85rem;
+    letter-spacing: 0;
+    line-height: 1;
+  }
+  .stat-meta-group {
+    gap: 2px;
+  }
+  .stat-line-title {
+    font-size: 0.68rem;
+  }
+  .stat-line-desc {
+    font-size: 0.62rem;
+  }
+  .session-timeline-container {
+    margin-top: 4px;
+    gap: 3px;
+  }
+  .timeline-header-meta {
+    font-size: 0.62rem;
+  }
+  .timeline-track {
+    height: 8px;
+  }
+  .timeline-detail-text {
+    font-size: 0.6rem;
+  }
+  .col-center {
+    min-width: 0;
+  }
+  .island-progress-meta {
+    margin-top: 1px;
+    margin-bottom: 3px;
+    font-size: 0.65rem;
+  }
+  .progress-bar-track {
+    height: 3px;
+  }
+  .col-right {
+    gap: 5px;
+  }
+  .actions-stack {
+    gap: 4px;
+  }
+  .btn-action-primary {
+    height: 36px;
+    font-size: 0.78rem;
+  }
+  .btn-action-secondary {
+    height: 30px;
+    font-size: 0.72rem;
+  }
+  #btn-open-settings {
+    height: 26px;
+    font-size: 0.65rem;
+    margin-top: 1px;
+  }
+  .auto-loop-meta {
+    font-size: 0.62rem;
+    line-height: 1.3;
+  }
+  .sub-heading-text {
+    font-size: 0.95rem;
+  }
+  .sub-paragraph-text {
+    font-size: 0.68rem;
+  }
+  .tea-cup-scene {
+    padding: 6px 0;
+    gap: 12px;
+  }
+  .pixel-cup-art svg {
+    width: 48px;
+    height: 36px;
+  }
+  .album-cover-box {
+    gap: 8px;
+  }
+  .album-art-pine {
+    width: 48px;
+    height: 48px;
+    flex-shrink: 0;
+  }
+  .track-title {
+    font-size: 0.75rem;
+    max-width: 120px;
+  }
+  .track-artist {
+    font-size: 0.65rem;
+    max-width: 120px;
+  }
+  .lyrics-card {
+    padding: 6px 10px;
+    gap: 3px;
+  }
+  .lyrics-viewport {
+    height: 66px;
+  }
+  .lyrics-row {
+    height: 22px;
+    min-height: 22px;
+    max-height: 22px;
+  }
+  .lyrics-track.is-sliding-up {
+    transform: translateY(-22px);
+  }
+  .lyrics-row.row-prev .lyrics-line,
+  .lyrics-row.row-next .lyrics-line,
+  .lyrics-row.row-incoming .lyrics-line {
+    font-size: 0.68rem;
+  }
+  .lyrics-row.row-active .lyrics-line-highlight {
+    font-size: 0.74rem;
+  }
+  .pixel-instrumental-dots {
+    font-size: 0.8rem;
+    gap: 4px;
+  }
+  .transport-btn {
+    width: 32px;
+    height: 32px;
+    font-size: 0.75rem;
+  }
+  .transport-btn.btn-play {
+    width: 44px;
+  }
+  .state-tester-bar {
+    bottom: 6px;
+    right: 8px;
+    padding: 4px 8px;
+    transform: scale(0.8);
+    transform-origin: bottom right;
+  }
+}
+
+/* ==========================================================================
+   9. NATIVE DESKTOP TAURI WIDGET INTEGRATION
+   ========================================================================== */
+body.is-tauri-native,
+html.is-tauri-native {
+  background: transparent !important;
+  background-color: transparent !important;
+  overflow: hidden;
+}
+
+body.is-tauri-native .desktop-env,
+body.is-tauri-native .state-tester-bar {
+  display: none !important;
+}
+
+body.is-tauri-native .island-widget {
+  top: 0 !important;
+  left: 50% !important;
+  transform: translateX(-50%) !important;
+  margin: 0 !important;
+}
+
+/* Window Drag Regions */
+[data-tauri-drag-region] {
+  -webkit-app-region: drag;
+  cursor: grab;
+}
+
+[data-tauri-drag-region]:active {
+  cursor: grabbing;
+}
+
+button, input, select, textarea, [role="button"], a {
+  -webkit-app-region: no-drag;
+}
+
+/* ==========================================================================
+   10. PROPORTIONAL SESSION TIMELINE
+   ========================================================================== */
+.session-timeline-container {
+  margin-top: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  width: 100%;
+}
+
+.timeline-header-meta {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 0.7rem;
+  color: var(--color-text-secondary);
+}
+
+.timeline-track {
+  display: flex;
+  height: 10px;
+  border-radius: 5px;
+  background-color: var(--color-tab-container);
+  border: 1px solid var(--color-border);
+  overflow: hidden;
+  gap: 2px;
+  padding: 1px;
+}
+
+.timeline-segment {
+  height: 100%;
+  border-radius: 2px;
+  transition: all 0.25s ease;
+  position: relative;
+  cursor: pointer;
+}
+
+.timeline-segment.focus {
+  background-color: var(--color-accent-green);
+}
+
+.timeline-segment.break {
+  background-color: var(--color-break);
+}
+
+.timeline-segment.active {
+  box-shadow: 0 0 0 1.5px var(--color-text-main);
+  filter: brightness(1.25);
+  transform: scaleY(1.15);
+  z-index: 2;
+}
+
+.timeline-segment.completed {
+  opacity: 0.45;
+  filter: grayscale(0.2);
+}
+
+.timeline-detail-text {
+  font-size: 0.68rem;
+  color: var(--color-text-secondary);
+  line-height: 1.3;
+}
+
+.shortened-alert-tag {
+  display: inline-block;
+  font-size: 0.65rem;
+  color: #F8D674;
+  background: rgba(248, 214, 116, 0.12);
+  border: 1px solid rgba(248, 214, 116, 0.35);
+  padding: 2px 6px;
+  border-radius: 4px;
+  margin-top: 4px;
+}
+
+/* ==========================================================================
+   11. SETTINGS MODAL DIALOG (svg_assets/Moss/Settings/Pomodoro.svg exact)
+   ========================================================================== */
+/* ==========================================================================
+   11. SETTINGS MODAL DIALOG (Figma 1:1 settings_pomodoro_modal.png)
+   ========================================================================== */
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(4, 9, 6, 0.82);
+  backdrop-filter: blur(8px);
+  display: none;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  animation: modal-fade-in 0.2s ease-out;
+}
+
+.modal-overlay.active {
+  display: flex;
+}
+
+@keyframes modal-fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.modal-dialog.figma-settings-modal {
+  background-color: var(--color-panel);
+  border: 1px solid var(--color-border);
+  border-radius: 18px;
+  width: 720px;
+  max-width: calc(100vw - 32px);
+  max-height: calc(100vh - 32px);
+  overflow-y: auto;
+  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.95), 0 0 24px rgba(196, 245, 155, 0.08);
+  padding: 24px 28px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  color: var(--color-text-main);
+  font-family: var(--font-pixel);
+}
+
+.modal-top-meta {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 0.75rem;
+}
+
+.modal-brand-tag {
+  color: var(--color-accent-mint);
+  font-weight: 700;
+  letter-spacing: 0.5px;
+}
+
+.modal-sub-tag {
+  color: var(--color-text-secondary);
+  letter-spacing: 0.8px;
+  font-size: 0.68rem;
+}
+
+.modal-main-heading {
+  font-size: 1.4rem;
+  color: var(--color-text-main);
+  margin-top: -4px;
+  line-height: 1.25;
+}
+
+/* 3-Column Inputs Row */
+.settings-inputs-row {
+  display: grid;
+  grid-template-columns: 1.4fr 1fr 1fr;
+  gap: 14px;
+}
+
+.settings-input-block {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.settings-input-label {
+  font-size: 0.72rem;
+  color: var(--color-text-secondary);
+}
+
+.settings-input-combo {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background-color: var(--color-bg);
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  padding: 6px 10px;
+}
+
+.settings-mini-input {
+  width: 50px;
+  background: transparent;
+  border: none;
+  color: var(--color-text-main);
+  font-family: var(--font-pixel);
+  font-size: 0.95rem;
+  font-weight: 700;
+  outline: none;
+}
+
+.settings-select {
+  background: transparent;
+  border: none;
+  color: var(--color-text-main);
+  font-family: var(--font-pixel);
+  font-size: 0.85rem;
+  outline: none;
+  cursor: pointer;
+}
+
+.settings-select option {
+  background-color: var(--color-panel);
+  color: var(--color-text-main);
+}
+
+.input-unit {
+  font-size: 0.75rem;
+  color: var(--color-text-secondary);
+}
+
+/* 3-Card Summary Row */
+.settings-summary-cards-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 12px;
+  border-top: 1px solid var(--color-border);
+  border-bottom: 1px solid var(--color-border);
+  padding: 12px 0;
+}
+
+.summary-card {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.summary-card-label {
+  font-size: 0.68rem;
+  color: var(--color-text-secondary);
+}
+
+.summary-card-val {
+  font-size: 1.15rem;
+  font-weight: 700;
+  color: var(--color-text-main);
+}
+
+/* Timeline Section */
+.modal-timeline-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.modal-timeline-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.timeline-sessions-title {
+  font-size: 0.82rem;
+  color: var(--color-text-main);
+  font-weight: 700;
+}
+
+.timeline-legend {
+  display: flex;
+  gap: 12px;
+  font-size: 0.7rem;
+  color: var(--color-text-secondary);
+}
+
+.legend-item {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.legend-box {
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+  display: inline-block;
+}
+
+.legend-box.focus {
+  background-color: var(--color-accent-mint);
+}
+
+.legend-box.break {
+  background-color: var(--color-break);
+}
+
+.timeline-track.figma-timeline-track {
+  height: 28px;
+  background-color: var(--color-bg);
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  gap: 3px;
+  padding: 3px;
+}
+
+.figma-timeline-track .timeline-segment {
+  height: 100%;
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.68rem;
+  font-weight: 700;
+  color: #101917;
+  overflow: hidden;
+}
+
+.figma-timeline-track .timeline-segment.break {
+  color: #2b2342;
+}
+
+.timeline-range-meta {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.68rem;
+  color: var(--color-text-secondary);
+}
+
+.timeline-active-session-text {
+  font-size: 0.75rem;
+  color: var(--color-text-main);
+}
+
+/* Checkboxes Section */
+.modal-checkboxes-section {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  border-top: 1px solid var(--color-border);
+  padding-top: 14px;
+}
+
+.figma-checkbox-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  cursor: pointer;
+  user-select: none;
+}
+
+.settings-checkbox {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 18px;
+  height: 18px;
+  border-radius: 4px;
+  background-color: var(--color-bg);
+  border: 1.5px solid var(--color-border);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  margin-top: 2px;
+  transition: all 0.15s ease;
+  position: relative;
+}
+
+.settings-checkbox:checked {
+  background-color: var(--color-accent-mint);
+  border-color: var(--color-accent-mint);
+}
+
+.settings-checkbox:checked::after {
+  content: '✓';
+  font-family: monospace;
+  font-size: 13px;
+  font-weight: 900;
+  color: #101917;
+  display: block;
+  line-height: 1;
+}
+
+.checkbox-text-group {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.checkbox-title {
+  font-size: 0.8rem;
+  color: var(--color-text-main);
+}
+
+.checkbox-subtitle {
+  font-size: 0.68rem;
+  color: var(--color-text-secondary);
+}
+
+/* Big CTA Section */
+.modal-cta-section {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  margin-top: 6px;
+}
+
+.btn-figma-start-session {
+  width: 100%;
+  height: 46px;
+  background-color: var(--color-accent-mint);
+  border: none;
+  border-radius: 8px;
+  color: #101917;
+  font-family: var(--font-pixel);
+  font-size: 0.95rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.btn-figma-start-session:hover {
+  background-color: #d8ffb3;
+  box-shadow: 0 0 12px rgba(196, 245, 155, 0.45);
+}
+
+.modal-footer-caption {
+  font-size: 0.7rem;
+  color: var(--color-text-secondary);
+}
+
+/* ==========================================================================
+   PENINGKATAN TAMPILAN GENERASI HUTAN, SPOTIFY RIIL, DAN ANIMASI LAGU SELESAI
+   ========================================================================== */
+
+.growth-caption-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  flex: 1;
+}
+
+.forest-gen-badge {
+  font-family: var(--font-pixel);
+  font-size: 0.7rem;
+  font-weight: 700;
+  color: var(--color-accent-mint);
+  background: rgba(113, 186, 131, 0.15);
+  border: 1px solid rgba(113, 186, 131, 0.45);
+  border-radius: 4px;
+  padding: 2px 7px;
+  letter-spacing: 0.4px;
+  white-space: nowrap;
+}
+
+.real-album-cover {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: 6px;
+  display: block;
+}
+
+.spotify-corner-pill {
+  position: absolute;
+  bottom: 2px;
+  right: 2px;
+  width: 14px;
+  height: 14px;
+  background: #121212;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.6);
+  z-index: 2;
+}
+
+.spotify-corner-pill svg {
+  width: 10px;
+  height: 10px;
+}
+
+.track-artist-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 2px;
+  max-width: 100%;
+  overflow: hidden;
+}
+
+.artist-avatar-mini {
+  width: 15px;
+  height: 15px;
+  border-radius: 50%;
+  object-fit: cover;
+  flex-shrink: 0;
+  border: 1px solid rgba(196, 245, 155, 0.4);
+}
+
+.compact-album-thumb {
+  width: 16px;
+  height: 16px;
+  border-radius: 3px;
+  object-fit: cover;
+  flex-shrink: 0;
+  margin-right: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+}
+
+/* Animasi Momo meregangkan badan dan melepas headphone saat lagu selesai */
+.dancing-momo.song-finished {
+  animation: momo-stretch-finish 3.5s forwards ease-in-out !important;
+  animation-play-state: running !important;
+}
+
+.dancing-momo.song-finished #momo-headphone-gear {
+  opacity: 0.15;
+  transform: translateY(8px);
+  transition: all 0.8s ease;
+}
+
+@keyframes momo-stretch-finish {
+  0% {
+    transform: translateY(0) scale(1);
+  }
+  20% {
+    transform: translateY(-3px) scale(1.05, 1.15) rotate(-2deg);
+  }
+  45% {
+    transform: translateY(-7px) scale(1.1, 1.22) rotate(2deg);
+  }
+  70% {
+    transform: translateY(-2px) scale(1.04, 1.05) rotate(0deg);
+  }
+  85% {
+    transform: translateY(2px) scale(1.06, 0.94);
+  }
+  100% {
+    transform: translateY(0) scale(1);
+  }
+}
+
+/* Dukungan Pengaturan Aksesibilitas Reduced Motion Sistem */
+@media (prefers-reduced-motion: reduce) {
+  .island-widget,
+  .island-widget * {
+    transition: none !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+  }
+}
+
+/* Dalam Tauri native, modal pengaturan menempel rapi dari atas */
+body.is-tauri-native .modal-overlay {
+  align-items: flex-start;
+  padding-top: 6px;
+}
+
+body.is-tauri-native .modal-dialog.figma-settings-modal {
+  border-top-left-radius: 0;
+  border-top-right-radius: 0;
+}
+
+/* Pengaturan Musim Pulau */
+.settings-season-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  padding: 10px 12px;
+  margin-top: 4px;
+}
+
+.season-section-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.season-header-title {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--color-text-main);
+}
+
+.season-status-badge {
+  font-size: 0.65rem;
+  font-weight: 500;
+  padding: 2px 8px;
+  border-radius: 10px;
+  background: rgba(113, 186, 131, 0.15);
+  color: #C4F59B;
+  border: 1px solid rgba(113, 186, 131, 0.3);
+}
+
+.season-mode-row {
+  display: flex;
+  gap: 12px;
+}
+
+.season-mode-radio {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.7rem;
+  color: var(--color-text-secondary);
+  cursor: pointer;
+}
+
+.season-mode-radio input[type="radio"] {
+  accent-color: var(--color-accent-green);
+  cursor: pointer;
+}
+
+.season-select-wrapper {
+  margin-top: 2px;
+}
+
+.settings-season-dropdown {
+  width: 100%;
+  background: rgba(20, 24, 22, 0.85);
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  color: var(--color-text-main);
+  font-size: 0.72rem;
+  padding: 5px 8px;
+  outline: none;
+}
+
