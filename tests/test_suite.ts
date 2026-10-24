@@ -1899,6 +1899,361 @@ runTest('Uji 52: Kontrak Rust menyediakan thumbnail sesi, identitas sesi/rekaman
 });
 
 // ----------------------------------------------------------------------------
+// 16. Validasi Progres Tersimpan (Data Parsial Tetap Dipulihkan)
+// ----------------------------------------------------------------------------
+await runTestAsync('Uji 53: Progres rusak dipulihkan sebagian — pohon tidak valid dibuang, penghitung dijepit ke nilai non-negatif', async () => {
+  const validTree = {
+    id: 'tree_1',
+    gridR: 0,
+    gridC: 2,
+    treeType: 'oak',
+    plantedAtTimestamp: Date.now(),
+  };
+  const stateToSave = {
+    version: 2,
+    config: { ...DEFAULT_POMODORO_CONFIG },
+    progress: {
+      growthStage: 1,
+      hydrationGlasses: 6,
+      completedSessionsToday: -9,
+      currentStreakDays: -3,
+      trees: [null, validTree, { gridR: 9, gridC: -2, treeType: 'maple', plantedAtTimestamp: -5 }, 'bukan_objek'],
+      currentSeason: 'autumn',
+      seasonCycleCount: 99,
+    },
+    waterMl: -500,
+    lastActiveDate: getTodayDateString(),
+    nextHydrationReminderTimestamp: Date.now() + 1000,
+    timerSession: { status: 'nonsense' },
+  };
+
+  localStorage.setItem('moss_island_state_v2', JSON.stringify(stateToSave));
+  const loaded = loadAppState();
+
+  // Pohon sah tetap dipertahankan, entri rusak dibuang tanpa menghilangkan seluruh progres
+  assert.strictEqual(loaded.progress.trees.length, 1, 'Hanya pohon yang valid yang dipertahankan');
+  assert.strictEqual(loaded.progress.trees[0].id, 'tree_1');
+  assert.strictEqual(loaded.progress.trees[0].gridR, 0);
+
+  // Penghitung dijepit ke bilangan valid non-negatif
+  assert.strictEqual(loaded.progress.completedSessionsToday, 0, 'Jumlah sesi negatif harus dijepit ke 0');
+  assert.strictEqual(loaded.progress.currentStreakDays, 1, 'Streak negatif harus kembali ke 1');
+  assert.strictEqual(loaded.progress.seasonCycleCount, 3, 'Hitungan siklus 99 dijepit ke 0..5 (99 % 6)');
+  assert.strictEqual(loaded.waterMl, 0, 'Air minum negatif harus dijepit ke 0');
+
+  // Snapshot timer tidak sah -> null
+  assert.strictEqual(loaded.timerSession, null, 'Snapshot timer tidak valid harus ditolak');
+});
+
+// ----------------------------------------------------------------------------
+// 17. Kebijakan Timer Saat Eksekusi Tertunda (Laptop Tidur)
+// ----------------------------------------------------------------------------
+await runTestAsync('Uji 54: Fase yang terlewat penuh (laptop tidur 3 menit) diselesaikan berantai tanpa memanjang rencana', async () => {
+  const completedPhases: string[] = [];
+  let planCompleteCount = 0;
+
+  const engine = new PomodoroEngine(
+    { ...DEFAULT_POMODORO_CONFIG, totalDurationMin: 3, focusDurationMin: 1, breakDurationMin: 1, autostartBreak: true, autostartNextFocus: true },
+    {
+      onPhaseComplete: (phase) => completedPhases.push(phase.type),
+      onPlanComplete: () => planCompleteCount++,
+    }
+  );
+
+  engine.start();
+  // Deadline fase fokus pertama sudah lewat 3 menit (seluruh rencana terlewat)
+  (engine as unknown as { targetEndTime: number }).targetEndTime = Date.now() - 3 * 60 * 1000;
+  (engine as unknown as { tick: () => void }).tick();
+
+  assert.strictEqual(engine.getStatus(), 'completed', 'Seluruh fase yang terlewat harus tuntas');
+  assert.deepStrictEqual(completedPhases, ['focus', 'break', 'focus'], 'Setiap fase terlewat memancarkan event sekali');
+  assert.strictEqual(planCompleteCount, 1, 'Rencana selesai dipancarkan tepat satu kali');
+});
+
+await runTestAsync('Uji 55: Keterlambatan sebagian (90 detik) melanjutkan fase berikutnya dari deadline sebelumnya', async () => {
+  const engine = new PomodoroEngine(
+    { ...DEFAULT_POMODORO_CONFIG, totalDurationMin: 3, focusDurationMin: 1, breakDurationMin: 1, autostartBreak: true, autostartNextFocus: true }
+  );
+
+  engine.start();
+  (engine as unknown as { targetEndTime: number }).targetEndTime = Date.now() - 90 * 1000;
+  (engine as unknown as { tick: () => void }).tick();
+
+  // Fokus 1 selesai, istirahat 1 terlewat penuh, fokus 2 berjalan dari deadline lama
+  assert.strictEqual(engine.getStatus(), 'running');
+  assert.strictEqual(engine.getCurrentPhase()?.type, 'focus', 'Fokus kedua harus sedang berjalan');
+  const remaining = engine.getPhaseRemainingSeconds();
+  assert.ok(remaining >= 28 && remaining <= 31, `Sisa waktu fokus kedua harus ±30 dtk dari deadline lama, didapat ${remaining}`);
+});
+
+runTest('Uji 56: skipCurrentPhase setelah rencana selesai tidak memicu penyelesaian berulang', () => {
+  let planCompleteCount = 0;
+  const engine = new PomodoroEngine(DEFAULT_POMODORO_CONFIG, {
+    onPlanComplete: () => planCompleteCount++,
+  });
+
+  engine.start();
+  for (let i = 0; i < 50 && engine.getStatus() !== 'completed'; i++) {
+    engine.skipCurrentPhase();
+  }
+  assert.strictEqual(engine.getStatus(), 'completed');
+  const completeCountAtFinish = planCompleteCount;
+  assert.strictEqual(completeCountAtFinish, 1, 'Rencana selesai dipancarkan tepat satu kali');
+
+  // Skip tambahan setelah selesai harus menjadi no-op
+  engine.skipCurrentPhase();
+  engine.skipCurrentPhase();
+  assert.strictEqual(planCompleteCount, completeCountAtFinish, 'Penyelesaian tidak boleh dipancarkan ulang');
+});
+
+// ----------------------------------------------------------------------------
+// 18. Kontrol Media Terikat Identitas Sesi yang Ditampilkan
+// ----------------------------------------------------------------------------
+interface MockInvokeCall { cmd: string; args: Record<string, unknown> }
+
+function installMockTauriInternals(respond: (cmd: string, args: Record<string, unknown>) => unknown): MockInvokeCall[] {
+  const calls: MockInvokeCall[] = [];
+  const win = globalThis.window as unknown as Record<string, unknown>;
+  win.__TAURI_INTERNALS__ = {
+    invoke: (cmd: string, args: Record<string, unknown> = {}) => {
+      calls.push({ cmd, args });
+      return Promise.resolve(respond(cmd, args));
+    },
+  };
+  return calls;
+}
+
+function removeMockTauriInternals() {
+  const win = globalThis.window as unknown as Record<string, unknown>;
+  delete win.__TAURI_INTERNALS__;
+}
+
+await runTestAsync('Uji 57: Play/pause, next, prev, dan seek mengirim identitas sesi (dan rekaman untuk seek)', async () => {
+  const displayedTrack = {
+    title: 'Lagu Tampil', artist: 'Artis', album: 'Album', is_playing: true,
+    source_app: 'Spotify.exe', source_display_name: 'Spotify', service_kind: 'spotify_desktop',
+    is_spotify: true, has_session: true, session_key: 'media-session-77', record_key: 'lagu|artis|album|1|200',
+    has_thumbnail: false, position_secs: 30, duration_secs: 200,
+  };
+
+  const calls = installMockTauriInternals((cmd) => {
+    if (cmd === 'get_system_media_track') return displayedTrack;
+    return true;
+  });
+  const bridge = new SystemMediaBridge();
+
+  try {
+    await bridge.pollNow();
+    assert.strictEqual(bridge.getCurrentTrack()?.session_key, 'media-session-77');
+
+    await bridge.togglePlay();
+    await bridge.nextTrack();
+    await bridge.prevTrack();
+    await bridge.seekTo(45);
+
+    const controlCalls = calls.filter((c) => c.cmd.startsWith('system_media_'));
+    assert.deepStrictEqual(
+      controlCalls.map((c) => c.cmd),
+      ['system_media_toggle_play', 'system_media_next', 'system_media_prev', 'system_media_seek']
+    );
+    for (const c of controlCalls) {
+      assert.strictEqual(c.args.sessionKey, 'media-session-77', `${c.cmd} harus membawa session_key sesi yang ditampilkan`);
+    }
+    const seekCall = controlCalls.find((c) => c.cmd === 'system_media_seek');
+    assert.strictEqual(seekCall?.args.recordKey, 'lagu|artis|album|1|200', 'Seek harus membawa record_key rekaman yang ditampilkan');
+  } finally {
+    removeMockTauriInternals();
+  }
+});
+
+await runTestAsync('Uji 58: Jeda manual di tengah lagu tidak dianggap lagu selesai; jeda di ujung durasi memicu event selesai', async () => {
+  let finishedCount = 0;
+  const baseTrack = {
+    title: 'Lagu Ujian', artist: 'Artis', album: 'Album', is_playing: true,
+    source_app: 'opera.exe', source_display_name: 'Opera', service_kind: 'web_media',
+    is_spotify: false, has_session: true, session_key: 'media-session-9', record_key: 'lagu-ujian|artis|album|1|200',
+    has_thumbnail: false, position_secs: 30, duration_secs: 200,
+  };
+  let currentPayload = { ...baseTrack };
+
+  installMockTauriInternals((cmd) => {
+    if (cmd === 'get_system_media_track') return currentPayload;
+    return true;
+  });
+  const bridge = new SystemMediaBridge();
+
+  try {
+    bridge.onSongFinished(() => finishedCount++);
+
+    await bridge.pollNow();
+    assert.strictEqual(finishedCount, 0);
+
+    // Jeda manual di tengah lagu: BUKAN akhir lagu
+    currentPayload = { ...baseTrack, is_playing: false, position_secs: 100 };
+    await bridge.pollNow();
+    assert.strictEqual(finishedCount, 0, 'Jeda manual di tengah lagu tidak boleh memicu lagu selesai');
+
+    // Pemutaran dilanjutkan mendekati akhir lagu
+    currentPayload = { ...baseTrack, is_playing: true, position_secs: 195 };
+    await bridge.pollNow();
+    assert.strictEqual(finishedCount, 0);
+
+    // Transisi nyata akhir lagu: memutar -> berhenti tepat di ujung durasi
+    currentPayload = { ...baseTrack, is_playing: false, position_secs: 199.6 };
+    await bridge.pollNow();
+    assert.strictEqual(finishedCount, 1, 'Pemutaran yang berhenti di ujung durasi memicu lagu selesai');
+  } finally {
+    removeMockTauriInternals();
+  }
+});
+
+// ----------------------------------------------------------------------------
+// 19. Gerbang Artis pada Pencarian Artwork
+// ----------------------------------------------------------------------------
+await runTestAsync('Uji 59: Kandidat dengan judul, album, dan durasi sama tetapi artis berbeda harus ditolak', async () => {
+  const service = new LyricsService();
+  const updates: TrackArtworkInfo[] = [];
+  service.subscribeArtwork((a) => updates.push(a));
+
+  const origFetch = globalThis.fetch;
+  globalThis.fetch = (async () => {
+    return {
+      ok: true,
+      json: async () => ({
+        data: [
+          // Judul, album, dan durasi sama persis, tetapi artis berbeda
+          { title: 'Lagu Gerbang', artist: { name: 'Peniru Beda' }, album: { title: 'Album Gerbang', cover_medium: 'cover-artis-salah.jpg' }, duration: 200 },
+        ],
+      }),
+    } as unknown as Response;
+  }) as typeof fetch;
+
+  try {
+    service.onSystemRecordChanged('s#g', { title: 'Lagu Gerbang', artist: 'Artis Asli', album: 'Album Gerbang', durationSecs: 200 }, false);
+    await service.requestSearchArtworkFallback({ title: 'Lagu Gerbang', artist: 'Artis Asli', album: 'Album Gerbang', durationSecs: 200, identityKey: 's#g' });
+    const last = updates[updates.length - 1];
+    assert.strictEqual(last.albumArtUrl, null, 'Artis berbeda harus menggagalkan kandidat meskipun album dan durasi cocok');
+    assert.strictEqual(last.source, 'none');
+  } finally {
+    globalThis.fetch = origFetch;
+    service.clear();
+  }
+});
+
+// ----------------------------------------------------------------------------
+// 20. Percobaan Ulang Lirik Setelah Kegagalan Jaringan
+// ----------------------------------------------------------------------------
+await runTestAsync('Uji 60: Lirik mencoba ulang dengan penundaan setelah kegagalan jaringan, dan membedakannya dari lirik tidak tersedia', async () => {
+  const service = new LyricsService();
+  const received: string[] = [];
+  service.subscribe((u) => {
+    if (u.highlight) received.push(u.highlight);
+    if (u.line2) received.push(u.line2);
+  });
+
+  const origFetch = globalThis.fetch;
+  let fetchCallCount = 0;
+  globalThis.fetch = (async (url: string | URL | Request) => {
+    const urlStr = url.toString();
+    // Hanya permintaan LRCLIB yang dihitung; request artwork tidak relevan di sini
+    if (!urlStr.includes('lrclib.net')) {
+      return { ok: false } as unknown as Response;
+    }
+    fetchCallCount++;
+    if (fetchCallCount <= 3) {
+      // Tiga permintaan pertama (satu putaran pencarian) gagal jaringan
+      throw new Error('offline');
+    }
+    return {
+      ok: true,
+      json: async () => ({ syncedLyrics: '[00:05.00] Lirik Retry Berhasil' }),
+    } as unknown as Response;
+  }) as typeof fetch;
+
+  try {
+    // Percepat... gunakan backoff 200 ms agar timing pengujian stabil
+    (service as unknown as { lyricsRetryBaseMs: number }).lyricsRetryBaseMs = 200;
+
+    await service.loadLyrics('Lagu Retry', 'Artis Retry', 'Album Retry', true, 0, 120);
+    assert.strictEqual(received.includes('Lirik Retry Berhasil'), false, 'Kegagalan jaringan tidak boleh dianggap lirik tidak tersedia');
+
+    // Polling segera setelahnya: masih dalam masa tunggu backoff, belum mencoba lagi
+    await service.loadLyrics('Lagu Retry', 'Artis Retry', 'Album Retry', true, 1, 120);
+    const callsBeforeRetry = fetchCallCount;
+
+    // Setelah masa tunggu berlalu: percobaan ulang berjalan dan berhasil
+    await new Promise((r) => setTimeout(r, 250));
+    await service.loadLyrics('Lagu Retry', 'Artis Retry', 'Album Retry', true, 2, 120);
+    assert.ok(fetchCallCount > callsBeforeRetry, 'Percobaan ulang harus membuat permintaan baru');
+    assert.strictEqual(received.includes('Lirik Retry Berhasil'), true, 'Lirik harus diterima setelah percobaan ulang berhasil');
+  } finally {
+    globalThis.fetch = origFetch;
+    service.clear();
+  }
+});
+
+// ----------------------------------------------------------------------------
+// 21. Snapshot dan Pemulihan Sesi Timer
+// ----------------------------------------------------------------------------
+runTest('Uji 61: Snapshot timer dipulihkan saat dijeda dan ditolak bila rencana tidak cocok', () => {
+  const config: PomodoroConfig = {
+    ...DEFAULT_POMODORO_CONFIG,
+    totalDurationMin: 60, focusDurationMin: 25, breakDurationMin: 5,
+    autostartBreak: false, autostartNextFocus: false,
+  };
+
+  const engine1 = new PomodoroEngine(config);
+  engine1.start();
+  (engine1 as unknown as { targetEndTime: number }).targetEndTime = Date.now() + 100 * 1000;
+  engine1.pause();
+  const snapshot = engine1.getSnapshot();
+  assert.notStrictEqual(snapshot, null, 'Sesi dijeda harus menghasilkan snapshot');
+  assert.strictEqual(snapshot!.status, 'paused');
+  assert.strictEqual(snapshot!.phaseRemainingSeconds, 100);
+
+  const engine2 = new PomodoroEngine(config);
+  const restored = engine2.restoreFromSnapshot(snapshot!);
+  assert.strictEqual(restored, true);
+  assert.strictEqual(engine2.getStatus(), 'paused');
+  assert.strictEqual(engine2.getPhaseRemainingSeconds(), 100);
+  assert.strictEqual(engine2.getCurrentPhase()?.type, 'focus');
+
+  // Snapshot dari rencana berbeda harus ditolak tanpa mengubah state
+  const mismatched = { ...snapshot!, focusDurationMin: 30 };
+  const engine3 = new PomodoroEngine(config);
+  assert.strictEqual(engine3.restoreFromSnapshot(mismatched), false, 'Snapshot dengan rencana berbeda harus ditolak');
+  assert.strictEqual(engine3.getStatus(), 'idle');
+});
+
+await runTestAsync('Uji 62: Snapshot timer berjalan dengan deadline terlewat melanjutkan fase berikutnya dari deadline lama', async () => {
+  const config: PomodoroConfig = {
+    ...DEFAULT_POMODORO_CONFIG,
+    totalDurationMin: 60, focusDurationMin: 25, breakDurationMin: 5,
+    autostartBreak: true, autostartNextFocus: false,
+  };
+
+  const now = Date.now();
+  const snapshot = {
+    phaseIndex: 0,
+    status: 'running' as const,
+    phaseRemainingSeconds: 5,
+    targetEndTime: now - 50 * 1000, // deadline fokus terlewat 50 detik saat aplikasi tertutup
+    savedAt: now - 55 * 1000,
+    totalDurationMin: 60,
+    focusDurationMin: 25,
+    breakDurationMin: 5,
+  };
+
+  const engine = new PomodoroEngine(config);
+  const restored = engine.restoreFromSnapshot(snapshot);
+  assert.strictEqual(restored, true);
+  assert.strictEqual(engine.getStatus(), 'running', 'Fase istirahat harus berjalan dari deadline lama (autostart aktif)');
+  assert.strictEqual(engine.getCurrentPhase()?.type, 'break', 'Fase fokus yang terlewat harus selesai dan lanjut istirahat');
+  const remaining = engine.getPhaseRemainingSeconds();
+  assert.ok(remaining >= 245 && remaining <= 251, `Sisa istirahat harus ±250 dtk (300 - 50 terlewat), didapat ${remaining}`);
+});
+
+// ----------------------------------------------------------------------------
 // Rekapitulasi Akhir
 // ----------------------------------------------------------------------------
 console.log(`\n=== HASIL: ${passedTests}/${passedTests + failedTests} PENGUJIAN LOLOS DENGAN SUKSES ===`);

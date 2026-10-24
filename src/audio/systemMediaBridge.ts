@@ -92,10 +92,15 @@ export class SystemMediaBridge {
       this.latestAppliedSequence = currentSeq;
 
       if (data && data.has_session && data.title && data.title.trim().length > 0) {
-        // Deteksi lagu selesai: jika sebelumnya memutar (wasPlaying = true),
-        // lalu berubah menjadi is_playing = false dengan lagu yang sama tanpa lagu baru
+        // Deteksi akhir lagu harus dibedakan dari jeda manual:
+        // playing -> paused HANYA dianggap lagu selesai bila posisi berada
+        // di ujung durasi. Jeda di tengah lagu tidak memicu event selesai.
         if (this.wasPlaying && !data.is_playing && data.title === this.lastTitle) {
-          this.notifySongFinished();
+          const isNearEnd =
+            data.duration_secs > 0 && data.position_secs >= data.duration_secs - 1.5;
+          if (isNearEnd) {
+            this.notifySongFinished();
+          }
         }
 
         this.wasPlaying = data.is_playing;
@@ -145,7 +150,11 @@ export class SystemMediaBridge {
   public async togglePlay(): Promise<boolean> {
     try {
       const { invoke } = await import('@tauri-apps/api/core');
-      const res = await invoke<boolean>('system_media_toggle_play');
+      // Kontrol terikat pada sesi yang sedang ditampilkan agar tidak mengendalikan
+      // sesi lain ketika sesi baru muncul sebelum klik diterima
+      const res = await invoke<boolean>('system_media_toggle_play', {
+        sessionKey: this.currentTrack?.session_key || null,
+      });
       setTimeout(() => this.pollNow(), 150);
       return res;
     } catch {
@@ -156,7 +165,9 @@ export class SystemMediaBridge {
   public async nextTrack(): Promise<boolean> {
     try {
       const { invoke } = await import('@tauri-apps/api/core');
-      const res = await invoke<boolean>('system_media_next');
+      const res = await invoke<boolean>('system_media_next', {
+        sessionKey: this.currentTrack?.session_key || null,
+      });
       setTimeout(() => this.pollNow(), 300);
       return res;
     } catch {
@@ -167,7 +178,9 @@ export class SystemMediaBridge {
   public async prevTrack(): Promise<boolean> {
     try {
       const { invoke } = await import('@tauri-apps/api/core');
-      const res = await invoke<boolean>('system_media_prev');
+      const res = await invoke<boolean>('system_media_prev', {
+        sessionKey: this.currentTrack?.session_key || null,
+      });
       setTimeout(() => this.pollNow(), 300);
       return res;
     } catch {
@@ -178,7 +191,11 @@ export class SystemMediaBridge {
   public async seekTo(positionSecs: number): Promise<boolean> {
     try {
       const { invoke } = await import('@tauri-apps/api/core');
-      const res = await invoke<boolean>('system_media_seek', { positionSecs });
+      const res = await invoke<boolean>('system_media_seek', {
+        positionSecs,
+        sessionKey: this.currentTrack?.session_key || null,
+        recordKey: this.currentTrack?.record_key || null,
+      });
       if (res) {
         // Naikkan urutan aktif agar respons polling lama yang sedang berjalan tidak menimpa hasil seek
         this.latestAppliedSequence = ++this.pollSequence;

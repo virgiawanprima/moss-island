@@ -1,0 +1,54 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  windows:
+    name: Windows tests and build
+    runs-on: windows-latest
+    timeout-minutes: 30
+    env:
+      CARGO_TERM_COLOR: always
+    defaults:
+      run:
+        shell: pwsh
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Install frontend dependencies
+        run: npm ci
+
+      - name: Run frontend tests
+        run: npm test
+
+      - name: Check types and build frontend
+        run: npm run build
+
+      - name: Install Rust toolchain
+        run: rustup toolchain install 1.99.1 --profile minimal
+
+      - name: Check Rust targets
+        run: cargo +1.99.1 check --locked --all-targets --manifest-path src-tauri/Cargo.toml
+
+      - name: Run Rust tests
+        run: cargo +1.99.1 test --locked --manifest-path src-tauri/Cargo.toml

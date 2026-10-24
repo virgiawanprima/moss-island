@@ -623,52 +623,87 @@ mod win_media {
         }))
     }
 
-    pub async fn toggle_play_pause() -> Result<bool, String> {
+    /**
+     * Memilih sesi untuk perintah kontrol. Bila frontend mengirim session_key,
+     * HANYA sesi itu yang boleh dikendalikan agar kontrol selalu konsisten
+     * dengan sesi yang ditampilkan. Tanpa session_key, pilihan terbaik dipakai.
+     */
+    fn pick_controlled_candidate(
+        candidates: Vec<CandidateSession>,
+        session_key: &Option<String>,
+    ) -> Option<CandidateSession> {
+        match session_key {
+            Some(key) if !key.trim().is_empty() => candidates
+                .into_iter()
+                .find(|c| &c.session_key == key),
+            _ => find_best_candidate(candidates),
+        }
+    }
+
+    pub async fn toggle_play_pause(session_key: Option<String>) -> Result<bool, String> {
         let manager = get_manager().await?;
         let candidates = extract_all_candidates(&manager).await;
-        if let Some(c) = find_best_candidate(candidates) {
+        if let Some(c) = pick_controlled_candidate(candidates, &session_key) {
             let op = c
                 .session
                 .TryTogglePlayPauseAsync()
                 .map_err(|e| e.to_string())?;
             let success = op.await.map_err(|e| e.to_string())?;
             Ok(success)
+        } else if session_key.is_some() {
+            // Sesi yang tampil sudah tidak aktif: tolak alih-alih mengendalikan sesi lain
+            Err("Sesi media yang ditampilkan sudah tidak aktif".to_string())
         } else {
             Err("Tidak ada sesi media yang sedang aktif".to_string())
         }
     }
 
-    pub async fn skip_next() -> Result<bool, String> {
+    pub async fn skip_next(session_key: Option<String>) -> Result<bool, String> {
         let manager = get_manager().await?;
         let candidates = extract_all_candidates(&manager).await;
-        if let Some(c) = find_best_candidate(candidates) {
+        if let Some(c) = pick_controlled_candidate(candidates, &session_key) {
             let op = c.session.TrySkipNextAsync().map_err(|e| e.to_string())?;
             let success = op.await.map_err(|e| e.to_string())?;
             Ok(success)
+        } else if session_key.is_some() {
+            Err("Sesi media yang ditampilkan sudah tidak aktif".to_string())
         } else {
             Err("Tidak ada sesi media yang sedang aktif".to_string())
         }
     }
 
-    pub async fn skip_prev() -> Result<bool, String> {
+    pub async fn skip_prev(session_key: Option<String>) -> Result<bool, String> {
         let manager = get_manager().await?;
         let candidates = extract_all_candidates(&manager).await;
-        if let Some(c) = find_best_candidate(candidates) {
+        if let Some(c) = pick_controlled_candidate(candidates, &session_key) {
             let op = c
                 .session
                 .TrySkipPreviousAsync()
                 .map_err(|e| e.to_string())?;
             let success = op.await.map_err(|e| e.to_string())?;
             Ok(success)
+        } else if session_key.is_some() {
+            Err("Sesi media yang ditampilkan sudah tidak aktif".to_string())
         } else {
             Err("Tidak ada sesi media yang sedang aktif".to_string())
         }
     }
 
-    pub async fn seek_to(position_secs: f64) -> Result<bool, String> {
+    pub async fn seek_to(
+        position_secs: f64,
+        session_key: Option<String>,
+        record_key: Option<String>,
+    ) -> Result<bool, String> {
         let manager = get_manager().await?;
         let candidates = extract_all_candidates(&manager).await;
-        if let Some(c) = find_best_candidate(candidates) {
+        if let Some(c) = pick_controlled_candidate(candidates, &session_key) {
+            // Seek terkait rekaman: tolak bila rekaman sudah berganti sejak
+            // permintaan dikirim agar posisi tidak ditulis ke lagu yang salah
+            if let Some(requested) = record_key {
+                if !requested.trim().is_empty() && c.record_key != requested {
+                    return Err("Rekaman sudah berganti; posisi tidak diubah".to_string());
+                }
+            }
             let pos_100ns = (position_secs * 10_000_000.0).round() as i64;
             let op = c
                 .session
@@ -676,6 +711,8 @@ mod win_media {
                 .map_err(|e| e.to_string())?;
             let success = op.await.map_err(|e| e.to_string())?;
             Ok(success)
+        } else if session_key.is_some() {
+            Err("Sesi media yang ditampilkan sudah tidak aktif".to_string())
         } else {
             Err("Tidak ada sesi media yang sedang aktif".to_string())
         }
@@ -697,19 +734,23 @@ mod non_win_media {
         Ok(None)
     }
 
-    pub async fn toggle_play_pause() -> Result<bool, String> {
+    pub async fn toggle_play_pause(_session_key: Option<String>) -> Result<bool, String> {
         Err("Sistem media belum didukung pada platform ini".to_string())
     }
 
-    pub async fn skip_next() -> Result<bool, String> {
+    pub async fn skip_next(_session_key: Option<String>) -> Result<bool, String> {
         Err("Sistem media belum didukung pada platform ini".to_string())
     }
 
-    pub async fn skip_prev() -> Result<bool, String> {
+    pub async fn skip_prev(_session_key: Option<String>) -> Result<bool, String> {
         Err("Sistem media belum didukung pada platform ini".to_string())
     }
 
-    pub async fn seek_to(_position_secs: f64) -> Result<bool, String> {
+    pub async fn seek_to(
+        _position_secs: f64,
+        _session_key: Option<String>,
+        _record_key: Option<String>,
+    ) -> Result<bool, String> {
         Err("Sistem media belum didukung pada platform ini".to_string())
     }
 }
@@ -754,66 +795,12 @@ pub async fn get_system_media_artwork(
 }
 
 #[tauri::command]
-pub async fn system_media_toggle_play() -> Result<bool, String> {
-    #[cfg(target_os = "windows")]
-    {
-        tauri::async_runtime::spawn_blocking(|| {
-            tauri::async_runtime::block_on(async {
-                win_media::toggle_play_pause().await
-            })
-        })
-        .await
-        .map_err(|e| e.to_string())?
-    }
-    #[cfg(not(target_os = "windows"))]
-    {
-        non_win_media::toggle_play_pause().await
-    }
-}
-
-#[tauri::command]
-pub async fn system_media_next() -> Result<bool, String> {
-    #[cfg(target_os = "windows")]
-    {
-        tauri::async_runtime::spawn_blocking(|| {
-            tauri::async_runtime::block_on(async {
-                win_media::skip_next().await
-            })
-        })
-        .await
-        .map_err(|e| e.to_string())?
-    }
-    #[cfg(not(target_os = "windows"))]
-    {
-        non_win_media::skip_next().await
-    }
-}
-
-#[tauri::command]
-pub async fn system_media_prev() -> Result<bool, String> {
-    #[cfg(target_os = "windows")]
-    {
-        tauri::async_runtime::spawn_blocking(|| {
-            tauri::async_runtime::block_on(async {
-                win_media::skip_prev().await
-            })
-        })
-        .await
-        .map_err(|e| e.to_string())?
-    }
-    #[cfg(not(target_os = "windows"))]
-    {
-        non_win_media::skip_prev().await
-    }
-}
-
-#[tauri::command]
-pub async fn system_media_seek(position_secs: f64) -> Result<bool, String> {
+pub async fn system_media_toggle_play(session_key: Option<String>) -> Result<bool, String> {
     #[cfg(target_os = "windows")]
     {
         tauri::async_runtime::spawn_blocking(move || {
             tauri::async_runtime::block_on(async move {
-                win_media::seek_to(position_secs).await
+                win_media::toggle_play_pause(session_key).await
             })
         })
         .await
@@ -821,6 +808,64 @@ pub async fn system_media_seek(position_secs: f64) -> Result<bool, String> {
     }
     #[cfg(not(target_os = "windows"))]
     {
-        non_win_media::seek_to(position_secs).await
+        non_win_media::toggle_play_pause(session_key).await
+    }
+}
+
+#[tauri::command]
+pub async fn system_media_next(session_key: Option<String>) -> Result<bool, String> {
+    #[cfg(target_os = "windows")]
+    {
+        tauri::async_runtime::spawn_blocking(move || {
+            tauri::async_runtime::block_on(async move {
+                win_media::skip_next(session_key).await
+            })
+        })
+        .await
+        .map_err(|e| e.to_string())?
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        non_win_media::skip_next(session_key).await
+    }
+}
+
+#[tauri::command]
+pub async fn system_media_prev(session_key: Option<String>) -> Result<bool, String> {
+    #[cfg(target_os = "windows")]
+    {
+        tauri::async_runtime::spawn_blocking(move || {
+            tauri::async_runtime::block_on(async move {
+                win_media::skip_prev(session_key).await
+            })
+        })
+        .await
+        .map_err(|e| e.to_string())?
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        non_win_media::skip_prev(session_key).await
+    }
+}
+
+#[tauri::command]
+pub async fn system_media_seek(
+    position_secs: f64,
+    session_key: Option<String>,
+    record_key: Option<String>,
+) -> Result<bool, String> {
+    #[cfg(target_os = "windows")]
+    {
+        tauri::async_runtime::spawn_blocking(move || {
+            tauri::async_runtime::block_on(async move {
+                win_media::seek_to(position_secs, session_key, record_key).await
+            })
+        })
+        .await
+        .map_err(|e| e.to_string())?
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        non_win_media::seek_to(position_secs, session_key, record_key).await
     }
 }

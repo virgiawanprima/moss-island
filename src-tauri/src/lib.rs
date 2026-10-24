@@ -6,11 +6,19 @@ use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut, ShortcutState};
 
 static ANIMATION_TOKEN: AtomicU64 = AtomicU64::new(0);
 static IS_ANIMATING: AtomicBool = AtomicBool::new(false);
+/// Token milik animasi yang sedang aktif; dipakai agar guard animasi lama
+/// tidak mematikan status animasi milik pemanggil yang lebih baru.
+static ANIMATION_OWNER_TOKEN: AtomicU64 = AtomicU64::new(0);
 
-struct AnimationGuard;
+struct AnimationGuard {
+    owner_token: u64,
+}
 impl Drop for AnimationGuard {
     fn drop(&mut self) {
-        IS_ANIMATING.store(false, Ordering::SeqCst);
+        // Hanya animasi pemilik token terkini yang boleh mengubah status
+        if ANIMATION_OWNER_TOKEN.load(Ordering::SeqCst) == self.owner_token {
+            IS_ANIMATING.store(false, Ordering::SeqCst);
+        }
     }
 }
 
@@ -100,6 +108,7 @@ async fn animate_island_window(
 ) -> Result<(), String> {
     // Token unik untuk mendeteksi pembatalan animasi oleh pemanggilan baru
     let current_token = ANIMATION_TOKEN.fetch_add(1, Ordering::SeqCst) + 1;
+    ANIMATION_OWNER_TOKEN.store(current_token, Ordering::SeqCst);
 
     let offset_y = y_offset.unwrap_or(0.0);
     let dur = duration_ms.unwrap_or(200);
@@ -175,7 +184,7 @@ async fn animate_island_window(
     }
 
     IS_ANIMATING.store(true, Ordering::SeqCst);
-    let _guard = AnimationGuard;
+    let _guard = AnimationGuard { owner_token: current_token };
 
     // Bebaskan batas ukuran minimum sementara agar animasi perubahan ukuran dapat berjalan mulus
     let _ = window.set_min_size(None::<Size>);

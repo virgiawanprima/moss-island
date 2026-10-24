@@ -1,7 +1,9 @@
 import {
   PomodoroConfig,
   IslandProgress,
+  PlantedTree,
   StoredAppState,
+  TimerSnapshot,
 } from './types';
 import { DEFAULT_POMODORO_CONFIG } from './timer/pomodoroPlan';
 export { DEFAULT_POMODORO_CONFIG };
@@ -49,6 +51,7 @@ export function getDefaultAppState(): StoredAppState {
     waterMl: 0,
     lastActiveDate: today,
     nextHydrationReminderTimestamp: Date.now() + 45 * 60 * 1000,
+    timerSession: null,
   };
 }
 
@@ -148,6 +151,69 @@ export function sanitizePomodoroConfig(rawConfig: unknown): PomodoroConfig {
   };
 }
 
+/**
+ * Memvalidasi satu entri pohon secara individual.
+ * Mengembalikan null bila entri tidak valid sehingga hanya bagian yang rusak
+ * yang dibuang, tanpa menghilangkan seluruh progres pengguna.
+ */
+function sanitizeTreeEntry(raw: unknown, index: number): PlantedTree | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const t = raw as Record<string, unknown>;
+  const id = typeof t.id === 'string' && t.id.trim().length > 0 ? t.id.trim() : null;
+  const gridR =
+    typeof t.gridR === 'number' && Number.isInteger(t.gridR) && t.gridR >= 0 && t.gridR <= 5
+      ? t.gridR
+      : null;
+  const gridC =
+    typeof t.gridC === 'number' && Number.isInteger(t.gridC) && t.gridC >= 0 && t.gridC <= 5
+      ? t.gridC
+      : null;
+  const treeType = t.treeType === 'oak' || t.treeType === 'pine' ? t.treeType : null;
+  const plantedAt =
+    typeof t.plantedAtTimestamp === 'number' &&
+    Number.isFinite(t.plantedAtTimestamp) &&
+    t.plantedAtTimestamp > 0
+      ? t.plantedAtTimestamp
+      : null;
+
+  if (id === null || gridR === null || gridC === null || treeType === null || plantedAt === null) {
+    console.warn(`Entri pohon #${index} tidak valid dan dilewati saat memuat progres.`);
+    return null;
+  }
+  return { id, gridR, gridC, treeType, plantedAtTimestamp: plantedAt };
+}
+
+/** Batasi penghitung ke bilangan bulat non-negatif dengan batas atas wajar. */
+function sanitizeCounter(value: unknown, fallback: number, max: number): number {
+  if (typeof value !== 'number' || !Number.isFinite(value)) return fallback;
+  return Math.max(0, Math.min(max, Math.floor(value)));
+}
+
+export function sanitizeTimerSnapshot(raw: unknown): TimerSnapshot | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const snap = raw as Record<string, unknown>;
+  if (snap.status !== 'running' && snap.status !== 'paused') return null;
+  if (typeof snap.phaseIndex !== 'number' || !Number.isInteger(snap.phaseIndex) || snap.phaseIndex < 0 || snap.phaseIndex > 200) return null;
+  if (typeof snap.phaseRemainingSeconds !== 'number' || !Number.isFinite(snap.phaseRemainingSeconds) || snap.phaseRemainingSeconds < 0 || snap.phaseRemainingSeconds > 86400) return null;
+  if (snap.targetEndTime !== null && (typeof snap.targetEndTime !== 'number' || !Number.isFinite(snap.targetEndTime))) return null;
+  if (typeof snap.savedAt !== 'number' || !Number.isFinite(snap.savedAt) || snap.savedAt <= 0) return null;
+  const numsOk = ['totalDurationMin', 'focusDurationMin', 'breakDurationMin'].every((k) => {
+    const v = snap[k];
+    return typeof v === 'number' && Number.isInteger(v) && v >= 1 && v <= 1440;
+  });
+  if (!numsOk) return null;
+  return {
+    phaseIndex: snap.phaseIndex,
+    status: snap.status,
+    phaseRemainingSeconds: snap.phaseRemainingSeconds,
+    targetEndTime: snap.targetEndTime as number | null,
+    savedAt: snap.savedAt,
+    totalDurationMin: snap.totalDurationMin as number,
+    focusDurationMin: snap.focusDurationMin as number,
+    breakDurationMin: snap.breakDurationMin as number,
+  };
+}
+
 export function loadAppState(): StoredAppState {
   const defaultState = getDefaultAppState();
   const today = getTodayDateString();
@@ -170,7 +236,11 @@ export function loadAppState(): StoredAppState {
     const config: PomodoroConfig = sanitizePomodoroConfig(parsed.config);
 
     const savedProgress = parsed.progress && typeof parsed.progress === 'object' ? parsed.progress : {};
-    const savedTrees = Array.isArray(savedProgress.trees) ? savedProgress.trees : [];
+    // Validasi per entri: pohon yang rusak dibuang, pohon yang sah tetap dipertahankan
+    const rawTrees = Array.isArray(savedProgress.trees) ? savedProgress.trees : [];
+    const savedTrees: PlantedTree[] = rawTrees
+      .map((entry: unknown, index: number) => sanitizeTreeEntry(entry, index))
+      .filter((tree: PlantedTree | null): tree is PlantedTree => tree !== null);
 
     const currentSeason =
       savedProgress.currentSeason === 'spring' ||
@@ -188,17 +258,20 @@ export function loadAppState(): StoredAppState {
         : 0;
 
     let progress: IslandProgress = {
-      growthStage: typeof savedProgress.growthStage === 'number' ? savedProgress.growthStage : 0,
-      hydrationGlasses: typeof savedProgress.hydrationGlasses === 'number' ? savedProgress.hydrationGlasses : 0,
-      completedSessionsToday: typeof savedProgress.completedSessionsToday === 'number' ? savedProgress.completedSessionsToday : 0,
-      currentStreakDays: typeof savedProgress.currentStreakDays === 'number' ? savedProgress.currentStreakDays : 1,
+      growthStage: sanitizeCounter(savedProgress.growthStage, 0, 2),
+      hydrationGlasses: sanitizeCounter(savedProgress.hydrationGlasses, 0, 9999),
+      completedSessionsToday: sanitizeCounter(savedProgress.completedSessionsToday, 0, 999),
+      currentStreakDays: Math.max(1, sanitizeCounter(savedProgress.currentStreakDays, 1, 9999)),
       trees: savedTrees,
       currentSeason,
       seasonCycleCount,
     };
 
-    let waterMl = typeof parsed.waterMl === 'number' ? parsed.waterMl : progress.hydrationGlasses * 250;
+    let waterMl = sanitizeCounter(parsed.waterMl, progress.hydrationGlasses * 250, 100000);
     const lastActiveDate = typeof parsed.lastActiveDate === 'string' ? parsed.lastActiveDate : today;
+
+    // Snapshot timer aktif: hanya dipakai bila strukturnya sah
+    const timerSession: TimerSnapshot | null = sanitizeTimerSnapshot(parsed.timerSession);
 
     // Pemeriksaan pergantian hari: reset hitungan harian tetapi pertahankan pohon dan hitungan musim
     if (lastActiveDate === today) {
@@ -242,6 +315,7 @@ export function loadAppState(): StoredAppState {
       waterMl,
       lastActiveDate: today,
       nextHydrationReminderTimestamp: nextReminder,
+      timerSession,
     };
 
     saveAppState(loadedState);

@@ -134,6 +134,13 @@ export class LyricsService {
   private searchFallbackDoneFor: string = '';
   // Object URL artwork sesi beserta kuncinya; dicabut saat tidak terpakai lagi
   private sessionObjectUrls = new Map<string, string>();
+  // Status unduhan lirik per versi rekaman: loading/ready/not_found/error
+  private lyricsLoadState = new Map<
+    string,
+    { status: 'loading' | 'ready' | 'not_found' | 'error'; attempts: number; nextRetryAt: number }
+  >();
+  // Dasar penundaan percobaan ulang lirik (ms); diperbesar eksponensial hingga 60 dtk
+  private lyricsRetryBaseMs: number = 5000;
 
   private ambientPoems: Record<string, string[]> = {
     rain: [
@@ -462,9 +469,12 @@ export class LyricsService {
       artistPicUrl: string | null
     ) => {
       if (!albumArtUrl) return;
-      let score = 0;
-      if (this.tokensMatch(cleanTitle, candTitle || '')) score += 4;
-      if (this.tokensMatch(cleanArtist, candArtist || '')) score += 3;
+      // Gerbang wajib: judul DAN artis harus cocok sebelum penilaian lain.
+      // Tanpa ini, kandidat album/durasi sama tetapi artis berbeda bisa lolos.
+      if (!this.tokensMatch(cleanTitle, candTitle || '')) return;
+      if (!this.tokensMatch(cleanArtist, candArtist || '')) return;
+
+      let score = 8; // dasar: judul + artis sudah cocok (melewati ambang 7)
       if (album && candAlbum && this.tokensMatch(album, candAlbum)) score += 2;
       if (durationSecs > 0 && typeof candDuration === 'number' && candDuration > 0) {
         const diff = Math.abs(candDuration - durationSecs);
@@ -529,7 +539,7 @@ export class LyricsService {
       }
     }
 
-    // Ambang kepercayaan: judul (4) + artis (3) wajib cocok. Tanpa itu -> placeholder.
+    // Ambang kepercayaan: hanya kandidat yang lolos gerbang judul+artis dipakai.
     const chosen = best.value && best.value.score >= 7 ? best.value : null;
 
     const info: TrackArtworkInfo = {
@@ -598,6 +608,9 @@ export class LyricsService {
     durationSecs: number = 0
   ): Promise<ParsedLyricsData | null> {
     const roundedDur = durationSecs > 0 ? Math.round(durationSecs) : 0;
+    // Membedakan "lirik memang tidak tersedia" (layanan menjawab) dari
+    // "layanan tidak dapat dijangkau" (semua permintaan gagal jaringan)
+    let sawAnyResponse = false;
 
     // 1. Coba pencarian presisi /api/get dengan judul asli, artis, album, dan durasi rekaman
     try {
@@ -614,6 +627,7 @@ export class LyricsService {
       const res = await fetch(`https://lrclib.net/api/get?${getParams.toString()}`, {
         signal: AbortSignal.timeout(3500),
       });
+      sawAnyResponse = true;
       if (res.ok) {
         const data = await res.json();
         const parsed = this.parseLrclibResponse(data);
@@ -632,6 +646,7 @@ export class LyricsService {
       const res = await fetch(`https://lrclib.net/api/search?${searchParams.toString()}`, {
         signal: AbortSignal.timeout(3500),
       });
+      sawAnyResponse = true;
       if (res.ok) {
         const items = await res.json();
         if (Array.isArray(items) && items.length > 0) {
@@ -653,6 +668,7 @@ export class LyricsService {
         `https://lrclib.net/api/search?q=${encodeURIComponent(`${cleanTitle} ${cleanArtist}`)}`,
         { signal: AbortSignal.timeout(3500) }
       );
+      sawAnyResponse = true;
       if (qRes.ok) {
         const items = await qRes.json();
         if (Array.isArray(items) && items.length > 0) {
@@ -663,6 +679,12 @@ export class LyricsService {
       }
     } catch {
       // Fallback tetap menampilkan info kartu
+    }
+
+    // Semua permintaan gagal tanpa satu pun respons: layanan tidak terjangkau.
+    // Lemparkan agar pemanggil membedakannya dari "lirik tidak tersedia".
+    if (!sawAnyResponse) {
+      throw new Error('Layanan lirik tidak dapat dijangkau');
     }
 
     return null;
@@ -751,12 +773,19 @@ export class LyricsService {
     }
 
     if (cached) {
+      this.lyricsLoadState.set(versionKey, { status: 'ready', attempts: 0, nextRetryAt: 0 });
       this.activeLyrics = this.normalizeLyricsData(cached);
       this.syncPosition(this.currentPositionSecs, this.currentIsPlaying);
       return;
     }
 
-    if (isNewTrack) {
+    // Unduh lirik: untuk lagu baru, atau percobaan ulang setelah kegagalan
+    // jaringan (dengan penundaan bertahap). Status "not_found" tidak diulang
+    // otomatis karena lirik memang tidak tersedia untuk rekaman ini.
+    const loadState = this.lyricsLoadState.get(versionKey);
+    const shouldRetryLoad = loadState?.status === 'error' && Date.now() >= loadState.nextRetryAt;
+
+    if (isNewTrack || shouldRetryLoad) {
       // Tampilkan informasi awal sebelum lirik selesai diunduh
       this.notify({
         line1: artist ? `Artis · ${artist}` : 'Sesi Media Sistem',
@@ -769,13 +798,20 @@ export class LyricsService {
         const parsed = await this.fetchVersionMatchedLyrics(title, artist, album, durationSecs);
         if (parsed) {
           this.cache.set(versionKey, parsed);
+          this.lyricsLoadState.set(versionKey, { status: 'ready', attempts: 0, nextRetryAt: 0 });
           if (this.currentKey === versionKey) {
             this.activeLyrics = parsed;
             this.syncPosition(this.currentPositionSecs, this.currentIsPlaying);
           }
+          return;
         }
+        // Layanan menjawab tetapi tidak ada lirik untuk rekaman ini
+        this.lyricsLoadState.set(versionKey, { status: 'not_found', attempts: 0, nextRetryAt: 0 });
       } catch (_err) {
-        // Fallback tetap menampilkan info kartu yang sudah ada
+        // Kegagalan jaringan/layanan: jadwalkan percobaan ulang bertahap
+        const attempts = (loadState?.attempts || 0) + 1;
+        const backoffMs = Math.min(60000, this.lyricsRetryBaseMs * Math.pow(2, attempts - 1));
+        this.lyricsLoadState.set(versionKey, { status: 'error', attempts, nextRetryAt: Date.now() + backoffMs });
       }
     } else {
       this.syncPosition(this.currentPositionSecs, this.currentIsPlaying);
@@ -1000,6 +1036,7 @@ export class LyricsService {
     this.stopRolling();
     this.cache.clear();
     this.artCache.clear();
+    this.lyricsLoadState.clear();
     this.currentKey = '';
     this.previousKey = '';
     this.previousActiveIdx = -999;

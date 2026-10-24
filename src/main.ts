@@ -42,7 +42,7 @@ let audio: AmbientSynth;
 let mediaBridge: SystemMediaBridge | null = null;
 let isAudioPlaying: boolean = false;
 let isSystemMediaActive: boolean = false;
-let isAlwaysOnTopActive: boolean = true;
+let isAlwaysOnTopActive: boolean = appState.config.alwaysOnTop ?? true;
 let isSettingsModalOpen: boolean = false;
 let lastKnownDate: string = getTodayDateString();
 let hasNotifiedHydrationDue: boolean = false;
@@ -107,6 +107,21 @@ if (typeof window !== 'undefined') {
     },
   });
 
+  // 4b. Pulihkan sesi timer yang belum selesai dari snapshot (aplikasi ditutup,
+  // crash, atau komputer direstart). Kebijakan waktu konsisten dengan kebijakan
+  // tidur: fase berjalan dilanjutkan dari deadline tersimpan.
+  const savedTimerSession = appState.timerSession ?? null;
+  if (savedTimerSession) {
+    const restored = engine.restoreFromSnapshot(savedTimerSession);
+    if (restored) {
+      console.info('Sesi timer dipulihkan dari snapshot tersimpan.');
+    } else {
+      console.info('Snapshot timer diabaikan karena tidak cocok dengan pengaturan saat ini.');
+    }
+    appState.timerSession = engine.getSnapshot();
+    saveAppState(appState);
+  }
+
   // 5. Hubungkan Pengendali UI & Navigasi
   bindTabs();
   bindTimerControls();
@@ -119,6 +134,10 @@ if (typeof window !== 'undefined') {
 
   // Sinkronisasi status awal UI
   syncUI();
+
+  // Simpan snapshot timer saat tab/jendela ditutup agar sesi tidak hilang
+  window.addEventListener('pagehide', () => persistTimerSnapshot());
+  window.addEventListener('beforeunload', () => persistTimerSnapshot());
 
   // Dukungan parameter URL untuk pengujian langsung
   const urlParams = new URLSearchParams(window.location.search);
@@ -154,9 +173,10 @@ async function initTauriEnvironment() {
   document.documentElement.classList.add('is-tauri-native');
 
   // Posisikan window awal tepat di atas tengah monitor tanpa celah dan pastikan selalu di atas
+  // sesuai preferensi pin yang tersimpan (bukan selalu true)
   try {
     const { invoke } = await import('@tauri-apps/api/core');
-    await invoke('set_always_on_top', { alwaysOnTop: true });
+    await invoke('set_always_on_top', { alwaysOnTop: isAlwaysOnTopActive });
     await invoke('position_island_top_center', { yOffset: 0.0 });
   } catch (_e) {
     // Fallback jika pemanggilan command gagal
@@ -752,6 +772,14 @@ function handlePlanComplete(_plan: PomodoroPlan) {
 
 let previousTimerStatus: TimerStatus = 'idle';
 
+// Snapshot timer disimpan pada setiap transisi status penting agar sesi yang
+// belum selesai dapat dipulihkan setelah aplikasi ditutup / crash / restart.
+function persistTimerSnapshot() {
+  if (!engine) return;
+  appState.timerSession = engine.getSnapshot();
+  saveAppState(appState);
+}
+
 function handleStatusChange(status: TimerStatus) {
   const btnToggle = document.querySelector<HTMLButtonElement>('#btn-toggle-timer');
   if (!btnToggle) return;
@@ -800,6 +828,7 @@ function handleStatusChange(status: TimerStatus) {
   }
 
   previousTimerStatus = status;
+  persistTimerSnapshot();
 }
 
 // ============================================================================
@@ -1090,6 +1119,27 @@ function setEqualizerPlaying(playing: boolean) {
   }
 }
 
+/**
+ * Memvalidasi URL gambar eksternal sebelum dipakai pada elemen <img>.
+ * Hanya protokol aman yang diizinkan; selain itu dikembalikan null.
+ */
+function safeExternalImageUrl(url: string | null | undefined): string | null {
+  if (!url) return null;
+  const trimmed = url.trim();
+  if (/^https?:\/\//i.test(trimmed)) return trimmed;
+  if (/^blob:/i.test(trimmed)) return trimmed;
+  if (/^data:image\/(png|jpe?g|gif|webp);base64,/i.test(trimmed)) return trimmed;
+  return null;
+}
+
+const SPOTIFY_PILL_SVG = `
+  <div class="spotify-corner-pill" title="Diputar via Spotify (terverifikasi)">
+    <svg viewBox="0 0 48 48" fill="none">
+      <circle cx="24" cy="24" r="24" fill="#1ED760"/>
+      <path d="M16 19.5C21 17.8 28.5 18.3 33.2 21.2C34 21.7 34.2 22.7 33.7 23.4C33.2 24.1 32.2 24.3 31.5 23.9C27.5 21.4 20.8 21 16.5 22.3C15.7 22.5 14.8 22 14.6 21.2C14.3 20.4 14.8 19.6 16 19.5ZM16.5 24.5C20.8 23.2 27.5 23.7 31.9 26.3C32.5 26.7 32.8 27.6 32.3 28.2C31.9 28.8 31 29.1 30.4 28.6C26.7 26.4 20.8 26 17 27.1C16.2 27.3 15.4 26.9 15.2 26.1C15 25.3 15.6 24.7 16.5 24.5ZM17.2 29.5C20.8 28.4 26.5 28.9 30.3 31.2C30.8 31.5 31.1 32.3 30.7 32.8C30.3 33.3 29.5 33.6 29 33.2C25.8 31.2 20.8 30.8 17.7 31.7C17 31.9 16.3 31.5 16.1 30.9C15.9 30.2 16.5 29.7 17.2 29.5Z" fill="#121212"/>
+    </svg>
+  </div>`;
+
 function renderMusicAlbumArt(
   identity: MediaSourceIdentity | null,
   customArtUrl?: string | null,
@@ -1112,19 +1162,26 @@ function renderMusicAlbumArt(
     }
 
     const isVerifiedSpotify = identity?.isSpotifyVerified ?? false;
+    const safeUrl = safeExternalImageUrl(customArtUrl);
+    if (!safeUrl) {
+      // Sumber tidak aman/tidak dikenal: tampilkan placeholder, jangan sisipkan URL
+      renderMusicAlbumArt(identity, null, 'none');
+      return;
+    }
+
     artContainer.className = 'album-art-pine custom-cover-active';
     artContainer.title = coverTitle;
-    artContainer.innerHTML = `
-      <img src="${customArtUrl}" class="real-album-cover" alt="Album Art" />
-      ${isVerifiedSpotify ? `
-        <div class="spotify-corner-pill" title="Diputar via Spotify (terverifikasi)">
-          <svg viewBox="0 0 48 48" fill="none">
-            <circle cx="24" cy="24" r="24" fill="#1ED760"/>
-            <path d="M16 19.5C21 17.8 28.5 18.3 33.2 21.2C34 21.7 34.2 22.7 33.7 23.4C33.2 24.1 32.2 24.3 31.5 23.9C27.5 21.4 20.8 21 16.5 22.3C15.7 22.5 14.8 22 14.6 21.2C14.3 20.4 14.8 19.6 16 19.5ZM16.5 24.5C20.8 23.2 27.5 23.7 31.9 26.3C32.5 26.7 32.8 27.6 32.3 28.2C31.9 28.8 31 29.1 30.4 28.6C26.7 26.4 20.8 26 17 27.1C16.2 27.3 15.4 26.9 15.2 26.1C15 25.3 15.6 24.7 16.5 24.5ZM17.2 29.5C20.8 28.4 26.5 28.9 30.3 31.2C30.8 31.5 31.1 32.3 30.7 32.8C30.3 33.3 29.5 33.6 29 33.2C25.8 31.2 20.8 30.8 17.7 31.7C17 31.9 16.3 31.5 16.1 30.9C15.9 30.2 16.5 29.7 17.2 29.5Z" fill="#121212"/>
-          </svg>
-        </div>
-      ` : ''}
-    `;
+    // Bangun elemen lewat DOM API (bukan interpolasi HTML) agar data dari
+    // layanan eksternal tidak pernah diparse sebagai markup
+    artContainer.replaceChildren();
+    const img = document.createElement('img');
+    img.className = 'real-album-cover';
+    img.alt = 'Album Art';
+    img.src = safeUrl;
+    artContainer.appendChild(img);
+    if (isVerifiedSpotify) {
+      artContainer.insertAdjacentHTML('beforeend', SPOTIFY_PILL_SVG);
+    }
     return;
   }
 
@@ -1737,6 +1794,12 @@ function bindWindowAndNotchControls() {
   // Tombol Pin Always on Top
   const btnPin = document.querySelector<HTMLButtonElement>('#btn-pin-always-on-top');
   if (btnPin) {
+    // Tegaskan tampilan awal sesuai preferensi tersimpan
+    btnPin.classList.toggle('active', isAlwaysOnTopActive);
+    btnPin.title = isAlwaysOnTopActive
+      ? 'Selalu di Atas (Always on Top): Aktif'
+      : 'Selalu di Atas (Always on Top): Nonaktif';
+
     btnPin.addEventListener('click', async (e) => {
       e.stopPropagation();
       isAlwaysOnTopActive = !isAlwaysOnTopActive;
@@ -1744,6 +1807,9 @@ function bindWindowAndNotchControls() {
       btnPin.title = isAlwaysOnTopActive
         ? 'Selalu di Atas (Always on Top): Aktif'
         : 'Selalu di Atas (Always on Top): Nonaktif';
+      // Simpan preferensi pin agar dipakai lagi saat aplikasi dibuka
+      appState.config.alwaysOnTop = isAlwaysOnTopActive;
+      saveAppState(appState);
       if (isTauri()) {
         try {
           const { invoke } = await import('@tauri-apps/api/core');
@@ -1844,18 +1910,61 @@ function bindSettingsModal() {
   const btnCloseSettings = document.querySelector('#btn-close-settings');
   const btnSaveSettings = document.querySelector('#btn-save-settings');
 
+  // Fokus terakhir sebelum modal dibuka agar dapat dikembalikan ke pemicu
+  let lastFocusedTrigger: HTMLElement | null = null;
+
+  const getModalFocusables = (): HTMLElement[] => {
+    if (!modalEl) return [];
+    return Array.from(
+      modalEl.querySelectorAll<HTMLElement>(
+        'button, input, select, textarea, [tabindex]:not([tabindex="-1"])'
+      )
+    ).filter((el) => !el.hasAttribute('disabled') && el.offsetParent !== null);
+  };
+
+  const handleModalKeydown = (e: KeyboardEvent) => {
+    if (e.key === 'Escape') {
+      e.preventDefault();
+      closeModal();
+      return;
+    }
+    if (e.key !== 'Tab') return;
+    // Pembatasan pergerakan Tab di dalam modal (focus trap)
+    const focusables = getModalFocusables();
+    if (focusables.length === 0) return;
+    const first = focusables[0];
+    const last = focusables[focusables.length - 1];
+    const active = document.activeElement as HTMLElement | null;
+    const isInside = active !== null && modalEl?.contains(active);
+    if (e.shiftKey && (active === first || !isInside)) {
+      e.preventDefault();
+      last.focus();
+    } else if (!e.shiftKey && (active === last || !isInside)) {
+      e.preventDefault();
+      first.focus();
+    }
+  };
+
   const openModal = () => {
     isSettingsModalOpen = true;
+    lastFocusedTrigger = document.activeElement as HTMLElement | null;
     updateSettingsFormInputs();
     updateModalPlanPreview();
     modalEl?.classList.add('active');
     syncTauriWindowState(currentIslandState, true);
+    document.addEventListener('keydown', handleModalKeydown);
+    // Fokus awal ke elemen interaktif pertama di dalam modal
+    getModalFocusables()[0]?.focus();
   };
 
   const closeModal = () => {
     isSettingsModalOpen = false;
     modalEl?.classList.remove('active');
     syncTauriWindowState(currentIslandState, false);
+    document.removeEventListener('keydown', handleModalKeydown);
+    // Kembalikan fokus ke elemen pemicu pembukaan modal
+    lastFocusedTrigger?.focus?.();
+    lastFocusedTrigger = null;
   };
 
   btnSessionPill?.addEventListener('click', openModal);
@@ -1897,7 +2006,7 @@ function bindSettingsModal() {
   });
 
   btnSaveSettings?.addEventListener('click', () => {
-    saveSettingsFromModal(closeModal);
+    void saveSettingsFromModal(closeModal);
   });
 }
 
@@ -2035,7 +2144,7 @@ function updateModalPlanPreview() {
   }
 }
 
-function saveSettingsFromModal(onSuccess: () => void) {
+async function saveSettingsFromModal(onSuccess: () => void) {
   const h = parseInt((document.querySelector<HTMLInputElement>('#setting-total-hours')?.value || '4'), 10) || 0;
   const m = parseInt((document.querySelector<HTMLInputElement>('#setting-total-mins')?.value || '0'), 10) || 0;
   const focus = parseInt((document.querySelector<HTMLInputElement>('#setting-focus-mins')?.value || '30'), 10) || 30;
@@ -2081,7 +2190,8 @@ function saveSettingsFromModal(onSuccess: () => void) {
     autostartNextFocus: autoFocus,
     soundEnabled,
     volume: appState.config.volume ?? 0.5,
-    alwaysOnTop: true,
+    // Preferensi pin mengikuti status tombol pin aktif, bukan selalu true
+    alwaysOnTop: isAlwaysOnTopActive,
     targetDailySessions: tempPlan.focusSessionCount,
     dailyWaterTargetMl: waterTarget,
     hydrationReminderIntervalMin: waterInterval,
@@ -2106,10 +2216,20 @@ function saveSettingsFromModal(onSuccess: () => void) {
     hasNotifiedHydrationDue = false;
   }
 
-  // Terapkan autostart sistem hanya setelah validasi dan konfirmasi berhasil disetujui
-  setAutostartEnabled(autoApp).catch((err) => {
-    console.warn('Gagal memperbarui status autostart aplikasi:', err);
-  });
+  // Terapkan autostart sistem dan TUNGU hasil operasi native.
+  // Kegagalan dilaporkan ke pengguna alih-alih dianggap berhasil diam-diam.
+  if (isTauri()) {
+    try {
+      const autostartOk = await setAutostartEnabled(autoApp);
+      if (!autostartOk) {
+        alert(
+          'Pengaturan tersimpan, tetapi gagal mengatur startup otomatis pada sistem operasi. Coba buka aplikasi sebagai administrator atau atur manual dari Task Manager.'
+        );
+      }
+    } catch (_err) {
+      alert('Pengaturan tersimpan, tetapi terjadi kesalahan saat mengatur startup otomatis.');
+    }
+  }
 
   appState.config = newConfig;
   if (chosenSeasonMode === 'manual') {

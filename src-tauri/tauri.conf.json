@@ -29,7 +29,7 @@
       }
     ],
     "security": {
-      "csp": null
+      "csp": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self' data:; img-src 'self' blob: data: https:; connect-src 'self' ipc: http://ipc.localhost https://api.deezer.com https://itunes.apple.com https://lrclib.net"
     }
   },
   "bundle": {

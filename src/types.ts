@@ -79,4 +79,19 @@ export interface StoredAppState {
   waterMl: number;
   lastActiveDate: string; // YYYY-MM-DD
   nextHydrationReminderTimestamp: number;
+  // Snapshot timer aktif agar sesi tidak hilang saat aplikasi ditutup/crash
+  timerSession?: TimerSnapshot | null;
+}
+
+// Snapshot status timer pada transisi penting untuk pemulihan saat startup
+export interface TimerSnapshot {
+  phaseIndex: number;
+  status: 'running' | 'paused';
+  phaseRemainingSeconds: number;
+  targetEndTime: number | null;
+  savedAt: number;
+  // Penjagaan: snapshot hanya dipulihkan bila rencana masih cocok
+  totalDurationMin: number;
+  focusDurationMin: number;
+  breakDurationMin: number;
 }

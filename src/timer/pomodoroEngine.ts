@@ -3,6 +3,7 @@ import {
   PomodoroPlan,
   PomodoroConfig,
   TimerStatus,
+  TimerSnapshot,
 } from '../types';
 import { buildPomodoroPlan, DEFAULT_POMODORO_CONFIG } from './pomodoroPlan';
 
@@ -111,15 +112,17 @@ export class PomodoroEngine {
 
     this.stopInterval();
     if (this.targetEndTime !== null) {
+      const missedDeadline = this.targetEndTime;
       const now = Date.now();
       const remaining = Math.max(
         0,
-        Math.ceil((this.targetEndTime - now) / 1000)
+        Math.ceil((missedDeadline - now) / 1000)
       );
       this.targetEndTime = null;
 
       if (remaining <= 0) {
-        this.handlePhaseEnd();
+        // Jeda terjadi tepat saat batas waktu: fase diselesaikan dari deadline lama
+        this.handlePhaseEnd(missedDeadline);
         return;
       }
 
@@ -149,6 +152,10 @@ export class PomodoroEngine {
   }
 
   public skipCurrentPhase() {
+    // Penjagaan status: rencana yang sudah selesai tidak boleh
+    // memicu penyelesaian berulang
+    if (this.status === 'completed') return;
+
     this.stopInterval();
     const completedPhase = this.getCurrentPhase();
     if (!completedPhase) return;
@@ -206,11 +213,20 @@ export class PomodoroEngine {
     }
 
     if (remaining <= 0) {
-      this.handlePhaseEnd();
+      // Deadline lama diteruskan agar fase yang terlewat (mis. laptop tidur)
+      // diproses sesuai waktu sebenarnya, bukan diulang dari sekarang
+      this.handlePhaseEnd(this.targetEndTime);
     }
   }
 
-  private handlePhaseEnd() {
+  /**
+   * Kebijakan waktu saat fase berakhir terlambat (laptop tidur / proses tertahan):
+   * waktu tetap dihitung. Fase berikutnya dijadwalkan dari deadline fase
+   * sebelumnya, dan fase yang sudah terlewat penuh diselesaikan berantai dengan
+   * event yang benar. Bila fase berikutnya tidak di-autostart, mesin menunggu
+   * aksi pengguna (waiting_next) dan waktu yang terlewat tidak dihitung.
+   */
+  private handlePhaseEnd(previousDeadline: number | null = null) {
     this.stopInterval();
     this.phaseRemainingSeconds = 0;
     this.targetEndTime = null;
@@ -238,8 +254,25 @@ export class PomodoroEngine {
       }
 
       if (shouldAutostart) {
+        const scheduledStart = previousDeadline !== null ? previousDeadline : Date.now();
+        const elapsedMs = Math.max(0, Date.now() - scheduledStart);
+
+        if (elapsedMs >= this.phaseTotalSeconds * 1000) {
+          // Fase berikutnya juga sudah terlewat penuh: selesaikan berantai
+          this.status = 'running';
+          this.targetEndTime = scheduledStart + this.phaseTotalSeconds * 1000;
+          this.handlePhaseEnd(this.targetEndTime);
+          return;
+        }
+
         this.status = 'running';
-        this.targetEndTime = Date.now() + this.phaseRemainingSeconds * 1000;
+        this.targetEndTime = scheduledStart + this.phaseRemainingSeconds * 1000;
+        // Sisa waktu dihitung ulang dari deadline (bukan dari durasi penuh fase)
+        // agar keterlambatan sejak deadline terhitung pada tampilan
+        this.phaseRemainingSeconds = Math.max(
+          0,
+          Math.ceil((this.targetEndTime - Date.now()) / 1000)
+        );
         this.notifyStatusChange();
         this.notifyTick();
         this.startInterval();
@@ -330,6 +363,99 @@ export class PomodoroEngine {
       0,
       Math.min(1, 1 - this.phaseRemainingSeconds / this.phaseTotalSeconds)
     );
+  }
+
+  // ==========================================================================
+  // SNAPSHOT UNTUK PEMULIHAN SESI (aplikasi ditutup / crash / restart komputer)
+  // ==========================================================================
+  public getSnapshot(): TimerSnapshot | null {
+    if (this.status !== 'running' && this.status !== 'paused') return null;
+    if (this.phaseRemainingSeconds <= 0) return null;
+
+    const remaining =
+      this.status === 'running' && this.targetEndTime !== null
+        ? Math.max(0, Math.ceil((this.targetEndTime - Date.now()) / 1000))
+        : this.phaseRemainingSeconds;
+    if (remaining <= 0) return null;
+
+    return {
+      phaseIndex: this.currentPhaseIndex,
+      status: this.status,
+      phaseRemainingSeconds: remaining,
+      targetEndTime: this.targetEndTime,
+      savedAt: Date.now(),
+      totalDurationMin: this.config.totalDurationMin,
+      focusDurationMin: this.config.focusDurationMin,
+      breakDurationMin: this.config.breakDurationMin,
+    };
+  }
+
+  /**
+   * Memulihkan mesin dari snapshot. Kebijakan waktu konsisten dengan kebijakan
+   * tidur: fase berjalan dilanjutkan dari deadline tersimpan; bila deadline
+   * sudah terlewat, fase yang terlewat diselesaikan berantai.
+   * Mengembalikan false (tanpa mengubah state) bila snapshot tidak cocok
+   * dengan rencana aktif.
+   */
+  public restoreFromSnapshot(snapshot: TimerSnapshot): boolean {
+    if (!snapshot || typeof snapshot !== 'object') return false;
+    if (snapshot.status !== 'running' && snapshot.status !== 'paused') return false;
+    if (
+      !Number.isInteger(snapshot.phaseIndex) ||
+      snapshot.phaseIndex < 0 ||
+      snapshot.phaseIndex >= this.plan.phases.length
+    ) {
+      return false;
+    }
+    if (
+      snapshot.totalDurationMin !== this.config.totalDurationMin ||
+      snapshot.focusDurationMin !== this.config.focusDurationMin ||
+      snapshot.breakDurationMin !== this.config.breakDurationMin
+    ) {
+      return false;
+    }
+
+    const phase = this.plan.phases[snapshot.phaseIndex];
+    const maxRemaining = phase.durationMin * 60;
+    const storedRemaining =
+      typeof snapshot.phaseRemainingSeconds === 'number' && snapshot.phaseRemainingSeconds > 0
+        ? Math.min(Math.floor(snapshot.phaseRemainingSeconds), maxRemaining)
+        : 0;
+
+    this.stopInterval();
+    this.currentPhaseIndex = snapshot.phaseIndex;
+    this.phaseTotalSeconds = maxRemaining;
+    this.phaseRemainingSeconds = storedRemaining;
+
+    if (snapshot.status === 'paused' && storedRemaining > 0) {
+      this.status = 'paused';
+      this.targetEndTime = null;
+      this.notifyStatusChange();
+      this.notifyTick();
+      return true;
+    }
+
+    this.status = 'running';
+    // Kebijakan konsisten dengan tidur: deadline tersimpan dipercaya. Bila
+    // sudah terlewat saat aplikasi tertutup, fase yang terlewat diselesaikan
+    // berantai (waktu tetap dihitung selama aplikasi tidak berjalan).
+    this.targetEndTime =
+      snapshot.targetEndTime !== null && snapshot.targetEndTime > 0
+        ? snapshot.targetEndTime
+        : Date.now() + storedRemaining * 1000;
+
+    const remainingNow = Math.ceil((this.targetEndTime - Date.now()) / 1000);
+    if (remainingNow > 0) {
+      this.phaseRemainingSeconds = remainingNow;
+      this.notifyStatusChange();
+      this.notifyTick();
+      this.startInterval();
+      return true;
+    }
+
+    // Deadline sudah terlewat: proses fase yang terlewat secara berantai
+    this.handlePhaseEnd(this.targetEndTime);
+    return true;
   }
 
   public getTotalProgressFraction(): number {
