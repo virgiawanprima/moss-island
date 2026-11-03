@@ -1,14 +1,89 @@
-# Tauri + Vanilla TS
+# Moss Island
 
-This template should help get you started developing with Tauri in vanilla HTML, CSS and Typescript.
+Moss Island adalah aplikasi pendamping desktop untuk membantu menjaga ritme fokus, istirahat, dan minum air. Aplikasi tampil sebagai pulau kecil yang selalu terlihat di atas jendela lain, dengan Momo sebagai karakter pendamping. Sesi fokus, perkembangan pulau, musik, dan pengingat disatukan dalam antarmuka yang dapat dibuka penuh, diperkecil menjadi bilah, atau ditampilkan sebagai pet.
 
-## Recommended IDE Setup
+Proyek memakai **Tauri 2, Rust, TypeScript, HTML/CSS, dan Canvas 2D**. Integrasi media serta audio sistem saat ini berfokus pada **Windows**; dukungan desktop lain belum diverifikasi.
 
-- [VS Code](https://code.visualstudio.com/) + [Tauri](https://marketplace.visualstudio.com/items?itemName=tauri-apps.tauri-vscode) + [rust-analyzer](https://marketplace.visualstudio.com/items?itemName=rust-lang.rust-analyzer)
+## Tujuan proyek
+
+- Membantu pengguna membangun kebiasaan fokus melalui sesi Pomodoro dan jeda yang teratur.
+- Memberi umpan balik visual lewat pertumbuhan pohon, perubahan musim, dan aktivitas Momo.
+- Menyediakan kontrol musik dan pencatatan minum tanpa perlu meninggalkan pekerjaan terlalu lama.
+- Menjaga akses ke pendamping desktop dalam ukuran kecil, dengan pilihan posisi mengambang atau menempel di tepi layar.
+
+## Fitur utama
+
+| Area | Perilaku |
+| --- | --- |
+| Fokus dan pulau | Timer fokus/istirahat, progres sesi, pohon, musim, dan animasi Momo pada pulau. |
+| Hidrasi | Pencatatan jumlah air dan pengingat minum. |
+| Musik | Playlist audio lokal serta metadata, artwork, timeline, dan kontrol sesi media Windows sesuai kemampuan pemutar. |
+| Lirik | Pencarian melalui LRCLIB, lirik bertimestamp bila tersedia, dan koreksi waktu per rekaman. |
+| Mode desktop | Panel penuh, bilah minimize, dan pet utuh yang berjalan menghadap kiri/kanan serta perlahan menjauhi kursor. |
+| Posisi jendela | Dapat mengambang; snap ke tepi baru berlaku dalam ambang 10% area kerja layar. |
+| Akses cepat | Tray, shortcut `Ctrl+Shift+M` di Windows, pengaturan selalu di atas, dan dukungan autostart. |
+
+Bilah minimize dan mode pet adalah dua tampilan berbeda. Acuan visual Momo mengikuti aset Figma lokal; pose berjalan samping merupakan adaptasi untuk pet desktop.
+
+## Arsitektur
+
+Frontend berjalan di WebView Tauri. TypeScript mengatur interaksi, state aplikasi, timer, dan animasi; Rust menangani kemampuan native Windows. Keduanya bertukar data melalui command dan event Tauri.
+
+```mermaid
+flowchart TD
+    UI[HTML dan CSS] <--> Main[Orkestrasi TypeScript]
+    Main <--> Timer[Timer dan progres]
+    Main --> Canvas[Canvas pulau dan Momo]
+    Main <--> Storage[Penyimpanan lokal]
+    Main <--> Audio[Audio dan layanan lirik]
+    Main <--> IPC[Command dan event Tauri]
+    Audio <--> IPC
+    IPC <--> Rust[Backend Rust]
+    Rust <--> Windows[Jendela dan sesi media Windows]
+    Rust <--> LRCLIB[LRCLIB]
+    Audio --> Files[Rekaman audio lokal]
+```
+
+| Lapisan | Berkas utama | Tanggung jawab |
+| --- | --- | --- |
+| Antarmuka dan orkestrasi | `index.html`, `src/styles.css`, `src/main.ts` | Panel, interaksi, pergantian mode, dan koordinasi fitur. |
+| Fokus dan data | `src/timer/`, `src/storage.ts`, `src/settings.ts`, `src/types.ts` | Rencana Pomodoro, siklus timer, validasi, progres, dan penyimpanan state lokal. |
+| Dunia visual | `src/canvas/`, `src/assets/` | Render pulau, pohon, musim, cuaca visual, dan animasi karakter. |
+| Perilaku desktop | `src/desktopPet.ts`, `src/edgeDock.ts`, `src/hoverIntent.ts` | Gerak pet, ambang snap, dan perilaku hover. |
+| Musik dan lirik | `src/audio/` | Pemutaran lokal, sinkronisasi sesi media, artwork, clock, pencocokan dan tampilan lirik. |
+| Integrasi native | `src-tauri/src/lib.rs`, `media.rs`, `lyrics.rs`, `speaker_beat.rs`, `volume.rs` | Geometri jendela, tray/shortcut, media Windows, transport lirik, analisis ketukan audio sistem, dan volume. |
+| Verifikasi | `tests/test_suite.ts`, tes Rust, `.github/workflows/ci.yml` | Tes logika, pemeriksaan tipe/build, ESLint, dan Clippy. |
+
+Pada jalur musik Windows, frontend membaca sesi melalui backend Rust. Metadata, artwork, dan kontrol dijaga agar merujuk sesi yang sama; hasil permintaan lama tidak boleh menimpa rekaman yang baru aktif. Lirik berasal dari LRCLIB, bukan katalog lirik Spotify. Pada desktop, permintaan lirik melewati Rust; mode browser menggunakan transport web.
+
+State aplikasi disimpan secara lokal melalui `src/storage.ts`. Integrasi sesi media Windows, tray, shortcut global, dan pergerakan jendela membutuhkan runtime Tauri; preview browser hanya mencakup bagian web. Pengambilan lirik dan artwork dari layanan luar membutuhkan jaringan.
+
+## Menjalankan proyek
+
+Untuk pengembangan desktop Windows, siapkan Node.js **22**, Rust beserta toolchain MSVC, Microsoft C++ Build Tools, dan WebView2. CI menggunakan Rust **1.99.1**.
+
+```powershell
+npm ci
+npm run tauri dev
+```
+
+Untuk menjalankan frontend di browser:
+
+```powershell
+npm run dev
+```
+
+Untuk membuat paket desktop:
+
+```powershell
+npm run tauri build
+```
+
+Rekaman playlist tidak disertakan dalam repositori. Aplikasi tetap dapat dibangun tanpa rekaman; lihat bagian **Audio lokal** untuk menyiapkan pemutarannya.
 
 ## Pemeriksaan kualitas
 
-Workflow [CI](.github/workflows/ci.yml) berjalan pada push, pull request, atau pemicu manual di Windows.
+Workflow [CI](.github/workflows/ci.yml) berjalan pada push ke `main`, pull request, atau pemicu manual di Windows.
 
 | Pemeriksaan | Yang dijawab | Perintah lokal dari root |
 | --- | --- | --- |
