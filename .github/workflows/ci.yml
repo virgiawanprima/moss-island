@@ -19,6 +19,10 @@ jobs:
     timeout-minutes: 30
     env:
       CARGO_TERM_COLOR: always
+      RUSTUP_TOOLCHAIN: '1.99.1'
+      CARGO_INCREMENTAL: '0'
+      CARGO_PROFILE_DEV_DEBUG: '0'
+      CARGO_PROFILE_TEST_DEBUG: '0'
     defaults:
       run:
         shell: pwsh
@@ -49,6 +53,12 @@ jobs:
 
       - name: Install Rust toolchain
         run: rustup toolchain install 1.99.1 --profile minimal --component clippy
+
+      - name: Restore Rust dependency cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: 'src-tauri -> target'
+          save-if: ${{ github.ref == 'refs/heads/main' }}
 
       - name: Lint Rust with Clippy
         run: cargo +1.99.1 clippy --locked --all-targets --manifest-path src-tauri/Cargo.toml -- -D warnings

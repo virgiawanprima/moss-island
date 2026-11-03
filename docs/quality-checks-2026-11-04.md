@@ -9,3 +9,11 @@ Seluruh perubahan kode aplikasi serta aset ringan disiapkan untuk GitHub sesuai 
 Status GitHub Actions harus diperiksa setelah push; hasil lokal tidak membuktikan workflow remote sudah lulus.
 
 Snapshot Git tanpa audio juga lulus ESLint, 167/167 tes dan build. .gitattributes menetapkan LF agar tes pembacaan CSS konsisten pada checkout Windows; salinan awal dengan CRLF gagal diproses pada assertion CSS, kemudian pengujian ulang dengan LF berhasil.
+
+## Optimasi durasi CI 2026-11-04
+
+Run 41681268616 menunjukkan frontend test2 detik, ESLint7 detik, build4 detik, pemasangan Rust9 detik, Clippy142 detik dan cargo check6 detik; tes Rust masih berjalan saat observasi. Tambahkan Swatinem/rust-cache@v2 untuk workspace src-tauri -> target, sesudah pemilihan compiler melalui RUSTUP_TOOLCHAIN=1.99.1. Cache disimpan dari main; PR dapat memulihkan cache yang tersedia. Cache npm dan pembatalan run lama tetap aktif. Seluruh gate ESLint/Clippy/check/test/build dipertahankan.
+
+Profil dev/test CI tidak membuat simbol debug (DEBUG=0) dan incremental dimatikan untuk runner sementara. Ini tidak mengubah profil build lokal atau release. Cache dependensi mengikuti compiler dan manifest/lockfile; perubahan dependensi dapat memerlukan kompilasi ulang. Acuan: https://github.com/Swatinem/rust-cache .
+
+Validasi: YAML berhasil diurai, workspace cache/compiler dan seluruh perintah pemeriksaan dikonfirmasi; git diff --check lulus. Tidak mengulang tes aplikasi karena hanya konfigurasi workflow berubah. Penghematan waktu belum diukur; run pertama mengisi cache, manfaat perlu dibandingkan pada run berikutnya.
