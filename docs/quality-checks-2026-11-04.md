@@ -17,3 +17,5 @@ Run 41681268616 menunjukkan frontend test2 detik, ESLint7 detik, build4 detik, p
 Profil dev/test CI tidak membuat simbol debug (DEBUG=0) dan incremental dimatikan untuk runner sementara. Ini tidak mengubah profil build lokal atau release. Cache dependensi mengikuti compiler dan manifest/lockfile; perubahan dependensi dapat memerlukan kompilasi ulang. Acuan: https://github.com/Swatinem/rust-cache .
 
 Validasi: YAML berhasil diurai, workspace cache/compiler dan seluruh perintah pemeriksaan dikonfirmasi; git diff --check lulus. Tidak mengulang tes aplikasi karena hanya konfigurasi workflow berubah. Penghematan waktu belum diukur; run pertama mengisi cache, manfaat perlu dibandingkan pada run berikutnya.
+
+Tambahan: push otomatis dibatasi ke main; pull_request dan workflow_dispatch tetap aktif untuk mencegah duplikasi push+PR pada branch fitur. fetch-depth:1 ditulis eksplisit (sudah merupakan default checkout). Validasi parsing YAML dan pemicu lulus. Filter path dan matrix tambahan tidak diterapkan; seluruh pemeriksaan Windows tetap satu job.
