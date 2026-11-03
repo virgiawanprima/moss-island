@@ -5,6 +5,7 @@ export type ActiveTab = 'focus' | 'hydration' | 'music' | 'settings';
 export type PhaseType = 'focus' | 'break';
 
 export interface PlanPhase {
+  breakKind?: 'short' | 'long';
   id: number;
   type: PhaseType;
   durationMin: number;
@@ -28,6 +29,9 @@ export type IslandSeason = 'spring' | 'summer' | 'autumn' | 'winter';
 export type SeasonMode = 'cycle' | 'manual';
 
 export interface PomodoroConfig {
+  momoIntensity?: 'calm' | 'expressive';
+  hoverEnabled?: boolean;
+  focusTargetMin?: number;
   totalDurationMin: number;
   focusDurationMin: number;
   breakDurationMin: number;
@@ -54,11 +58,14 @@ export interface PomodoroSettings {
   targetDailySessions: number;
 }
 
+export const TREE_SPECIES = ['banana', 'mango', 'durian', 'palm', 'guava'] as const;
+export type TreeSpecies = typeof TREE_SPECIES[number];
+
 export interface PlantedTree {
   id: string;
   gridR: number;
   gridC: number;
-  treeType: 'pine' | 'oak';
+  treeType: TreeSpecies;
   plantedAtTimestamp: number;
 }
 
@@ -85,8 +92,10 @@ export interface StoredAppState {
 
 // Snapshot status timer pada transisi penting untuk pemulihan saat startup
 export interface TimerSnapshot {
+  focusTargetMin?: number;
+  scheduleVersion?: number;
   phaseIndex: number;
-  status: 'running' | 'paused';
+  status: 'running' | 'paused' | 'waiting_next';
   phaseRemainingSeconds: number;
   targetEndTime: number | null;
   savedAt: number;

@@ -3,6 +3,7 @@ export interface SystemMediaTrack {
   artist: string;
   album: string;
   is_playing: boolean;
+  playback_status?: 'playing' | 'paused' | 'stopped' | 'changing' | 'opened' | 'closed' | 'unknown';
   source_app: string;
   source_display_name: string;
   service_kind: string;
@@ -13,6 +14,9 @@ export interface SystemMediaTrack {
   has_thumbnail: boolean;
   position_secs: number;
   duration_secs: number;
+  playback_rate?: number;
+  repeat_mode?: 'off' | 'one' | 'all' | null;
+  capabilities?: { toggle: boolean; next: boolean; previous: boolean; seek: boolean; repeat: boolean };
 }
 
 /** Artwork dari sesi media aktif (bukan hasil pencarian). */
@@ -31,12 +35,13 @@ export class SystemMediaBridge {
   private timer: number | null = null;
   private currentTrack: SystemMediaTrack | null = null;
   private wasPlaying: boolean = false;
-  private lastTitle: string = '';
   private listeners: MediaUpdateCallback[] = [];
   private songFinishedListeners: SongFinishedCallback[] = [];
   private isPollingInProgress: boolean = false;
+  private refreshAfterPoll = false;
   private pollSequence: number = 0;
   private latestAppliedSequence: number = 0;
+  private selectedSession: string | null = null;
   public readonly isTauriAvailable: boolean = false;
 
   constructor() {
@@ -80,38 +85,40 @@ export class SystemMediaBridge {
     }
     this.isPollingInProgress = true;
     const currentSeq = ++this.pollSequence;
+    const selectedSession = this.selectedSession;
 
     try {
+      if (selectedSession === 'local') {
+        this.currentTrack = null;
+        this.wasPlaying = false;
+        this.notify(null);
+        return null;
+      }
       const { invoke } = await import('@tauri-apps/api/core');
-      const data = await invoke<SystemMediaTrack>('get_system_media_track');
+      const data = await invoke<SystemMediaTrack>('get_system_media_track', { sessionKey: selectedSession });
 
       // Mencegah respons lama yang tertunda menimpa status lagu yang lebih baru
-      if (currentSeq < this.latestAppliedSequence) {
+      if (currentSeq < this.latestAppliedSequence || selectedSession !== this.selectedSession) {
         return this.currentTrack;
       }
       this.latestAppliedSequence = currentSeq;
 
       if (data && data.has_session && data.title && data.title.trim().length > 0) {
-        // Deteksi akhir lagu harus dibedakan dari jeda manual:
-        // playing -> paused HANYA dianggap lagu selesai bila posisi berada
-        // di ujung durasi. Jeda di tengah lagu tidak memicu event selesai.
-        if (this.wasPlaying && !data.is_playing && data.title === this.lastTitle) {
+        // Stopped pada rekaman yang sama dan posisi akhir, bukan pause atau sesi yang hilang.
+        if (this.wasPlaying && !data.is_playing && data.playback_status === 'stopped'
+          && data.session_key === this.currentTrack?.session_key && data.record_key === this.currentTrack?.record_key) {
           const isNearEnd =
-            data.duration_secs > 0 && data.position_secs >= data.duration_secs - 1.5;
+            data.duration_secs > 0 && data.position_secs >= data.duration_secs - 0.5;
           if (isNearEnd) {
             this.notifySongFinished();
           }
         }
 
         this.wasPlaying = data.is_playing;
-        this.lastTitle = data.title;
         this.currentTrack = data;
         this.notify(data);
         return data;
       } else {
-        if (this.wasPlaying) {
-          this.notifySongFinished();
-        }
         this.wasPlaying = false;
         if (this.currentTrack !== null) {
           this.currentTrack = null;
@@ -122,9 +129,6 @@ export class SystemMediaBridge {
     } catch {
       if (currentSeq >= this.latestAppliedSequence) {
         this.latestAppliedSequence = currentSeq;
-        if (this.wasPlaying) {
-          this.notifySongFinished();
-        }
         this.wasPlaying = false;
         if (this.currentTrack !== null) {
           this.currentTrack = null;
@@ -134,7 +138,48 @@ export class SystemMediaBridge {
       return null;
     } finally {
       this.isPollingInProgress = false;
+      if (this.refreshAfterPoll) {
+        this.refreshAfterPoll = false;
+        void this.pollNow();
+      }
     }
+  }
+
+  public async selectSession(sessionKey: string | null): Promise<SystemMediaTrack | null> {
+    this.selectedSession = sessionKey;
+    this.latestAppliedSequence = ++this.pollSequence;
+    this.currentTrack = null;
+    this.wasPlaying = false;
+    this.notify(null);
+    if (this.isPollingInProgress) {
+      this.refreshAfterPoll = true;
+      return null;
+    }
+    return this.pollNow();
+  }
+
+  public getSelectedSession(): string | null { return this.selectedSession; }
+
+  public async listSessions(): Promise<SystemMediaTrack[]> {
+    if (!this.isTauriAvailable) return [];
+    try {
+      const { invoke } = await import('@tauri-apps/api/core');
+      return await invoke<SystemMediaTrack[]>('get_system_media_sessions') || [];
+    } catch (error) {
+      console.warn('Gagal membaca daftar sesi media:', error);
+      return [];
+    }
+  }
+
+  public async setRepeat(mode: 'off' | 'one' | 'all'): Promise<boolean> {
+    const sessionKey = this.currentTrack?.session_key;
+    if (!sessionKey || !this.currentTrack?.capabilities?.repeat) return false;
+    try {
+      const { invoke } = await import('@tauri-apps/api/core');
+      const success = await invoke<boolean>('system_media_repeat', { sessionKey, mode });
+      await this.pollNow();
+      return success;
+    } catch { return false; }
   }
 
   private notifySongFinished(): void {
@@ -148,12 +193,14 @@ export class SystemMediaBridge {
   }
 
   public async togglePlay(): Promise<boolean> {
+    const sessionKey = this.currentTrack?.session_key;
+    if (!sessionKey?.trim()) return false;
     try {
       const { invoke } = await import('@tauri-apps/api/core');
       // Kontrol terikat pada sesi yang sedang ditampilkan agar tidak mengendalikan
       // sesi lain ketika sesi baru muncul sebelum klik diterima
       const res = await invoke<boolean>('system_media_toggle_play', {
-        sessionKey: this.currentTrack?.session_key || null,
+        sessionKey,
       });
       setTimeout(() => this.pollNow(), 150);
       return res;
@@ -163,10 +210,12 @@ export class SystemMediaBridge {
   }
 
   public async nextTrack(): Promise<boolean> {
+    const sessionKey = this.currentTrack?.session_key;
+    if (!sessionKey?.trim()) return false;
     try {
       const { invoke } = await import('@tauri-apps/api/core');
       const res = await invoke<boolean>('system_media_next', {
-        sessionKey: this.currentTrack?.session_key || null,
+        sessionKey,
       });
       setTimeout(() => this.pollNow(), 300);
       return res;
@@ -176,10 +225,12 @@ export class SystemMediaBridge {
   }
 
   public async prevTrack(): Promise<boolean> {
+    const sessionKey = this.currentTrack?.session_key;
+    if (!sessionKey?.trim()) return false;
     try {
       const { invoke } = await import('@tauri-apps/api/core');
       const res = await invoke<boolean>('system_media_prev', {
-        sessionKey: this.currentTrack?.session_key || null,
+        sessionKey,
       });
       setTimeout(() => this.pollNow(), 300);
       return res;
@@ -189,16 +240,24 @@ export class SystemMediaBridge {
   }
 
   public async seekTo(positionSecs: number): Promise<boolean> {
+    const track = this.currentTrack;
+    const sessionKey = track?.session_key;
+    const recordKey = track?.record_key;
+    if (!sessionKey?.trim() || !recordKey?.trim()) return false;
+    const selectedSession = this.selectedSession;
+    const sequenceAtStart = this.pollSequence;
     try {
       const { invoke } = await import('@tauri-apps/api/core');
       const res = await invoke<boolean>('system_media_seek', {
         positionSecs,
-        sessionKey: this.currentTrack?.session_key || null,
-        recordKey: this.currentTrack?.record_key || null,
+        sessionKey,
+        recordKey,
       });
       if (res) {
+        if (this.selectedSession !== selectedSession || this.currentTrack?.session_key !== sessionKey
+          || this.currentTrack?.record_key !== recordKey) return false;
         // Naikkan urutan aktif agar respons polling lama yang sedang berjalan tidak menimpa hasil seek
-        this.latestAppliedSequence = ++this.pollSequence;
+        if (this.pollSequence === sequenceAtStart) this.latestAppliedSequence = ++this.pollSequence;
         setTimeout(() => this.pollNow(), 300);
       }
       return res;
@@ -209,8 +268,8 @@ export class SystemMediaBridge {
 
   /**
    * Mengambil artwork dari sesi media yang sama dengan sumber judul, artis,
-   * album, posisi, dan status pemutaran. Dipanggil hanya saat identitas
-   * rekaman berubah (bukan setiap polling posisi).
+   * album, posisi, dan status pemutaran. Pemanggil mengatur retry bila
+   * thumbnail belum tersedia, tanpa mengunduh ulang sampul yang berhasil.
    * Mengembalikan null bila thumbnail tidak tersedia / gagal dibaca / format
    * tidak didukung, sehingga pemanggil bisa menampilkan placeholder.
    */
@@ -229,7 +288,8 @@ export class SystemMediaBridge {
         return null;
       }
       return art;
-    } catch {
+    } catch (error) {
+      console.warn('Gagal membaca sampul sesi media:', error);
       return null;
     }
   }

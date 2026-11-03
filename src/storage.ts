@@ -4,8 +4,10 @@ import {
   PlantedTree,
   StoredAppState,
   TimerSnapshot,
+  TREE_SPECIES,
+  TreeSpecies,
 } from './types';
-import { DEFAULT_POMODORO_CONFIG } from './timer/pomodoroPlan';
+import { DEFAULT_POMODORO_CONFIG, buildPomodoroPlan, buildFocusTargetPlan } from './timer/pomodoroPlan';
 export { DEFAULT_POMODORO_CONFIG };
 
 const STORAGE_KEY_APP_STATE = 'moss_island_state_v2';
@@ -135,10 +137,16 @@ export function sanitizePomodoroConfig(rawConfig: unknown): PomodoroConfig {
       ? raw.seasonMode
       : base.seasonMode;
 
+  const focusTargetMin = typeof raw.focusTargetMin === 'number' && Number.isInteger(raw.focusTargetMin) && raw.focusTargetMin >= 1 && raw.focusTargetMin <= 1440
+    ? raw.focusTargetMin : buildPomodoroPlan(total, focus, brk).totalFocusMin;
+  const fixedPlan = buildFocusTargetPlan(focusTargetMin);
   return {
-    totalDurationMin: total,
-    focusDurationMin: focus,
-    breakDurationMin: brk,
+    focusTargetMin,
+    hoverEnabled: typeof raw.hoverEnabled === 'boolean' ? raw.hoverEnabled : false,
+    momoIntensity: raw.momoIntensity === 'calm' ? 'calm' : 'expressive',
+    totalDurationMin: fixedPlan.totalDurationMin,
+    focusDurationMin: 25,
+    breakDurationMin: 5,
     autostartBreak,
     autostartNextFocus,
     soundEnabled,
@@ -168,7 +176,9 @@ function sanitizeTreeEntry(raw: unknown, index: number): PlantedTree | null {
     typeof t.gridC === 'number' && Number.isInteger(t.gridC) && t.gridC >= 0 && t.gridC <= 5
       ? t.gridC
       : null;
-  const treeType = t.treeType === 'oak' || t.treeType === 'pine' ? t.treeType : null;
+  const treeType = TREE_SPECIES.includes(t.treeType as TreeSpecies)
+    ? t.treeType as TreeSpecies
+    : t.treeType === 'oak' || t.treeType === 'pine' ? TREE_SPECIES[index % TREE_SPECIES.length] : null;
   const plantedAt =
     typeof t.plantedAtTimestamp === 'number' &&
     Number.isFinite(t.plantedAtTimestamp) &&
@@ -192,17 +202,29 @@ function sanitizeCounter(value: unknown, fallback: number, max: number): number 
 export function sanitizeTimerSnapshot(raw: unknown): TimerSnapshot | null {
   if (!raw || typeof raw !== 'object') return null;
   const snap = raw as Record<string, unknown>;
-  if (snap.status !== 'running' && snap.status !== 'paused') return null;
-  if (typeof snap.phaseIndex !== 'number' || !Number.isInteger(snap.phaseIndex) || snap.phaseIndex < 0 || snap.phaseIndex > 200) return null;
+  if (snap.scheduleVersion !== 3 && snap.scheduleVersion !== 2 && (snap.scheduleVersion !== undefined || (typeof snap.phaseIndex === 'number' && snap.phaseIndex >= 7))) return null;
+  if (snap.status !== 'running' && snap.status !== 'paused' && snap.status !== 'waiting_next') return null;
+  if (typeof snap.phaseIndex !== 'number' || !Number.isInteger(snap.phaseIndex) || snap.phaseIndex < 0) return null;
   if (typeof snap.phaseRemainingSeconds !== 'number' || !Number.isFinite(snap.phaseRemainingSeconds) || snap.phaseRemainingSeconds < 0 || snap.phaseRemainingSeconds > 86400) return null;
   if (snap.targetEndTime !== null && (typeof snap.targetEndTime !== 'number' || !Number.isFinite(snap.targetEndTime))) return null;
   if (typeof snap.savedAt !== 'number' || !Number.isFinite(snap.savedAt) || snap.savedAt <= 0) return null;
   const numsOk = ['totalDurationMin', 'focusDurationMin', 'breakDurationMin'].every((k) => {
     const v = snap[k];
-    return typeof v === 'number' && Number.isInteger(v) && v >= 1 && v <= 1440;
+    return typeof v === 'number' && Number.isInteger(v) && v >= 1 && v <= 2880;
   });
   if (!numsOk) return null;
+  try {
+    const plan = snap.scheduleVersion === 3 ? buildFocusTargetPlan(snap.focusTargetMin as number)
+      : buildPomodoroPlan(snap.totalDurationMin as number, snap.focusDurationMin as number, snap.breakDurationMin as number);
+    if (snap.scheduleVersion === 3 && (plan.totalDurationMin !== snap.totalDurationMin || snap.focusDurationMin !== 25 || snap.breakDurationMin !== 5)) return null;
+    if (snap.phaseIndex >= plan.phases.length) return null;
+    if (snap.status !== 'running' && snap.phaseRemainingSeconds <= 0) return null;
+  } catch {
+    return null;
+  }
   return {
+    scheduleVersion: snap.scheduleVersion as number | undefined,
+    focusTargetMin: snap.scheduleVersion === 3 ? snap.focusTargetMin as number : undefined,
     phaseIndex: snap.phaseIndex,
     status: snap.status,
     phaseRemainingSeconds: snap.phaseRemainingSeconds,
@@ -327,7 +349,7 @@ export function loadAppState(): StoredAppState {
   }
 }
 
-export function saveAppState(state: StoredAppState): void {
+export function saveAppState(state: StoredAppState): boolean {
   try {
     const updatedState: StoredAppState = {
       ...state,
@@ -335,7 +357,8 @@ export function saveAppState(state: StoredAppState): void {
       lastActiveDate: getTodayDateString(),
     };
     localStorage.setItem(STORAGE_KEY_APP_STATE, JSON.stringify(updatedState));
+    return true;
   } catch (_e) {
-    // Abaikan jika storage browser dibatasi
+    return false;
   }
 }

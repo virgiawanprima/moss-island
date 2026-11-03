@@ -1,0 +1,191 @@
+.music-momo-stage .dancing-momo {
+  appearance: none;
+  border: 0;
+  padding: 8px;
+  margin: -8px;
+  background: transparent;
+  border-radius: 8px;
+  cursor: pointer;
+  min-width: 44px;
+  min-height: 44px;
+  line-height: 0;
+  flex-shrink: 0;
+}
+.music-momo-stage .dancing-momo:focus-visible {
+  outline: 2px solid #c4f59b;
+  outline-offset: 2px;
+}
+.dancing-momo > svg { overflow: visible; }
+.momo-rig g { transform-box: fill-box; transform-origin: center bottom; }
+.momo-rig .momo-left-foot,
+.momo-rig .momo-right-foot { transform-origin: center top; }
+.momo-rig .momo-eyes { transform-origin: center; transition: transform 80ms steps(2); }
+.momo-smile, .momo-blush { opacity: 0; }
+[data-smile="true"] .momo-smile { opacity: 1; }
+[data-smile="true"] .momo-mouth { opacity: 0; }
+[data-pose="shy"] .momo-blush,
+[data-pose="stumble"][data-smile="true"] .momo-blush { opacity: 0.8; }
+[data-eyes="closed"] .momo-eyes { transform: scaleY(0.12); }
+[data-eyes="look"] .momo-eyes { transform: translateX(-2px); }
+[data-active="true"] .momo-body { animation: momo-breathe 4.8s ease-in-out infinite; }
+[data-active="true"] .momo-sprout { animation: momo-leaf-follow 4.8s 140ms ease-in-out infinite; }
+[data-beat-active="true"] .momo-body,
+[data-beat-active="true"] .momo-sprout { animation-play-state: paused; }
+[data-active="false"] .momo-rig *,
+[data-active="false"] ~ .pixel-music-note { animation-play-state: paused !important; }
+[data-pose="settle"] .momo-body { animation: none; }
+
+[data-pose="nod"] .momo-head { animation: momo-nod 1.05s ease-in-out 2; }
+[data-pose="nod"] .momo-sprout { animation: momo-leaf-follow 1.05s 100ms ease-in-out 2; }
+[data-pose="nod"] .momo-headphone-gear { animation: momo-cup-follow 1.05s 60ms ease-in-out 2; }
+[data-pose="sway"] .momo-body { animation: momo-sway 1.8s ease-in-out; }
+[data-pose="sway"] .momo-left-arm { animation: momo-arm-swing 1.8s 80ms ease-in-out; }
+[data-pose="sway"] .momo-right-arm { animation: momo-arm-swing 1.8s 140ms reverse ease-in-out; }
+[data-pose="tap"] .momo-left-foot { animation: momo-toe-tap 850ms ease-in-out 2; }
+[data-pose="tap"] .momo-right-foot { animation: momo-toe-tap 850ms 425ms ease-in-out 2; }
+[data-pose="step"] .momo-body { animation: momo-side-step 2s ease-in-out; }
+[data-pose="step"] .momo-left-foot { animation: momo-toe-tap 900ms ease-in-out 2; }
+[data-pose="step"] .momo-right-foot { animation: momo-toe-tap 900ms 450ms ease-in-out 2; }
+[data-pose="shoulder"] .momo-head { animation: momo-shoulder 900ms ease-in-out 2; }
+[data-pose="shoulder"] .momo-left-arm { animation: momo-arm-swing 900ms ease-in-out 2; }
+[data-pose="shoulder"] .momo-right-arm { animation: momo-arm-swing 900ms 450ms ease-in-out 2; }
+
+[data-pose="start"] .momo-body { animation: momo-happy-hop 950ms ease-out; }
+[data-pose="start"] .momo-left-arm,
+[data-pose="adjust"] .momo-left-arm { animation: momo-adjust-left 1.25s ease-in-out; }
+[data-pose="start"] .momo-right-arm,
+[data-pose="adjust"] .momo-right-arm { animation: momo-adjust-right 1.25s ease-in-out; }
+[data-pose="adjust"] .momo-headphone-gear { animation: momo-slipping-cups 1.2s ease-in-out; }
+[data-pose="listen"] .momo-right-arm { transform: translate(1px, -16px) rotate(-10deg); }
+[data-pose="listen"] .momo-head { transform: rotate(-5deg); }
+[data-pose="change"] .momo-head { animation: momo-look-track 1.25s ease-in-out; }
+[data-pose="change"] .momo-eyes { transform: translateX(-2px); }
+[data-pose="stumble"] .momo-body { animation: momo-catch-balance 1.55s ease-in-out; }
+[data-pose="stumble"] .momo-left-arm { animation: momo-balance-arm 1.55s ease-in-out; }
+[data-pose="stumble"] .momo-right-arm { animation: momo-balance-arm 1.55s reverse ease-in-out; }
+[data-pose="wave"] .momo-right-arm { animation: momo-wave-hand 1.2s ease-in-out; }
+[data-pose="shy"] .momo-head { transform: translateY(1px) rotate(-4deg); }
+[data-pose="proud"] .momo-body { animation: momo-proud 1.2s ease-in-out; }
+[data-pose="finish"] .momo-left-arm { animation: momo-stretch-left 2.5s ease-in-out; }
+[data-pose="finish"] .momo-right-arm { animation: momo-stretch-right 2.5s ease-in-out; }
+[data-playback="ended"] .momo-headphone-gear { transform: translateY(20px); transition: transform 700ms ease-in-out; }
+
+@keyframes momo-breathe {
+  0%, 100% { transform: translateY(0) scaleY(1); }
+  50% { transform: translateY(-0.5px) scaleY(1.008); }
+}
+@keyframes momo-leaf-follow {
+  0%, 100% { transform: rotate(0); }
+  45% { transform: rotate(3deg); }
+  70% { transform: rotate(-1deg); }
+}
+@keyframes momo-cup-follow {
+  0%, 100% { transform: translateY(0); }
+  45% { transform: translateY(0.7px); }
+}
+@keyframes momo-nod {
+  0%, 100% { transform: translateY(0); }
+  32% { transform: translateY(1.5px) rotate(-2deg); }
+  65% { transform: translateY(-0.5px); }
+}
+@keyframes momo-sway {
+  0%, 100% { transform: rotate(0); }
+  25% { transform: rotate(-4deg) translateX(-1px); }
+  70% { transform: rotate(4deg) translateX(1px); }
+}
+@keyframes momo-arm-swing {
+  0%, 100% { transform: rotate(0); }
+  35% { transform: rotate(14deg) translateY(-1px); }
+  75% { transform: rotate(-8deg); }
+}
+@keyframes momo-toe-tap {
+  0%, 60%, 100% { transform: translateY(0); }
+  30% { transform: translateY(-2px) rotate(-7deg); }
+}
+@keyframes momo-side-step {
+  0%, 100% { transform: translateX(0); }
+  10% { transform: translateX(1px) scaleY(0.99); }
+  30% { transform: translate(-3px, -1px) rotate(-2deg); }
+  55% { transform: translateX(0); }
+  80% { transform: translate(3px, -1px) rotate(2deg); }
+}
+@keyframes momo-shoulder {
+  0%, 100% { transform: translateY(0); }
+  30% { transform: translate(0.7px, -1px) rotate(3deg); }
+  65% { transform: translate(-0.7px, 0) rotate(-2deg); }
+}
+@keyframes momo-happy-hop {
+  0%, 100% { transform: translateY(0) scale(1); }
+  18% { transform: translateY(1px) scale(1.02, 0.96); }
+  45% { transform: translateY(-5px) scale(0.99, 1.02); }
+  66% { transform: translateY(0) scale(1.03, 0.96); }
+  83% { transform: scale(0.99, 1.01); }
+}
+@keyframes momo-adjust-left {
+  0%, 100% { transform: translate(0, 0); }
+  22% { transform: translate(-1px, 1px); }
+  40%, 65% { transform: translate(-2px, -18px) rotate(8deg); }
+  78% { transform: translate(-1px, -14px); }
+}
+@keyframes momo-adjust-right {
+  0%, 100% { transform: translate(0, 0); }
+  22% { transform: translate(1px, 1px); }
+  40%, 65% { transform: translate(2px, -18px) rotate(-8deg); }
+  78% { transform: translate(1px, -14px); }
+}
+@keyframes momo-slipping-cups {
+  0%, 100% { transform: translateY(0); }
+  20% { transform: translateY(2px) rotate(2deg); }
+  55% { transform: translateY(-1px); }
+  75% { transform: translateY(0.5px); }
+}
+@keyframes momo-look-track {
+  0%, 100% { transform: translateX(0) rotate(0); }
+  20% { transform: translateX(0.5px) rotate(2deg); }
+  45%, 70% { transform: translateX(-2px) rotate(-7deg); }
+}
+@keyframes momo-catch-balance {
+  0%, 100% { transform: rotate(0); }
+  18% { transform: rotate(-2deg) scaleY(0.98); }
+  42% { transform: translate(3px, -2px) rotate(9deg); }
+  58% { transform: translateX(-1px) rotate(-4deg) scaleY(0.98); }
+  74% { transform: rotate(2deg); }
+}
+@keyframes momo-balance-arm {
+  0%, 100% { transform: rotate(0); }
+  38%, 55% { transform: translateY(-2px) rotate(40deg); }
+}
+@keyframes momo-wave-hand {
+  0%, 100% { transform: translateY(0); }
+  25%, 55% { transform: translate(0, -12px) rotate(-25deg); }
+  40%, 70% { transform: translate(1px, -12px) rotate(5deg); }
+}
+@keyframes momo-proud {
+  0%, 100% { transform: scale(1); }
+  25%, 65% { transform: translateY(-1px) scale(1.02, 1); }
+}
+@keyframes momo-stretch-left {
+  0%, 100% { transform: rotate(0); }
+  25%, 60% { transform: translateY(-8px) rotate(65deg); }
+}
+@keyframes momo-stretch-right {
+  0%, 100% { transform: rotate(0); }
+  25%, 60% { transform: translateY(-8px) rotate(-65deg); }
+}
+
+[data-intensity="calm"][data-pose="start"] .momo-body { animation: momo-breathe 4.8s ease-in-out infinite; }
+[data-reduced="true"] .momo-rig *,
+[data-active="false"] .momo-rig * { animation: none !important; }
+[data-active="false"] .momo-rig * { transition: none !important; }
+[data-reduced="true"] .momo-rig g { transform: none !important; transition: none !important; }
+[data-reduced="true"][data-eyes="closed"] .momo-eyes { opacity: 0.4; }
+[data-reduced="true"][data-playback="ended"] .momo-headphone-gear { transform: translateY(20px) !important; }
+[data-reduced="true"][data-pose="listen"] .momo-right-arm { transform: translate(1px, -16px) !important; }
+.music-momo-stage:has([data-reduced="true"]) .pixel-music-note,
+.music-momo-stage:has([data-active="false"]) .pixel-music-note { display: none; }
+.music-momo-stage:not(.playing) .pixel-music-note { display: none; }
+
+@media (prefers-reduced-motion: reduce) {
+  .music-momo-stage .momo-rig * { animation: none !important; transition: none !important; }
+  .music-momo-stage .pixel-music-note { display: none; }
+}

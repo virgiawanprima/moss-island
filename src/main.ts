@@ -1,3 +1,5 @@
+import { parseSettingsDuration, hasScheduleChanged } from './settings';
+import { TabTransition } from './tabTransition';
 import {
   IslandState,
   ActiveTab,
@@ -7,14 +9,23 @@ import {
   TimerStatus,
   StoredAppState,
   IslandSeason,
-  SeasonMode,
 } from './types';
 import { IslandRenderer } from './canvas/islandRenderer';
 import { PomodoroEngine } from './timer/pomodoroEngine';
-import { buildPomodoroPlan, validatePomodoroInput } from './timer/pomodoroPlan';
-import { AmbientSynth, AmbientTrack } from './audio/ambientSynth';
+import { buildFocusTargetPlan, getFirstPhasePreview, getNextPhaseLabel } from './timer/pomodoroPlan';
+import { AmbientSynth, AMBIENT_TRACKS } from './audio/ambientSynth';
+import { STUDY_COVERS } from './audio/studyMusic';
+import { formatPlaybackTime } from './audio/formatPlaybackTime';
+import { mountMusicMomo } from './audio/musicMomoView';
+import { SpeakerBeat } from './audio/speakerBeat';
+import type { MomoPlayback } from './audio/musicMomo';
+import { shouldIgnoreAmbiguousWebViewSession, takeOverLocalPlayback } from './audio/musicSource';
+import { DeviceVolumeSync } from './audio/deviceVolumeSync';
 import { SystemMediaBridge } from './audio/systemMediaBridge';
+import { ArtworkRetry } from './audio/artworkRetry';
+import { advancePlayback, reconcilePlayback } from './audio/playbackPosition';
 import { lyricsService } from './audio/lyricsService';
+import { LyricsView } from './audio/lyricsView';
 import {
   resolveMediaSourceIdentity,
   type MediaSourceIdentity,
@@ -29,11 +40,15 @@ import {
 import { sendDesktopNotification, initNotificationPermissions } from './notificationService';
 import { isAutostartEnabled, setAutostartEnabled } from './autostartService';
 import { installMockMediaSession } from './devMediaSimulation';
+import { HoverIntent } from './hoverIntent';
+import { isVerticalDock, dockWithinThreshold, type DockPlacement } from './edgeDock';
+import { restingPet, rigDesktopPet, mountPetGait, stepDesktopPet, type PetContext } from './desktopPet';
 
 // Inisialisasi status aplikasi dari penyimpanan persisten
 let appState: StoredAppState = loadAppState();
 export let currentIslandState: IslandState = 'expanded';
 export let currentTab: ActiveTab = 'focus';
+let musicMomo: ReturnType<typeof mountMusicMomo> | null = null;
 
 // Modul-modul utama
 let renderer: IslandRenderer | null = null;
@@ -47,19 +62,56 @@ let isSettingsModalOpen: boolean = false;
 let lastKnownDate: string = getTodayDateString();
 let hasNotifiedHydrationDue: boolean = false;
 
-// Track ambient lokal dengan deskripsi jujur
-interface TrackItem {
-  id: AmbientTrack;
-  title: string;
-  artist: string;
+const ambientTracks = AMBIENT_TRACKS;
+let currentTrackIdx: number = 0;
+const MINIMAL_POSITION_KEY = 'moss_minimal_position_v1';
+const DOCK_EDGE_KEY = 'moss_dock_edge_v1';
+function readDockEdge(): DockPlacement {
+  try {
+    const edge = localStorage.getItem(DOCK_EDGE_KEY);
+    if (edge === 'floating' || edge === 'top' || edge === 'bottom' || edge === 'left' || edge === 'right') return edge;
+  } catch { /* Gunakan tepi atas bila penyimpanan tidak tersedia. */ }
+  return 'top';
+}
+let dockEdge: DockPlacement = readDockEdge();
+function applyDockEdge(edge: DockPlacement) {
+  dockEdge = edge;
+  document.documentElement.dataset.dockEdge = edge;
+  try { localStorage.setItem(DOCK_EDGE_KEY, edge); } catch { /* Orientasi tetap berlaku selama sesi. */ }
+}
+let petMoveInFlight: Promise<void> | null = null;
+let petAutomaticUntil = 0;
+let petManualUntil = 0;
+let nativeGeometryWrites = 0;
+let nativeGeometryQuietUntil = 0;
+let minimalPositionMemory: { x: number; y: number } | null = null;
+function readMinimalPosition(): { x: number; y: number } | null {
+  if (minimalPositionMemory) return minimalPositionMemory;
+  try {
+    const value: unknown = JSON.parse(localStorage.getItem(MINIMAL_POSITION_KEY) || 'null');
+    if (value && typeof value === 'object' && 'x' in value && 'y' in value
+      && typeof value.x === 'number' && Number.isFinite(value.x)
+      && typeof value.y === 'number' && Number.isFinite(value.y)) return minimalPositionMemory = { x: value.x, y: value.y };
+  } catch { /* Penyimpanan yang rusak tidak boleh menghalangi pembukaan aplikasi. */ }
+  return minimalPositionMemory;
 }
 
-const ambientTracks: TrackItem[] = [
-  { id: 'rain', title: 'Suara Hujan Hutan', artist: 'Moss Audio · Forest Tape' },
-  { id: 'stream', title: 'Gemericik Sungai', artist: 'Moss Audio · Water Whisper' },
-  { id: 'breeze', title: 'Semilir Angin Pinus', artist: 'Moss Audio · Valley Wind' },
-];
-let currentTrackIdx: number = 0;
+function saveMinimalPosition(position: { x: number; y: number }) {
+  if (!Number.isFinite(position.x) || !Number.isFinite(position.y)) return;
+  minimalPositionMemory = position;
+  try { localStorage.setItem(MINIMAL_POSITION_KEY, JSON.stringify(position)); }
+  catch { console.warn('Posisi Momo tidak dapat disimpan untuk sesi berikutnya.'); }
+}
+
+async function rememberMinimalWindowPosition(): Promise<void> {
+  if (!isTauri()) return;
+  try {
+    const { getCurrentWindow } = await import('@tauri-apps/api/window');
+    const nativeWindow = getCurrentWindow();
+    const [position, size] = await Promise.all([nativeWindow.outerPosition(), nativeWindow.outerSize()]);
+    saveMinimalPosition({ x: position.x + size.width / 2, y: position.y + size.height / 2 });
+  } catch (error) { console.warn('Posisi Momo tidak dapat dibaca:', error); }
+}
 
 if (typeof window !== 'undefined') {
   window.addEventListener('DOMContentLoaded', () => {
@@ -165,19 +217,27 @@ function isTauri(): boolean {
 async function initTauriEnvironment() {
   for (let i = 0; i < 15; i++) {
     if (isTauri()) break;
-    await new Promise((r) => setTimeout(r, 40));
+    await new Promise((r) => { setTimeout(r, 40); });
   }
   if (!isTauri()) return;
 
   document.body.classList.add('is-tauri-native');
   document.documentElement.classList.add('is-tauri-native');
+  applyDockEdge(dockEdge);
 
   // Posisikan window awal tepat di atas tengah monitor tanpa celah dan pastikan selalu di atas
   // sesuai preferensi pin yang tersimpan (bukan selalu true)
   try {
     const { invoke } = await import('@tauri-apps/api/core');
     await invoke('set_always_on_top', { alwaysOnTop: isAlwaysOnTopActive });
-    await invoke('position_island_top_center', { yOffset: 0.0 });
+    const anchor = readMinimalPosition();
+    if (anchor) await invoke('move_minimal_window', anchor);
+    else await invoke('position_island_top_center', { yOffset: 0.0 });
+    if (!isIslandTransitioning) {
+      petAutomaticUntil = performance.now() + 500;
+      await syncTauriWindowState(currentIslandState, isSettingsModalOpen);
+      petAutomaticUntil = performance.now() + 250;
+    }
   } catch (_e) {
     // Fallback jika pemanggilan command gagal
   }
@@ -200,27 +260,6 @@ async function initTauriEnvironment() {
   } catch (err) {
     console.warn('Gagal mendaftarkan pendengar event native:', err);
   }
-
-  // Kembalikan ke posisi menempel tengah atas saat drag selesai dilepas (mouseup)
-  window.addEventListener('mouseup', async () => {
-    try {
-      const { invoke } = await import('@tauri-apps/api/core');
-      await invoke('snap_to_top_center');
-    } catch (_e) {
-      // Abaikan jika bukan di tauri
-    }
-  });
-
-  // Hitung ulang posisi jika konfigurasi layar atau ukuran peramban berubah (ditahan saat transisi berlangsung)
-  window.addEventListener('resize', async () => {
-    if (isIslandTransitioning) return;
-    try {
-      const { invoke } = await import('@tauri-apps/api/core');
-      await invoke('position_island_top_center', { yOffset: 0.0 });
-    } catch (_e) {
-      // Abaikan
-    }
-  });
 
   // Inisialisasi izin notifikasi desktop
   void initNotificationPermissions();
@@ -249,8 +288,8 @@ export interface IslandDimensionConfig {
 
 export const ISLAND_DIMENSIONS = {
   hidden: {
-    width: 130,
-    height: 28,
+    width: 76,
+    height: 92,
     minWidth: null,
     minHeight: null,
     resizable: false,
@@ -286,9 +325,9 @@ export const ISLAND_DIMENSIONS = {
     },
     music: {
       width: 960,
-      height: 248,
+      height: 228,
       minWidth: 640,
-      minHeight: 248,
+      minHeight: 228,
       resizable: true,
     },
   },
@@ -320,9 +359,23 @@ export function getIslandDimension(
 async function syncTauriWindowState(state: IslandState, modalOpen: boolean = false) {
   if (!isTauri()) return;
 
+  nativeGeometryWrites++;
   try {
     const { invoke } = await import('@tauri-apps/api/core');
-    const dim = getIslandDimension(state, currentTab, modalOpen);
+    const baseDim = getIslandDimension(state, currentTab, modalOpen);
+    let dim: IslandDimensionConfig = !modalOpen && isVerticalDock(dockEdge) && state === 'expanded'
+      ? { ...baseDim, width: 560, height: currentTab === 'focus' ? 560 : currentTab === 'music' ? 480 : 420, minWidth: 440, minHeight: 320 }
+      : !modalOpen && isVerticalDock(dockEdge) && state === 'compact' ? { ...baseDim, width: 96, height: 300 }
+      : baseDim;
+    const { currentMonitor } = await import('@tauri-apps/api/window');
+    const monitor = await currentMonitor();
+    if (monitor) {
+      const width = Math.min(dim.width, monitor.workArea.size.width / monitor.scaleFactor);
+      const height = Math.min(dim.height, monitor.workArea.size.height / monitor.scaleFactor);
+      dim = { ...dim, width, height, minWidth: dim.minWidth === null ? null : Math.min(dim.minWidth, width),
+        minHeight: dim.minHeight === null ? null : Math.min(dim.minHeight, height) };
+    }
+    const anchor = readMinimalPosition();
 
     const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
     const durationMs = prefersReducedMotion ? 0 : 200;
@@ -337,6 +390,8 @@ async function syncTauriWindowState(state: IslandState, modalOpen: boolean = fal
         resizable: dim.resizable,
         minWidth: dim.minWidth,
         minHeight: dim.minHeight,
+        anchorX: anchor?.x ?? null,
+        anchorY: anchor?.y ?? null,
       });
     } catch {
       await invoke('set_island_window_size', {
@@ -346,17 +401,30 @@ async function syncTauriWindowState(state: IslandState, modalOpen: boolean = fal
         minHeight: dim.minHeight,
         resizable: dim.resizable,
       });
-      await invoke('position_island_top_center', { yOffset: 0.0 });
+      if (anchor) await invoke('move_minimal_window', anchor);
+      else await invoke('position_island_top_center', { yOffset: 0.0 });
     }
 
     await invoke('set_always_on_top', { alwaysOnTop: isAlwaysOnTopActive });
   } catch (_e) {
     // Abaikan jika pemanggilan native gagal
+  } finally {
+    nativeGeometryWrites--;
+    nativeGeometryQuietUntil = performance.now() + 250;
   }
 }
 
 let activeTransitionToken = 0;
 let isIslandTransitioning = false;
+
+export function shouldRememberFloatingPosition(current: IslandState, next: IslandState, placement: DockPlacement = dockEdge): boolean {
+  return next !== current && (current === 'hidden' || current === 'compact'
+    || (current === 'expanded' && placement === 'floating'));
+}
+
+export function shouldCenterAfterTransition(hasSavedPosition: boolean): boolean {
+  return !hasSavedPosition;
+}
 
 // ============================================================================
 // 2. TRANSISI STATUS ISLAND (Hidden, Compact, Expanded)
@@ -377,6 +445,12 @@ export async function setIslandState(state: IslandState) {
 
   const token = ++activeTransitionToken;
   isIslandTransitioning = true;
+  await petMoveInFlight;
+  if (token !== activeTransitionToken) return;
+  if (shouldRememberFloatingPosition(currentIslandState, state)) {
+    await rememberMinimalWindowPosition();
+    if (token !== activeTransitionToken) return;
+  }
   currentIslandState = state;
 
   const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -386,7 +460,7 @@ export async function setIslandState(state: IslandState) {
   // 1. TAHAP 1: Redupkan konten aktif lama secara lembut
   widget.classList.add('is-fading-out');
   if (fadeOutDuration > 0) {
-    await new Promise((r) => setTimeout(r, fadeOutDuration));
+    await new Promise((r) => { setTimeout(r, fadeOutDuration); });
   }
   if (token !== activeTransitionToken) return;
 
@@ -403,7 +477,7 @@ export async function setIslandState(state: IslandState) {
     widget.classList.remove('state-hidden', 'state-compact', 'state-expanded');
     widget.classList.add(`state-${state}`);
     if (!prefersReducedMotion) {
-      await new Promise((r) => setTimeout(r, 200));
+      await new Promise((r) => { setTimeout(r, 200); });
     }
   } else {
     // Animasi ukuran window native Tauri secara bertahap
@@ -435,14 +509,14 @@ export async function setIslandState(state: IslandState) {
 
   // Beri waktu fade-in konten baru
   if (fadeInDuration > 0) {
-    await new Promise((r) => setTimeout(r, fadeInDuration));
+    await new Promise((r) => { setTimeout(r, fadeInDuration); });
   }
   if (token !== activeTransitionToken) return;
 
   isIslandTransitioning = false;
 
-  // Pemusatan presisi di akhir transisi jika menggunakan Tauri desktop
-  if (isTauri()) {
+  // Posisi tersimpan sudah diterapkan oleh animasi native.
+  if (isTauri() && shouldCenterAfterTransition(readMinimalPosition() !== null)) {
     try {
       const { invoke } = await import('@tauri-apps/api/core');
       await invoke('position_island_top_center', { yOffset: 0.0 });
@@ -469,7 +543,6 @@ function syncUI() {
   updateSessionMeta();
   updateHydrationUI();
   updateTimelineUI();
-  updateSettingsFormInputs();
   updateForestGenerationBadge();
   engine.notifyTick();
   handleStatusChange(engine.getStatus());
@@ -517,7 +590,9 @@ function updateSessionMeta() {
   }
 
   if (autoLoopP1) {
-    autoLoopP1.innerText = `Otomatis: Fokus ${appState.config.focusDurationMin}m > istirahat ${appState.config.breakDurationMin}m`;
+    autoLoopP1.innerText = engine.getStatus() === 'completed'
+      ? 'Seluruh fase rencana sudah selesai.'
+      : getNextPhaseLabel(plan, engine.getCurrentPhaseIndex(), appState.config);
   }
   if (autoLoopP2) {
     const totalTimeHours = Math.floor(plan.totalDurationMin / 60);
@@ -542,10 +617,10 @@ function updateSessionMeta() {
     if (phase.type === 'focus') {
       if (sessionTag) sessionTag.innerText = `FOKUS · SESI ${sessionStr}`;
       if (durationTag) {
-        durationTag.innerText = `${appState.config.focusDurationMin} / ${appState.config.breakDurationMin} menit`;
+        durationTag.innerText = `${phase.durationMin} menit`;
       }
     } else {
-      if (sessionTag) sessionTag.innerText = `ISTIRAHAT · SESI ${sessionStr}`;
+      if (sessionTag) sessionTag.innerText = `${phase.breakKind === 'long' ? 'REHAT PANJANG' : 'ISTIRAHAT'} · SESI ${sessionStr}`;
       if (durationTag) durationTag.innerText = `${phase.durationMin} menit`;
     }
   }
@@ -664,7 +739,7 @@ function handleTimerTick(
 
     if (captionLabel) {
       if (treeCount === 0) {
-        captionLabel.innerText = 'Oak kecilmu sedang tumbuh';
+        captionLabel.innerText = 'Pohon kecilmu sedang tumbuh';
       } else {
         captionLabel.innerText = `${treeCount} pohon di pulaumu · Tunas baru tumbuh`;
       }
@@ -753,7 +828,6 @@ function handlePlanComplete(_plan: PomodoroPlan) {
     audio.playChime();
   }
   renderer?.celebrateBriefly(60);
-  renderer?.setOverviewMode(true); // Kamera sedikit menjauh memperlihatkan seluruh pohon di pulau
   const captionLabel = document.querySelector<HTMLElement>('#growth-caption');
   if (captionLabel) {
     const count = appState.progress.trees?.length || 0;
@@ -837,15 +911,22 @@ function handleStatusChange(status: TimerStatus) {
 function bindTabs() {
   const tabButtons = document.querySelectorAll<HTMLButtonElement>('.pill-tab-btn');
   const widget = document.querySelector<HTMLElement>('#dynamic-island');
-
-  tabButtons.forEach((btn) => {
-    btn.addEventListener('click', async () => {
-      const targetTab = btn.getAttribute('data-tab') as ActiveTab;
-      if (!targetTab) return;
-
+  const transition = new TabTransition<ActiveTab>(currentTab, async (targetTab) => {
+    const stateToken = activeTransitionToken;
+    const expanded = currentIslandState === 'expanded';
+    const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    if (expanded) {
+      isIslandTransitioning = true;
+      widget?.classList.add('is-switching-tab');
+    }
+    try {
+      if (expanded && !reducedMotion) {
+        await new Promise<void>((resolve) => { setTimeout(resolve, 70); });
+      }
       currentTab = targetTab;
-      tabButtons.forEach((b) => b.classList.remove('active'));
-      btn.classList.add('active');
+      tabButtons.forEach((button) => {
+        button.classList.toggle('active', button.getAttribute('data-tab') === targetTab);
+      });
 
       if (widget) {
         widget.classList.remove('tab-focus', 'tab-hydration', 'tab-music');
@@ -864,10 +945,9 @@ function bindTabs() {
       // Sinkronkan ukuran jendela native sesuai tab yang dipilih saat expanded
       if (currentIslandState === 'expanded') {
         isIslandTransitioning = true;
-        try {
-          await syncTauriWindowState('expanded', isSettingsModalOpen);
-        } finally {
-          isIslandTransitioning = false;
+        await syncTauriWindowState('expanded', isSettingsModalOpen);
+        if (!isTauri() && !reducedMotion) {
+          await new Promise<void>((resolve) => { setTimeout(resolve, 200); });
         }
       }
 
@@ -877,18 +957,29 @@ function bindTabs() {
       } else {
         renderer?.pause();
       }
+    } finally {
+      widget?.classList.remove('is-switching-tab');
+      if (stateToken === activeTransitionToken) isIslandTransitioning = false;
+    }
+  });
+
+  tabButtons.forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const targetTab = btn.getAttribute('data-tab') as ActiveTab;
+      if (!['focus', 'music', 'hydration'].includes(targetTab)) return;
+      void transition.request(targetTab).catch((error: unknown) => {
+        console.error('Perpindahan fitur gagal:', error);
+      });
     });
   });
 
   // Dock buttons navigation
   document.querySelector('#dock-btn-focus')?.addEventListener('click', async () => {
-    currentTab = 'focus';
-    document.querySelector<HTMLButtonElement>('#tab-btn-focus')?.click();
+    await transition.request('focus');
     await setIslandState('expanded');
   });
   document.querySelector('#dock-btn-music')?.addEventListener('click', async () => {
-    currentTab = 'music';
-    document.querySelector<HTMLButtonElement>('#tab-btn-music')?.click();
+    await transition.request('music');
     await setIslandState('expanded');
   });
 }
@@ -896,16 +987,38 @@ function bindTabs() {
 function bindTimerControls() {
   const btnToggle = document.querySelector<HTMLButtonElement>('#btn-toggle-timer');
   const btnFinish = document.querySelector<HTMLButtonElement>('#btn-finish-timer');
+  const cancelPrompt = document.querySelector<HTMLElement>('#focus-cancel-confirm');
+  const actionStack = btnFinish?.parentElement;
+  const keepFocus = document.querySelector<HTMLButtonElement>('#btn-keep-focus');
+  const setCancelPrompt = (open: boolean) => {
+    if (cancelPrompt) cancelPrompt.hidden = !open;
+    if (actionStack) actionStack.hidden = open;
+    if (open) keepFocus?.focus();
+    else btnFinish?.focus();
+  };
+  const cancelPlan = () => {
+    setCancelPrompt(false);
+    renderer?.cancelFocusSession();
+    engine.reset();
+    updateSessionMeta();
+    updateTimelineUI();
+  };
+  keepFocus?.addEventListener('click', () => setCancelPrompt(false));
+  document.querySelector('#btn-confirm-cancel-focus')?.addEventListener('click', cancelPlan);
+  cancelPrompt?.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') { e.preventDefault(); setCancelPrompt(false); }
+  });
 
   btnToggle?.addEventListener('click', () => {
     engine.toggle();
   });
 
   btnFinish?.addEventListener('click', () => {
-    renderer?.cancelFocusSession();
-    engine.reset();
-    updateSessionMeta();
-    updateTimelineUI();
+    if (['running', 'paused', 'waiting_next'].includes(engine.getStatus())) {
+      setCancelPrompt(true);
+      return;
+    }
+    cancelPlan();
   });
 }
 
@@ -1147,6 +1260,21 @@ function renderMusicAlbumArt(
 ) {
   const artContainer = document.querySelector<HTMLElement>('#music-album-art');
   if (!artContainer) return;
+  if (!identity && !customArtUrl) {
+    const track = ambientTracks[currentTrackIdx];
+    const cover = STUDY_COVERS[track.id];
+    artContainer.className = 'album-art-pine';
+    artContainer.title = `${track.title} · ${cover.label}`;
+    const img = document.createElement('img');
+    img.src = cover.file;
+    img.alt = cover.label;
+    img.width = 64;
+    img.height = 64;
+    img.style.width = '100%';
+    img.style.height = '100%';
+    artContainer.replaceChildren(img);
+    return;
+  }
 
   if (customArtUrl) {
     // Keterangan sumber gambar harus jujur sesuai asalnya
@@ -1197,7 +1325,7 @@ function renderMusicAlbumArt(
     `;
   } else {
     artContainer.className = 'album-art-pine';
-    artContainer.title = 'Ambient Forest (Moss Island Synth)';
+    artContainer.title = 'Moss Island · Musik instrumental';
     artContainer.innerHTML = `
       <svg width="42" height="42" viewBox="0 0 32 32" fill="none">
         <rect width="32" height="32" rx="4" fill="#58486e"/>
@@ -1210,19 +1338,162 @@ function renderMusicAlbumArt(
 }
 
 function formatTime(seconds: number): string {
-  if (!seconds || isNaN(seconds) || seconds < 0) return '00:00';
-  const totalSecs = Math.floor(seconds);
-  const m = Math.floor(totalSecs / 60);
-  const s = totalSecs % 60;
-  return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+  return formatPlaybackTime(seconds);
 }
 
 function bindMusicControls() {
+  const volumeSlider = document.querySelector<HTMLInputElement>('#music-volume');
+  const volumeValue = document.querySelector<HTMLOutputElement>('#music-volume-value');
+  const volumeLabel = document.querySelector<HTMLLabelElement>('label[for="music-volume"]');
+  let deviceVolumeMode = false;
+  let volumeModeToken = 0;
+  let volumeQueue = Promise.resolve();
+  let volumeEditToken = 0;
+  const volumeSync = new DeviceVolumeSync();
+  const invokeVolume = async (command: string, args?: { volume: number }) => {
+    const { invoke } = await import('@tauri-apps/api/core');
+    return invoke<number>(command, args);
+  };
+  const updateVolumeMode = async (external: boolean) => {
+    const changed = deviceVolumeMode !== external;
+    if (!changed && !external) return;
+    deviceVolumeMode = external;
+    if (changed) {
+      ++volumeModeToken;
+      volumeSync.invalidate();
+    }
+    const token = volumeModeToken;
+    if (volumeLabel) volumeLabel.textContent = external ? 'Volume perangkat' : 'Volume bawaan';
+    if (!volumeSlider) return;
+    volumeSlider.setAttribute('aria-label', external ? 'Volume perangkat Windows, semua aplikasi' : 'Volume musik bawaan');
+    volumeSlider.title = external ? 'Mengatur keluaran Windows untuk semua aplikasi' : 'Mengatur musik bawaan Moss Island';
+    if (changed) volumeSlider.disabled = external;
+    await volumeSync.refresh(
+      async () => external ? invokeVolume('get_device_volume') : audio.getVolume(),
+      (value) => {
+        if (token !== volumeModeToken) return;
+        volumeSlider.value = String(Math.round(value * 100));
+        if (volumeValue) volumeValue.value = volumeSlider.value + '%';
+        volumeSlider.disabled = false;
+      },
+      () => {
+        if (token !== volumeModeToken) return;
+        if (volumeValue) volumeValue.value = 'Tidak tersedia';
+        volumeSlider.title = 'Volume perangkat tidak dapat dibaca. Periksa perangkat keluaran Windows.';
+      }, performance.now(), changed);
+  };
+  audio.setVolume(appState.config.volume ?? 0.5);
+  if (volumeSlider) {
+    volumeSlider.value = String(Math.round(audio.getVolume() * 100));
+    if (volumeValue) volumeValue.value = volumeSlider.value + '%';
+    volumeSlider.addEventListener('input', () => {
+      const volume = Number(volumeSlider.value) / 100;
+      if (deviceVolumeMode) {
+        const mode = volumeModeToken;
+        const edit = ++volumeEditToken;
+        volumeSync.beginWrite();
+        if (volumeValue) volumeValue.value = volumeSlider.value + '%';
+        volumeQueue = volumeQueue.then(async () => {
+          try {
+            if (mode !== volumeModeToken || edit !== volumeEditToken) return;
+            const actual = await invokeVolume('set_device_volume', { volume });
+            if (mode !== volumeModeToken || edit !== volumeEditToken) return;
+            volumeSlider.value = String(Math.round(actual * 100));
+            if (volumeValue) volumeValue.value = volumeSlider.value + '%';
+          } catch {
+            if (mode === volumeModeToken && volumeValue) volumeValue.value = 'Gagal';
+          } finally {
+            volumeSync.endWrite();
+          }
+        });
+        return;
+      }
+      audio.setVolume(volume);
+      appState.config.volume = volume;
+      if (volumeValue) volumeValue.value = volumeSlider.value + '%';
+    });
+    volumeSlider.addEventListener('change', () => { if (!deviceVolumeMode) saveAppState(appState); });
+  }
   const btnToggle = document.querySelector<HTMLButtonElement>('#btn-music-toggle');
   const btnPrev = document.querySelector<HTMLButtonElement>('#btn-music-prev');
   const btnNext = document.querySelector<HTMLButtonElement>('#btn-music-next');
-  const dancingMomo = document.querySelector<HTMLElement>('#dancing-momo');
+  const momoButton = document.querySelector<HTMLButtonElement>('#dancing-momo');
+  const speaker = new SpeakerBeat(() => musicMomo?.beat(true), text => {
+    const status = document.querySelector<HTMLElement>('#speaker-beat-status');
+    if (status) status.textContent = text;
+  });
+  if (momoButton) musicMomo = mountMusicMomo(momoButton, () => appState.config.momoIntensity ?? 'expressive',
+    visible => speaker.setActive(visible));
+  window.addEventListener('pagehide', () => speaker.setActive(false));
+  audio.onBeat = null;
+  audio.setBeatVisible(false);
   const stageEl = document.querySelector<HTMLElement>('#music-momo-stage');
+  const repeatButton = document.querySelector<HTMLButtonElement>('#btn-music-repeat');
+  const sessionSelect = document.querySelector<HTMLSelectElement>('#music-session-select');
+  const musicStatus = document.querySelector<HTMLElement>('#music-action-status');
+  let mediaCommandPending = false;
+
+  let endedMomoRecord = '';
+  const momoRecord = () => {
+    const track = mediaBridge?.getCurrentTrack();
+    return isSystemMediaActive && track ? `${track.session_key}#${track.record_key}` : `local:${ambientTracks[currentTrackIdx].id}`;
+  };
+  function setPlaybackAppearance(playing: boolean, state: MomoPlayback = playing ? 'playing' : 'paused') {
+    const key = momoRecord();
+    if (playing || key !== endedMomoRecord) endedMomoRecord = '';
+    musicMomo?.controller.setPlayback(endedMomoRecord === key && state === 'paused' ? 'ended' : state, key);
+    const minimal = document.querySelector<HTMLElement>('#view-minimal');
+    if (minimal) minimal.dataset.playing = String(playing && state === 'playing');
+    if (!btnToggle) return;
+    btnToggle.dataset.playing = String(playing);
+    const label = playing ? 'Jeda musik' : 'Putar musik';
+    btnToggle.title = label;
+    btnToggle.setAttribute('aria-label', label);
+  }
+
+  function updateMediaControls(track: import('./audio/systemMediaBridge').SystemMediaTrack | null) {
+    const missingSelected = !track && !!mediaBridge?.getSelectedSession() && mediaBridge.getSelectedSession() !== 'local';
+    if (btnToggle) btnToggle.disabled = mediaCommandPending || missingSelected || (!!track && !track.capabilities?.toggle);
+    if (btnNext) btnNext.disabled = mediaCommandPending || missingSelected || (!!track && !track.capabilities?.next);
+    if (btnPrev) btnPrev.disabled = mediaCommandPending || missingSelected || (!!track && !track.capabilities?.previous);
+    if (repeatButton) {
+      const local = !track && mediaBridge?.getSelectedSession() === 'local';
+      repeatButton.disabled = mediaCommandPending || !track?.capabilities?.repeat || track.repeat_mode == null;
+      repeatButton.dataset.repeat = local ? 'one' : track?.repeat_mode ?? 'off';
+      const label = track?.capabilities?.repeat
+        ? `Repeat: ${track.repeat_mode === 'one' ? 'satu lagu' : track.repeat_mode === 'all' ? 'semua lagu' : 'mati'}`
+        : local ? 'Playlist bawaan selalu diulang' : 'Repeat tidak didukung pemutar ini';
+      repeatButton.title = label;
+      repeatButton.setAttribute('aria-label', label);
+      repeatButton.setAttribute('aria-pressed', String(local || track?.repeat_mode === 'one' || track?.repeat_mode === 'all'));
+    }
+    const seek = document.querySelector<HTMLElement>('#music-progress-track');
+    const canSeek = !!track?.capabilities?.seek && track.duration_secs > 0;
+    seek?.setAttribute('aria-disabled', String(!canSeek));
+    if (seek) seek.tabIndex = canSeek ? 0 : -1;
+  }
+
+  async function runMediaCommand(action: () => Promise<boolean>) {
+    if (mediaCommandPending) return;
+    const sessionKey = mediaBridge?.getCurrentTrack()?.session_key;
+    const focused = document.activeElement instanceof HTMLButtonElement
+      && document.activeElement.closest('.music-controls-row') ? document.activeElement : null;
+    mediaCommandPending = true;
+    updateMediaControls(mediaBridge?.getCurrentTrack() ?? null);
+    try {
+      const success = await action();
+      if (musicStatus && mediaBridge?.getCurrentTrack()?.session_key === sessionKey) {
+        musicStatus.innerText = success ? '' : 'Pemutar menolak perintah. Coba lagi.';
+      }
+    } finally {
+      mediaCommandPending = false;
+      updateMediaControls(mediaBridge?.getCurrentTrack() ?? null);
+      if (focused && !focused.disabled && document.activeElement === document.body
+        && mediaBridge?.getCurrentTrack()?.session_key === sessionKey) {
+        focused.focus({ preventScroll: true });
+      }
+    }
+  }
   let lastMediaTrackKey: string = '';
   let currentCustomArtUrl: string | null = null;
   let currentArtSource: ArtworkSource = 'none';
@@ -1230,6 +1501,7 @@ function bindMusicControls() {
   let lastSessionIdentity: string = '';
   // Penolong balapan: respons artwork lama (permintaan dengan token lebih kecil) ditolak
   let artworkRequestToken: number = 0;
+  const artworkRetry = new ArtworkRetry();
   // Kunci render cover terakhir agar polling tiap detik tidak me-render ulang <img>
   let lastCoverRenderKey: string = '';
 
@@ -1253,7 +1525,6 @@ function bindMusicControls() {
 
     coverBox?.classList.remove('track-slide-transition');
     trackTitle?.classList.remove('track-slide-transition');
-    dancingMomo?.classList.add('turn-head');
 
     void coverBox?.offsetWidth;
 
@@ -1261,7 +1532,6 @@ function bindMusicControls() {
     trackTitle?.classList.add('track-slide-transition');
 
     setTimeout(() => {
-      dancingMomo?.classList.remove('turn-head');
       coverBox?.classList.remove('track-slide-transition');
       trackTitle?.classList.remove('track-slide-transition');
     }, 350);
@@ -1269,16 +1539,12 @@ function bindMusicControls() {
 
   // Status awal berhenti jika belum diputar secara eksplisit
   if (btnToggle) {
-    btnToggle.innerText = '▶';
-  }
-  if (dancingMomo) {
-    dancingMomo.style.animationPlayState = 'paused';
+    setPlaybackAppearance(false);
   }
   stageEl?.classList.remove('playing');
   setEqualizerPlaying(false);
 
-  let lyricsSlideTimeout: number | null = null;
-  let lyricsFadeTimeout: number | null = null;
+  const lyricsView = new LyricsView(renderLyricsContent);
 
   function renderLyricsContent(update: import('./audio/lyricsService').LyricsLinesUpdate) {
     const cardLine1 = document.querySelector<HTMLElement>('#music-card-line1');
@@ -1289,7 +1555,17 @@ function bindMusicControls() {
     const lyricsCard = document.querySelector<HTMLElement>('#music-lyrics-card');
 
     if (lyricsCard) {
+      lyricsCard.setAttribute('aria-busy', String(update.loadStatus === 'loading'));
       lyricsCard.classList.toggle('is-paused', update.isPlaying === false);
+      lyricsCard.classList.toggle('is-local-music', !isSystemMediaActive);
+      lyricsCard.classList.toggle('is-plain-lyrics', !update.isSynced && (update.totalLines ?? 0) > 0);
+    }
+    const lyricsViewport = document.querySelector<HTMLElement>('#lyrics-viewport');
+    if (lyricsViewport) {
+      lyricsViewport.tabIndex = isSystemMediaActive ? 0 : -1;
+      lyricsViewport.setAttribute('aria-label', !update.isSynced && (update.totalLines ?? 0) > 0
+        ? 'Lirik tanpa penanda waktu, gulir untuk membaca'
+        : isSystemMediaActive ? 'Lirik lagu, gulir untuk membaca baris panjang' : 'Playlist bawaan berulang');
     }
 
     if (cardLine1) cardLine1.innerText = update.line1;
@@ -1300,6 +1576,7 @@ function bindMusicControls() {
     }
 
     if (dotsEl) {
+      dotsEl.setAttribute('aria-label', isSystemMediaActive ? 'Instrumental' : 'Playlist berulang');
       dotsEl.style.display = update.isInstrumental ? 'inline-flex' : 'none';
       if (update.isPlaying === false) {
         dotsEl.style.animationPlayState = 'paused';
@@ -1314,16 +1591,22 @@ function bindMusicControls() {
 
   // Hubungkan pembaruan lirik dari lyricsService ke antarmuka kartu tengah
   lyricsService.subscribe((update) => {
+    for (const id of ['#btn-lyrics-slower', '#btn-lyrics-faster', '#btn-lyrics-reset']) {
+      const control = document.querySelector<HTMLButtonElement>(id);
+      if (control) control.disabled = !isSystemMediaActive || !update.isSynced;
+    }
+    const offsetOutput = document.querySelector<HTMLOutputElement>('#lyrics-offset');
+    if (offsetOutput) offsetOutput.value = `${(update.offsetSeconds || 0).toFixed(1).replace('.', ',')} dtk`;
     const cardTag = document.querySelector<HTMLElement>('#music-card-tag');
-    const trackEl = document.querySelector<HTMLElement>('#lyrics-track');
-    const viewportEl = document.querySelector<HTMLElement>('#lyrics-viewport');
-    const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
     if (cardTag && isSystemMediaActive) {
       const track = mediaBridge?.getCurrentTrack();
       const identity = resolveMediaSourceIdentity(track ?? null);
-      const prefix = identity.badgeText;
-      if (update.isSynced) {
+      const prefix = `${identity.badgeText} · LRCLIB`;
+      if (update.loadStatus) {
+        cardTag.innerText = `${prefix} · ${update.loadStatus === 'loading' ? 'MEMUAT LIRIK'
+          : update.loadStatus === 'error' ? 'LIRIK GAGAL DIMUAT' : 'LIRIK BELUM TERSEDIA'}`;
+      } else if (update.isSynced) {
         cardTag.innerText = update.isInstrumental ? `${prefix} · INSTRUMENTAL` : `${prefix} · LIRIK SINKRON`;
       } else if (update.line1 === 'Lirik biasa (sinkronisasi tidak tersedia)') {
         cardTag.innerText = `${prefix} · LIRIK BIASA (SINKRONISASI TIDAK TERSEDIA)`;
@@ -1332,55 +1615,18 @@ function bindMusicControls() {
       }
     }
 
-    // Jika reduced motion aktif, atau transisi none, atau elemen belum ada: langsung perbarui tanpa pergeseran
-    if (prefersReducedMotion || update.transitionType === 'none' || !trackEl) {
-      if (lyricsSlideTimeout !== null) {
-        clearTimeout(lyricsSlideTimeout);
-        lyricsSlideTimeout = null;
-      }
-      trackEl?.classList.remove('is-sliding-up');
-      renderLyricsContent(update);
-      return;
-    }
-
-    // 1. Saat seek atau ganti lagu (jump): langsung pilih baris dan fade singkat 160 ms (80ms fade out, 80ms fade in)
-    if (update.transitionType === 'jump') {
-      if (lyricsSlideTimeout !== null) {
-        clearTimeout(lyricsSlideTimeout);
-        lyricsSlideTimeout = null;
-        trackEl.classList.remove('is-sliding-up');
-      }
-      if (viewportEl) {
-        viewportEl.classList.add('is-fading');
-        if (lyricsFadeTimeout !== null) clearTimeout(lyricsFadeTimeout);
-        lyricsFadeTimeout = window.setTimeout(() => {
-          renderLyricsContent(update);
-          viewportEl.classList.remove('is-fading');
-          lyricsFadeTimeout = null;
-        }, 80);
-      } else {
-        renderLyricsContent(update);
-      }
-      return;
-    }
-
-    // 2. Saat berganti baris berurutan (step): seluruh susunan bergeser ke atas selama 200 ms
-    if (update.transitionType === 'step') {
-      const cardIncoming = document.querySelector<HTMLElement>('#music-card-incoming');
-      if (cardIncoming) cardIncoming.innerText = update.incoming || update.line2;
-
-      trackEl.classList.add('is-sliding-up');
-
-      if (lyricsSlideTimeout !== null) clearTimeout(lyricsSlideTimeout);
-      lyricsSlideTimeout = window.setTimeout(() => {
-        renderLyricsContent(update);
-        trackEl.classList.remove('is-sliding-up');
-        lyricsSlideTimeout = null;
-      }, 200);
-      return;
-    }
-
-    renderLyricsContent(update);
+    const hasLyrics = update.isSynced || (update.totalLines ?? 0) > 0;
+    lyricsView.update(hasLyrics ? {
+      ...update,
+      line1: update.line1 === 'Lirik biasa (sinkronisasi tidak tersedia)' ? '' : update.line1,
+    } : {
+      ...update,
+      line1: '',
+      highlight: isSystemMediaActive ? update.highlight : '',
+      line2: update.line2,
+      incoming: '',
+      isInstrumental: !isSystemMediaActive,
+    });
   });
 
   // Hubungkan pembaruan cover album dan avatar penyanyi
@@ -1417,16 +1663,57 @@ function bindMusicControls() {
 
   // Inisialisasi bridge sistem media OS (Spotify / Browser / Media Session)
   mediaBridge = new SystemMediaBridge();
+  let readingSessions = false;
+  async function refreshSessions() {
+    if (readingSessions || !sessionSelect || document.activeElement === sessionSelect) return;
+    readingSessions = true;
+    try {
+      const sessions = await mediaBridge!.listSessions();
+      const selected = mediaBridge!.getSelectedSession() || '';
+      const options = [new Option('Otomatis', ''), new Option('Musik bawaan', 'local')];
+      for (const session of sessions) {
+        options.push(new Option(`${session.source_display_name || 'Pemutar'} · ${session.title}`, session.session_key));
+      }
+      if (selected && selected !== 'local' && !sessions.some(s => s.session_key === selected)) {
+        options.push(new Option('Sesi pilihan tidak tersedia', selected));
+      }
+      if (document.activeElement !== sessionSelect) {
+        sessionSelect.replaceChildren(...options);
+        sessionSelect.value = selected;
+      }
+      const status = document.querySelector<HTMLElement>('#music-session-status');
+      if (status) status.innerText = !mediaBridge!.isTauriAvailable
+        ? 'Sesi aplikasi lain hanya tersedia di desktop.'
+        : selected && selected !== 'local' && !sessions.some(s => s.session_key === selected)
+        ? 'Sesi pilihan terputus. Pilih sesi lain atau Otomatis.'
+        : sessions.length ? `${sessions.length} sesi tersedia.` : 'Belum ada sesi media.';
+    } finally { readingSessions = false; }
+  }
+  sessionSelect?.addEventListener('change', () => {
+    void mediaBridge!.selectSession(sessionSelect.value || null);
+    if (musicStatus) musicStatus.innerText = '';
+  });
+  void refreshSessions();
+  window.setInterval(() => { void refreshSessions(); }, 5000);
+  for (const [id, delta, reset] of [
+    ['#btn-lyrics-slower', -0.5, false], ['#btn-lyrics-faster', 0.5, false], ['#btn-lyrics-reset', 0, true],
+  ] as const) {
+    document.querySelector(id)?.addEventListener('click', () => {
+      const saved = lyricsService.adjustTiming(delta, reset);
+      const status = document.querySelector<HTMLElement>('#lyrics-timing-status');
+      if (status) status.innerText = saved ? 'Koreksi lirik tersimpan.' : 'Koreksi tidak tersimpan. Coba lagi.';
+    });
+  }
+  repeatButton?.addEventListener('click', () => {
+    const mode = mediaBridge?.getCurrentTrack()?.repeat_mode;
+    void runMediaCommand(() => mediaBridge!.setRepeat(mode === 'off' ? 'all' : mode === 'all' ? 'one' : 'off'));
+  });
 
   // Daftarkan listener saat lagu selesai (Momo melepas headphone dan meregangkan badan)
   mediaBridge.onSongFinished(() => {
     renderer?.triggerSongFinished();
-    if (dancingMomo) {
-      dancingMomo.classList.add('song-finished');
-      setTimeout(() => {
-        dancingMomo.classList.remove('song-finished');
-      }, 3600);
-    }
+    endedMomoRecord = momoRecord();
+    musicMomo?.controller.setPlayback('ended', endedMomoRecord);
   });
 
   // Variabel kendali ekstrapolasi waktu pemutaran lokal mandiri
@@ -1436,12 +1723,64 @@ function bindMusicControls() {
   let currentTrackDuration: number = 0;
   let playbackTickerTimer: number | null = null;
   let seekCooldownUntil: number = 0;
+  let playbackCorrection = 0;
+  let ambientElapsedSeconds = 0;
+  let localHasStarted = false;
+  let ambientStartedAt: number | null = null;
+
+  function pauseAmbientClock() {
+    if (ambientStartedAt !== null) {
+      ambientElapsedSeconds += (performance.now() - ambientStartedAt) / 1000;
+      ambientStartedAt = null;
+    }
+  }
+
+  function renderAmbientTime() {
+    if (isSystemMediaActive) return;
+    const elapsed = ambientElapsedSeconds + (ambientStartedAt === null
+      ? 0 : (performance.now() - ambientStartedAt) / 1000);
+    const current = document.querySelector<HTMLElement>('#music-time-current');
+    const total = document.querySelector<HTMLElement>('#music-time-total');
+    const progress = document.querySelector<HTMLElement>('#music-progress-track');
+    if (current) current.innerText = `Sudah diputar ${formatTime(elapsed)}`;
+    if (total) total.style.display = 'none';
+    if (progress) progress.style.display = 'none';
+  }
+
+  audio.onPlaybackState = (state) => {
+    if (isSystemMediaActive || !isAudioPlaying) return;
+    if (state === 'loading') {
+      if (musicStatus) musicStatus.innerText = '';
+      pauseAmbientClock();
+      setPlaybackAppearance(true, 'loading');
+    } else if (state === 'playing') {
+      ambientStartedAt ??= performance.now();
+      setPlaybackAppearance(true);
+    } else {
+      pauseAmbientClock();
+      isAudioPlaying = false;
+      setPlaybackAppearance(false);
+      stageEl?.classList.remove('playing');
+      setEqualizerPlaying(false);
+      renderer?.setMusicPlaying(false);
+      lyricsService.setAmbientTrack(ambientTracks[currentTrackIdx].id, false);
+      if (musicStatus) musicStatus.innerText = audio.getPlaybackFailure()?.message ?? 'Audio gagal dimuat. Coba putar kembali.';
+    }
+  };
+
+  window.setInterval(renderAmbientTime, 1000);
 
   function updateMusicProgressUI(positionSecs: number, durationSecs: number) {
     const clampedPos = Math.max(0, durationSecs > 0 ? Math.min(positionSecs, durationSecs) : positionSecs);
     const progressFill = document.querySelector<HTMLElement>('#music-progress-fill');
     const timeCurrent = document.querySelector<HTMLElement>('#music-time-current');
     const timeTotal = document.querySelector<HTMLElement>('#music-time-total');
+
+    const progressTrack = document.querySelector<HTMLElement>('#music-progress-track');
+    if (progressTrack) progressTrack.style.display = '';
+    progressTrack?.setAttribute('aria-valuemax', String(Math.max(0, durationSecs)));
+    progressTrack?.setAttribute('aria-valuenow', String(clampedPos));
+    if (timeTotal) timeTotal.style.display = '';
 
     if (timeCurrent) {
       timeCurrent.innerText = formatTime(clampedPos);
@@ -1469,13 +1808,16 @@ function bindMusicControls() {
       lastTickTime = now;
 
       if (isPlaybackActive && isSystemMediaActive) {
-        localPlaybackPos += dt;
+        const rate = mediaBridge?.getCurrentTrack()?.playback_rate ?? 1;
+        const advanced = advancePlayback(localPlaybackPos, dt, playbackCorrection, rate);
+        localPlaybackPos = advanced.position;
+        playbackCorrection = advanced.correction;
         if (currentTrackDuration > 0 && localPlaybackPos > currentTrackDuration) {
           localPlaybackPos = currentTrackDuration;
         }
         updateMusicProgressUI(localPlaybackPos, currentTrackDuration);
       }
-    }, 250);
+    }, 50);
   }
 
   function stopPlaybackTicker() {
@@ -1485,17 +1827,36 @@ function bindMusicControls() {
     }
   }
 
+  let localPlaybackRequest = 0;
   mediaBridge.subscribe((track) => {
+    if (track && shouldIgnoreAmbiguousWebViewSession(track.source_app, mediaBridge!.getSelectedSession(),
+      !isSystemMediaActive && (isAudioPlaying || localHasStarted))) return;
+    updateMediaControls(track);
+    const hasExternalMedia = !!(track && track.has_session && track.title.trim().length > 0);
+    const disconnected = !hasExternalMedia && !!mediaBridge?.getSelectedSession()
+      && mediaBridge.getSelectedSession() !== 'local';
+    void updateVolumeMode(hasExternalMedia);
+    document.querySelector('#music-lyrics-card')?.classList.toggle('is-local-music', !hasExternalMedia && !disconnected);
     if (track && track.has_session && track.title.trim().length > 0) {
+      if (isAudioPlaying) console.warn('Sesi sistem mengambil alih audio lokal:', {
+        sourceApp: track.source_app,
+        localPlaylistTitle: ambientTracks.some(item => item.title === track.title),
+        playbackStatus: track.playback_status,
+      });
+      // Pengambilalihan kontrol juga menghentikan sumber lokal ketika sesi luar dijeda.
+      takeOverLocalPlayback(audio, pauseAmbientClock, () => ++localPlaybackRequest);
+      isAudioPlaying = false;
       isSystemMediaActive = true;
       // Identitas sumber: aplikasi asli dipisahkan dari layanan.
       // Media non-Spotify (termasuk browser) TIDAK diberi label Spotify.
       const identity = resolveMediaSourceIdentity(track);
 
-      const trackKey = `${track.title}:::${track.artist}`.toLowerCase();
+      const trackKey = `${track.session_key}#${track.record_key}#${track.title}:::${track.artist}`.toLowerCase();
       const isNewTrack = trackKey !== lastMediaTrackKey;
       if (isNewTrack) {
         lastMediaTrackKey = trackKey;
+        playbackCorrection = 0;
+        seekCooldownUntil = 0;
         triggerTrackChangeAnimation();
         localPlaybackPos = track.position_secs;
         lastReportedSystemPos = track.position_secs;
@@ -1508,7 +1869,7 @@ function bindMusicControls() {
       const sessionIdentity = `${track.session_key || ''}#${track.record_key || trackKey}`;
       if (sessionIdentity !== lastSessionIdentity) {
         lastSessionIdentity = sessionIdentity;
-        const artToken = ++artworkRequestToken;
+        artworkRequestToken++;
         const artworkKey = sessionIdentity;
 
         // 1. Kosongkan cover lama seketika dan reset metadata artwork rekaman sebelumnya
@@ -1522,7 +1883,11 @@ function bindMusicControls() {
           },
           track.has_thumbnail === true
         );
+      }
 
+      if (artworkRetry.begin(sessionIdentity, track.has_thumbnail === true)) {
+        const artToken = ++artworkRequestToken;
+        const artworkKey = sessionIdentity;
         // 2. Ambil thumbnail dari sesi media yang sama (bukan dari pencarian luar)
         void (async () => {
           const art = await mediaBridge?.fetchArtwork(track);
@@ -1537,11 +1902,12 @@ function bindMusicControls() {
                 { title: track.title, artist: track.artist }
               )
             : false;
+          artworkRetry.finish(artworkKey, applied);
 
           if (!applied) {
             // Thumbnail tidak tersedia / gagal dibaca / format tidak didukung:
             // tahan placeholder, lalu coba fallback pencarian terverifikasi (opsional)
-            lyricsService.notifySessionArtworkUnavailable(artworkKey);
+            if (!currentCustomArtUrl) lyricsService.notifySessionArtworkUnavailable(artworkKey);
             void lyricsService.requestSearchArtworkFallback({
               title: track.title,
               artist: track.artist,
@@ -1559,14 +1925,9 @@ function bindMusicControls() {
       if (!isNewTrack && performance.now() >= seekCooldownUntil) {
         // Jika sistem melaporkan posisi baru yang berbeda dari laporan sistem sebelumnya
         if (track.position_secs !== lastReportedSystemPos) {
-          const diff = Math.abs(track.position_secs - localPlaybackPos);
-          // Jika perbedaan cukup besar (pengguna seek di Spotify desktop) atau lompat mundur lebih dari 1 detik
-          if (diff > 2.0 || track.position_secs < localPlaybackPos - 1.0) {
-            localPlaybackPos = track.position_secs;
-          } else {
-            // Selisih kecil: kalibrasi lembut mendekati posisi sistem
-            localPlaybackPos = track.position_secs;
-          }
+          const reconciled = reconcilePlayback(localPlaybackPos, track.position_secs, track.is_playing);
+          localPlaybackPos = reconciled.position;
+          playbackCorrection = reconciled.correction;
           lastReportedSystemPos = track.position_secs;
         } else {
           // Sistem mengembalikan posisi yang sama (cache/statis):
@@ -1615,41 +1976,62 @@ function bindMusicControls() {
       }
 
       if (btnToggle) {
-        btnToggle.innerText = track.is_playing ? '❚❚' : '▶';
-      }
-      if (dancingMomo) {
-        dancingMomo.style.animationPlayState = track.is_playing ? 'running' : 'paused';
+        setPlaybackAppearance(track.is_playing, !track.is_playing && track.playback_status === 'changing' ? 'loading'
+          : track.is_playing ? 'playing' : 'paused');
       }
       stageEl?.classList.toggle('playing', track.is_playing);
       setEqualizerPlaying(track.is_playing);
       renderer?.setMusicPlaying(track.is_playing);
       renderer?.setAmbientMode(null);
 
-      // Hentikan synth lokal jika media sistem sedang aktif dan memutar suara
-      if (isAudioPlaying && track.is_playing) {
-        audio.stop();
-        isAudioPlaying = false;
-      }
     } else {
       isSystemMediaActive = false;
       isPlaybackActive = false;
       stopPlaybackTicker();
       localPlaybackPos = 0;
+      playbackCorrection = 0;
       lastReportedSystemPos = -1;
       // Batalkan permintaan artwork yang masih berjalan dan bersihkan sampul
       artworkRequestToken++;
+      artworkRetry.reset();
       lastSessionIdentity = '';
+      lastMediaTrackKey = '';
       currentCustomArtUrl = null;
       currentArtSource = 'none';
+      if (disconnected) {
+        takeOverLocalPlayback(audio, pauseAmbientClock, () => ++localPlaybackRequest);
+        isAudioPlaying = false;
+        lyricsService.clear();
+        const artwork = document.querySelector<HTMLElement>('#music-album-art');
+        if (artwork) { artwork.replaceChildren(); artwork.title = 'Sampul tidak tersedia'; }
+        lastCoverRenderKey = '';
+        const title = document.querySelector<HTMLElement>('#music-track-title');
+        const artist = document.querySelector<HTMLElement>('#music-track-artist');
+        const compact = document.querySelector<HTMLElement>('#compact-track');
+        const tag = document.querySelector<HTMLElement>('#music-card-tag');
+        const badge = document.querySelector<HTMLElement>('#music-source-badge');
+        const highlight = document.querySelector<HTMLElement>('#music-card-highlight');
+        const line1 = document.querySelector<HTMLElement>('#music-card-line1');
+        const line2 = document.querySelector<HTMLElement>('#music-card-line2');
+        if (title) title.innerText = 'Sesi media terputus';
+        if (artist) artist.innerText = 'Pilih sumber lain di pengaturan.';
+        if (compact) compact.innerText = 'Sesi media terputus';
+        if (badge) badge.innerText = 'SESI TERPUTUS';
+        if (tag) tag.innerText = 'SUMBER TIDAK TERSEDIA';
+        if (line1) line1.innerText = '';
+        if (highlight) { highlight.innerText = 'Pilih sumber lain di pengaturan.'; highlight.style.display = 'block'; }
+        if (line2) line2.innerText = '';
+        document.querySelector<HTMLElement>('#lyrics-instrumental-dots')?.style.setProperty('display', 'none');
+        setPlaybackAppearance(false, 'disconnected');
+        stageEl?.classList.remove('playing');
+        setEqualizerPlaying(false);
+        renderer?.setMusicPlaying(false);
+        return;
+      }
       renderMusicAlbumArt(null, null, 'none');
       lastCoverRenderKey = 'inactive';
 
-      const progressFill = document.querySelector<HTMLElement>('#music-progress-fill');
-      const timeCurrent = document.querySelector<HTMLElement>('#music-time-current');
-      const timeTotal = document.querySelector<HTMLElement>('#music-time-total');
-      if (progressFill) progressFill.style.width = '0%';
-      if (timeCurrent) timeCurrent.innerText = '00:00';
-      if (timeTotal) timeTotal.innerText = '00:00';
+      renderAmbientTime();
 
       const compactThumb = document.querySelector<HTMLImageElement>('#compact-album-thumb');
       if (compactThumb) compactThumb.style.display = 'none';
@@ -1661,7 +2043,7 @@ function bindMusicControls() {
         const localTrack = ambientTracks[currentTrackIdx];
         const sourceBadge = document.querySelector<HTMLElement>('#music-source-badge');
         if (sourceBadge) {
-          sourceBadge.innerText = 'AMBIENT FOREST';
+          sourceBadge.innerText = 'MUSIK BELAJAR';
           sourceBadge.className = 'session-badge badge-purple';
         }
 
@@ -1675,12 +2057,11 @@ function bindMusicControls() {
         if (compactTrack) compactTrack.innerText = localTrack.title;
 
         const cardTag = document.querySelector<HTMLElement>('#music-card-tag');
-        if (cardTag) cardTag.innerText = 'LYRICS / AMBIENT';
+        if (cardTag) cardTag.innerText = 'PLAYLIST BAWAAN · LOOP';
 
         lyricsService.setAmbientTrack(localTrack.id, false);
 
-        if (btnToggle) btnToggle.innerText = '▶';
-        if (dancingMomo) dancingMomo.style.animationPlayState = 'paused';
+        setPlaybackAppearance(false, mediaBridge?.getSelectedSession() !== 'local' ? 'disconnected' : localHasStarted ? 'paused' : 'idle');
         stageEl?.classList.remove('playing');
         setEqualizerPlaying(false);
       }
@@ -1689,14 +2070,13 @@ function bindMusicControls() {
 
   // Daftarkan aksi klik pada bilah progres musik untuk seek posisi lagu
   const progressTrack = document.querySelector<HTMLElement>('#music-progress-track');
-  progressTrack?.addEventListener('click', async (e: MouseEvent) => {
+  let seekRequest = 0;
+  const seekToPosition = async (targetPos: number) => {
     const track = mediaBridge?.getCurrentTrack();
-    if (!track || !isSystemMediaActive || !track.duration_secs || track.duration_secs <= 0) return;
-
-    const rect = progressTrack.getBoundingClientRect();
-    const clickX = Math.max(0, Math.min(e.clientX - rect.left, rect.width));
-    const ratio = rect.width > 0 ? clickX / rect.width : 0;
-    const targetPos = ratio * track.duration_secs;
+    if (!track?.capabilities?.seek || !isSystemMediaActive || track.duration_secs <= 0) return;
+    const request = ++seekRequest;
+    targetPos = Math.max(0, Math.min(targetPos, track.duration_secs));
+    const ratio = targetPos / track.duration_secs;
 
     const prevPos = localPlaybackPos;
     // Beri preview visual sementara pada progres bar
@@ -1705,8 +2085,11 @@ function bindMusicControls() {
 
     // Kirim permintaan seek dan periksa konfirmasi keberhasilan dari Spotify
     const success = await mediaBridge?.seekTo(targetPos);
+    const active = mediaBridge?.getCurrentTrack();
+    if (request !== seekRequest || active?.session_key !== track.session_key || active?.record_key !== track.record_key) return;
     if (success) {
       localPlaybackPos = targetPos;
+      playbackCorrection = 0;
       lastReportedSystemPos = targetPos;
       seekCooldownUntil = performance.now() + 800;
       updateMusicProgressUI(targetPos, currentTrackDuration);
@@ -1714,43 +2097,77 @@ function bindMusicControls() {
       // Jika perintah seek gagal atau ditolak oleh sistem, pulihkan tampilan ke posisi sebenarnya
       updateMusicProgressUI(prevPos, currentTrackDuration);
     }
+  };
+  progressTrack?.addEventListener('click', (e: MouseEvent) => {
+    const track = mediaBridge?.getCurrentTrack();
+    if (!track) return;
+    const rect = progressTrack.getBoundingClientRect();
+    void seekToPosition(rect.width > 0 ? (e.clientX - rect.left) / rect.width * track.duration_secs : 0);
+  });
+  progressTrack?.addEventListener('keydown', e => {
+    const track = mediaBridge?.getCurrentTrack();
+    if (!track?.capabilities?.seek || !['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(e.key)) return;
+    e.preventDefault();
+    void seekToPosition(e.key === 'Home' ? 0 : e.key === 'End' ? track.duration_secs
+      : localPlaybackPos + (e.key === 'ArrowLeft' ? -5 : 5));
   });
 
   // Mulai memantau status sesi media OS setiap 1 detik
   mediaBridge.startPolling(1000);
 
   btnToggle?.addEventListener('click', async () => {
+    const request = ++localPlaybackRequest;
     if (isSystemMediaActive && mediaBridge) {
-      await mediaBridge.togglePlay();
+      await runMediaCommand(() => mediaBridge!.togglePlay());
     } else {
       isAudioPlaying = !isAudioPlaying;
       const currentAmbient = ambientTracks[currentTrackIdx].id;
       if (isAudioPlaying) {
-        btnToggle.innerText = '❚❚';
-        audio.play(currentAmbient);
-        if (dancingMomo) dancingMomo.style.animationPlayState = 'running';
+        setPlaybackAppearance(true, 'loading');
+        const started = await audio.play(currentAmbient);
+        if (request !== localPlaybackRequest || !isAudioPlaying) return;
+        if (!started || isSystemMediaActive) {
+          audio.stop();
+          isAudioPlaying = false;
+          setPlaybackAppearance(false);
+          if (!isSystemMediaActive) {
+            if (musicStatus) musicStatus.innerText = audio.getPlaybackFailure()?.message ?? 'Audio gagal diputar. Coba lagi.';
+          }
+          return;
+        }
+        ambientStartedAt = performance.now();
+        localHasStarted = true;
+        setPlaybackAppearance(true);
         stageEl?.classList.add('playing');
         setEqualizerPlaying(true);
         renderer?.setMusicPlaying(true);
-        renderer?.setAmbientMode(currentAmbient);
+        renderer?.setAmbientMode(null);
         lyricsService.setAmbientTrack(currentAmbient, true);
       } else {
-        btnToggle.innerText = '▶';
+        setPlaybackAppearance(false);
+        pauseAmbientClock();
         audio.stop();
-        if (dancingMomo) dancingMomo.style.animationPlayState = 'paused';
         stageEl?.classList.remove('playing');
         setEqualizerPlaying(false);
         renderer?.setMusicPlaying(false);
         lyricsService.setAmbientTrack(currentAmbient, false);
       }
+      renderAmbientTime();
     }
   });
 
-  const changeTrack = (delta: number) => {
+  const changeTrack = async (delta: number) => {
+    if (musicStatus) musicStatus.innerText = '';
+    const request = ++localPlaybackRequest;
+    audio.resetPlayback();
+    ambientElapsedSeconds = 0;
+    localHasStarted = false;
+    ambientStartedAt = null;
     currentTrackIdx = (currentTrackIdx + delta + ambientTracks.length) % ambientTracks.length;
     const track = ambientTracks[currentTrackIdx];
 
     triggerTrackChangeAnimation();
+    renderMusicAlbumArt(null);
 
     const titleEl = document.querySelector<HTMLElement>('#music-track-title');
     if (titleEl) titleEl.innerText = track.title;
@@ -1762,17 +2179,28 @@ function bindMusicControls() {
     if (compactTrack) compactTrack.innerText = track.title;
 
     if (isAudioPlaying) {
-      audio.play(track.id);
-      renderer?.setAmbientMode(track.id);
-      lyricsService.setAmbientTrack(track.id, true);
+      setPlaybackAppearance(true, 'loading');
+      const started = await audio.play(track.id);
+      if (request !== localPlaybackRequest || isSystemMediaActive) return;
+      isAudioPlaying = started;
+      localHasStarted = started;
+      ambientStartedAt = started ? performance.now() : null;
+      setPlaybackAppearance(started);
+      setEqualizerPlaying(started);
+      renderer?.setMusicPlaying(started);
+      stageEl?.classList.toggle('playing', started);
+      if (!started && musicStatus) musicStatus.innerText = audio.getPlaybackFailure()?.message ?? 'Audio gagal diputar. Coba lagi.';
+      renderer?.setAmbientMode(null);
+      lyricsService.setAmbientTrack(track.id, started);
     } else {
       lyricsService.setAmbientTrack(track.id, false);
     }
+    renderAmbientTime();
   };
 
   btnPrev?.addEventListener('click', async () => {
     if (isSystemMediaActive && mediaBridge) {
-      await mediaBridge.prevTrack();
+      await runMediaCommand(() => mediaBridge!.prevTrack());
     } else {
       changeTrack(-1);
     }
@@ -1780,7 +2208,7 @@ function bindMusicControls() {
 
   btnNext?.addEventListener('click', async () => {
     if (isSystemMediaActive && mediaBridge) {
-      await mediaBridge.nextTrack();
+      await runMediaCommand(() => mediaBridge!.nextTrack());
     } else {
       changeTrack(1);
     }
@@ -1791,6 +2219,190 @@ function bindMusicControls() {
 // 7. KONTROL WINDOW & NOTCH NATIVE
 // ============================================================================
 function bindWindowAndNotchControls() {
+  const minimalSprite = document.querySelector<SVGSVGElement>('#compact-momo-sprite')?.cloneNode(true) as SVGSVGElement | undefined;
+  if (minimalSprite) {
+    minimalSprite.setAttribute('id', 'desktop-pet-sprite');
+    rigDesktopPet(minimalSprite);
+    document.querySelector('#view-minimal .minimal-momo')?.append(minimalSprite);
+  }
+  const renderPetGait = minimalSprite ? mountPetGait(minimalSprite) : null;
+  const minimal = document.querySelector<HTMLElement>('#view-minimal');
+  const compact = document.querySelector<HTMLElement>('#view-compact');
+  let startPointer: { x: number; y: number } | null = null;
+  let minimalDragging = false;
+  let manualWindowDrag = false;
+  let trackMinimalPosition = false;
+  let minimalMoveSequence = 0;
+  let suppressMinimalClick = false;
+  let moveTimer: number | null = null;
+  let docking = false;
+  if (minimal && isTauri()) {
+    void import('@tauri-apps/api/window').then(({ getCurrentWindow }) => {
+      const nativeWindow = getCurrentWindow();
+      const snapWhenReleased = async () => {
+          try {
+            const { invoke } = await import('@tauri-apps/api/core');
+            if (await invoke<boolean>('is_pointer_pressed')) {
+              moveTimer = window.setTimeout(() => { void snapWhenReleased(); }, 150);
+              return;
+            }
+            const wasDragging = minimalDragging || manualWindowDrag;
+            minimalDragging = false;
+            manualWindowDrag = false;
+            if (isIslandTransitioning || isSettingsModalOpen || (performance.now() < petAutomaticUntil && !wasDragging)) return;
+            const stateAtRelease = currentIslandState;
+            docking = true;
+            const { currentMonitor } = await import('@tauri-apps/api/window');
+            const monitor = await currentMonitor();
+            if (!monitor) return;
+            const work = monitor.workArea;
+            const area = { x: work.position.x, y: work.position.y, width: work.size.width, height: work.size.height };
+            const [size, position] = await Promise.all([nativeWindow.outerSize(), nativeWindow.outerPosition()]);
+            if (isIslandTransitioning || isSettingsModalOpen || stateAtRelease !== currentIslandState) return;
+            const anchor = { x: position.x + size.width / 2, y: position.y + size.height / 2 };
+            const edge = dockWithinThreshold(anchor.x, anchor.y, area, size);
+            applyDockEdge(edge);
+            saveMinimalPosition({
+              x: edge === 'left' ? area.x : edge === 'right' ? area.x + area.width : anchor.x,
+              y: edge === 'top' ? area.y : edge === 'bottom' ? area.y + area.height : anchor.y,
+            });
+            await syncTauriWindowState(currentIslandState);
+          } catch (error) { console.warn('Gagal menempelkan Momo:', error); }
+          finally { docking = false; }
+      };
+      const queueDock = () => {
+        if (moveTimer !== null) window.clearTimeout(moveTimer);
+        moveTimer = window.setTimeout(() => { void snapWhenReleased(); }, 400);
+      };
+      void nativeWindow.onMoved(async ({ payload }) => {
+        if (nativeGeometryWrites > 0 || performance.now() < nativeGeometryQuietUntil) return;
+        if (isIslandTransitioning || isSettingsModalOpen || docking || (performance.now() < petAutomaticUntil && !minimalDragging && !manualWindowDrag)) return;
+        if (currentIslandState === 'hidden' && !trackMinimalPosition) return;
+        petManualUntil = performance.now() + 1000;
+        const sequence = ++minimalMoveSequence;
+        try {
+          const size = await nativeWindow.outerSize();
+          if (sequence !== minimalMoveSequence || isIslandTransitioning || nativeGeometryWrites > 0 || performance.now() < nativeGeometryQuietUntil
+            || (performance.now() < petAutomaticUntil && !minimalDragging && !manualWindowDrag)) return;
+          saveMinimalPosition({ x: payload.x + size.width / 2, y: payload.y + size.height / 2 });
+        } catch { /* Posisi aktual akan dibaca kembali setelah drag dilepas. */ }
+        queueDock();
+      });
+      document.addEventListener('pointerdown', event => {
+        const target = event.target as HTMLElement;
+        if (event.button !== 0 || target.closest('button, input, select, [role="button"], a')) return;
+        const region = target.closest('[data-tauri-drag-region]');
+        if (!region || region.getAttribute('data-tauri-drag-region') === 'false') return;
+        manualWindowDrag = true;
+        petManualUntil = performance.now() + 1000;
+        queueDock();
+      }, { capture: true });
+      for (const handle of [minimal]) {
+        if (!handle) continue;
+      handle.addEventListener('pointerdown', event => {
+        if (event.button === 0) {
+          startPointer = { x: event.screenX, y: event.screenY };
+          suppressMinimalClick = false;
+          handle.setPointerCapture(event.pointerId);
+        }
+      });
+      handle.addEventListener('pointermove', event => {
+        if (!startPointer || minimalDragging || !(event.buttons & 1)) return;
+        if (Math.hypot(event.screenX - startPointer.x, event.screenY - startPointer.y) < 5) return;
+        startPointer = null;
+        minimalDragging = true;
+        trackMinimalPosition = true;
+        suppressMinimalClick = true;
+        queueDock();
+        void nativeWindow.startDragging().catch(error => { minimalDragging = false; console.warn('Gagal memindahkan Momo:', error); });
+      });
+      }
+      window.addEventListener('pointerup', () => { startPointer = null; });
+      window.addEventListener('pointercancel', () => { startPointer = null; minimalDragging = false; });
+
+      let motion = restingPet();
+      let previousTime = performance.now();
+      let fractional: { x: number; y: number } | null = null;
+      let savedAt = 0;
+      let travelled = 0;
+      let cachedContext: PetContext | null = null;
+      let contextReadAt = 0;
+      const petTick = async () => {
+        const now = performance.now();
+        const elapsed = (now - previousTime) / 1000;
+        previousTime = now;
+        if (currentIslandState !== 'hidden' || isIslandTransitioning || isSettingsModalOpen || docking || startPointer || minimalDragging || now < petManualUntil
+          || window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+          motion = restingPet(); fractional = null; cachedContext = null;
+          if (minimal) minimal.dataset.walking = 'false';
+          renderPetGait?.(travelled, now, false, window.matchMedia('(prefers-reduced-motion: reduce)').matches);
+          return;
+        }
+        const { invoke } = await import('@tauri-apps/api/core');
+        if (!cachedContext || now - contextReadAt >= 100) {
+          cachedContext = await invoke<PetContext>('desktop_pet_context');
+          contextReadAt = now;
+        }
+        const context = { ...cachedContext };
+        if (currentIslandState !== 'hidden' || isIslandTransitioning || startPointer || minimalDragging) return;
+        if (fractional && Math.hypot(fractional.x - context.x, fractional.y - context.y) < 2) {
+          context.x = fractional.x; context.y = fractional.y;
+        }
+        const next = stepDesktopPet(context, motion, elapsed, now);
+        motion = next.motion;
+        travelled += Math.hypot(next.x - context.x, next.y - context.y) / context.scale;
+        renderPetGait?.(travelled, now, motion.walking);
+        if (minimal) { minimal.dataset.walking = String(motion.walking); minimal.dataset.facing = motion.facing; }
+        if (!motion.walking) { fractional = null; return; }
+        fractional = { x: next.x, y: next.y };
+        petAutomaticUntil = performance.now() + 250;
+        if (dockEdge !== 'floating') applyDockEdge('floating');
+        const targetX = Math.round(next.x - context.width / 2) + context.width / 2;
+        const targetY = Math.round(next.y - context.height / 2) + context.height / 2;
+        if (targetX !== cachedContext.x || targetY !== cachedContext.y) {
+          const [x, y] = await invoke<[number, number]>('move_minimal_window', fractional);
+          cachedContext.x = x; cachedContext.y = y;
+        }
+        if (minimalSprite) minimalSprite.style.translate = `${(next.x - cachedContext.x) / context.scale}px ${(next.y - cachedContext.y) / context.scale}px`;
+        if (now - savedAt > 1500) { saveMinimalPosition(fractional); savedAt = now; }
+      };
+      let petFailed = false;
+      const schedulePet = () => {
+        window.requestAnimationFrame(() => {
+          petMoveInFlight = petTick().catch(error => {
+            if (!petFailed) console.warn('Gerak desktop Momo tidak tersedia:', error);
+            petFailed = true;
+          }).finally(() => { petMoveInFlight = null; schedulePet(); });
+        });
+      };
+      schedulePet();
+    }).catch(error => console.warn('Kontrol posisi Momo tidak tersedia:', error));
+  }
+  const hover = new HoverIntent();
+  const widget = document.querySelector<HTMLElement>('#dynamic-island');
+  let dragging = false;
+  let keyboardNavigation = false;
+  let hoverHold = false;
+  window.addEventListener('keydown', e => {
+    if (['Tab', 'Enter', ' ', 'ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(e.key)) keyboardNavigation = true;
+  });
+  window.addEventListener('pointerdown', () => { keyboardNavigation = false; });
+  widget?.addEventListener('pointerdown', () => { dragging = true; });
+  window.addEventListener('pointerup', () => { dragging = false; });
+  window.addEventListener('pointercancel', () => { dragging = false; });
+  window.addEventListener('blur', () => { dragging = false; hover.reset(); });
+  window.setInterval(() => {
+    if (!widget) return;
+    const inside = widget.matches(':hover');
+    if (!inside) hoverHold = false;
+    const focused = document.activeElement as HTMLElement | null;
+    const focusInside = !!focused && focused.offsetParent !== null && widget.contains(focused)
+      && (keyboardNavigation || focused.matches('input, select, textarea, [contenteditable="true"]'));
+    const confirmingCancel = !!document.querySelector('#focus-cancel-confirm:not([hidden])');
+    const blocked = dragging || hoverHold || focusInside || confirmingCancel || isSettingsModalOpen || isIslandTransitioning;
+    const action = hover.update(inside, appState.config.hoverEnabled === true, blocked, currentIslandState, performance.now());
+    if (action) void setIslandState(action === 'expand' ? 'expanded' : 'compact');
+  }, 50);
   // Tombol Pin Always on Top
   const btnPin = document.querySelector<HTMLButtonElement>('#btn-pin-always-on-top');
   if (btnPin) {
@@ -1836,6 +2448,7 @@ function bindWindowAndNotchControls() {
   // Tombol minimize [-] -> compact notch
   document.querySelector('#btn-minimize-notch')?.addEventListener('click', async (e) => {
     e.stopPropagation();
+    hoverHold = true;
     setIslandState('compact');
   });
 
@@ -1874,28 +2487,48 @@ function bindWindowAndNotchControls() {
 
   // Klik di view minimal atau view compact mengembalikan ke expanded
   document.querySelector('#view-minimal')?.addEventListener('click', () => {
+    if (suppressMinimalClick) { suppressMinimalClick = false; return; }
     setIslandState('expanded');
+  });
+  document.querySelector('#view-minimal')?.addEventListener('keydown', (event) => {
+    const keyEvent = event as KeyboardEvent;
+    if (keyEvent.key === 'Enter' || keyEvent.key === ' ') {
+      keyEvent.preventDefault();
+      void setIslandState('expanded');
+    }
   });
 
   document.querySelector('#view-compact')?.addEventListener('click', (e) => {
+    if (suppressMinimalClick) { suppressMinimalClick = false; return; }
     if ((e.target as HTMLElement).tagName !== 'BUTTON') {
       setIslandState('expanded');
     }
+  });
+  compact?.addEventListener('keydown', event => {
+    if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); void setIslandState('expanded'); }
   });
 
   // Klik ganda pada area pegangan notch atau header untuk memastikan panel menempel ke tengah atas
   const snapHandler = async (e: MouseEvent) => {
     if ((e.target as HTMLElement).closest('button, input, select, [role="button"], a')) return;
+    e.preventDefault();
+    e.stopPropagation();
     if (isTauri()) {
       try {
         const { invoke } = await import('@tauri-apps/api/core');
         await invoke('snap_to_top_center');
+        const { currentMonitor } = await import('@tauri-apps/api/window');
+        const monitor = await currentMonitor();
+        if (monitor) {
+          applyDockEdge('top');
+          saveMinimalPosition({ x: monitor.workArea.position.x + monitor.workArea.size.width / 2, y: monitor.workArea.position.y });
+          await syncTauriWindowState(currentIslandState);
+        }
       } catch (_e) {
         // Abaikan
       }
     }
   };
-  document.querySelector<HTMLElement>('#view-minimal')?.addEventListener('dblclick', snapHandler);
   document.querySelector<HTMLElement>('#view-compact')?.addEventListener('dblclick', snapHandler);
   document.querySelector<HTMLElement>('header.panel-header')?.addEventListener('dblclick', snapHandler);
 }
@@ -1903,10 +2536,35 @@ function bindWindowAndNotchControls() {
 // ============================================================================
 // 8. MODAL DIALOG PENGATURAN POMODORO & WIDGET
 // ============================================================================
+let settingsSaving = false;
+let settingsStartupStatus: boolean | null = null;
+let settingsReadVersion = 0;
+
+function showSettingsStatus(message: string) {
+  const status = document.querySelector<HTMLElement>('#settings-status');
+  if (status) status.innerText = message;
+}
+
+function readSettingsDuration() {
+  const ids = { hours: 'total-hours', minutes: 'total-mins' };
+  const result = parseSettingsDuration({
+    hours: document.querySelector<HTMLInputElement>('#setting-total-hours')?.value ?? '',
+    minutes: document.querySelector<HTMLInputElement>('#setting-total-mins')?.value ?? '',
+  });
+  for (const [field, id] of Object.entries(ids)) {
+    const invalid = !result.valid && result.field === field;
+    document.querySelector<HTMLInputElement>('#setting-' + id)?.setAttribute('aria-invalid', String(invalid));
+    const error = document.querySelector<HTMLElement>('#setting-' + id + '-error');
+    if (error) error.innerText = invalid && !result.valid ? result.message : '';
+  }
+  return result;
+}
+
 function bindSettingsModal() {
   const modalEl = document.querySelector<HTMLElement>('#modal-settings');
   const btnSessionPill = document.querySelector('#session-pill-clickable');
   const btnDockSettings = document.querySelector('#dock-btn-settings');
+  document.querySelector('#btn-header-settings')?.addEventListener('click', () => openModal());
   const btnCloseSettings = document.querySelector('#btn-close-settings');
   const btnSaveSettings = document.querySelector('#btn-save-settings');
 
@@ -1946,6 +2604,8 @@ function bindSettingsModal() {
   };
 
   const openModal = () => {
+    if (settingsSaving) return;
+    showSettingsStatus('');
     isSettingsModalOpen = true;
     lastFocusedTrigger = document.activeElement as HTMLElement | null;
     updateSettingsFormInputs();
@@ -1958,6 +2618,8 @@ function bindSettingsModal() {
   };
 
   const closeModal = () => {
+    if (settingsSaving) return;
+    settingsReadVersion++;
     isSettingsModalOpen = false;
     modalEl?.classList.remove('active');
     syncTauriWindowState(currentIslandState, false);
@@ -1985,8 +2647,6 @@ function bindSettingsModal() {
   const inputs = [
     '#setting-total-hours',
     '#setting-total-mins',
-    '#setting-focus-mins',
-    '#setting-break-mins',
   ];
   inputs.forEach((id) => {
     const el = document.querySelector(id);
@@ -2012,22 +2672,23 @@ function bindSettingsModal() {
 
 function updateSettingsFormInputs() {
   const cfg = appState.config;
-  const hours = Math.floor(cfg.totalDurationMin / 60);
-  const mins = cfg.totalDurationMin % 60;
+  const target = cfg.focusTargetMin ?? engine.getPlan().totalFocusMin;
+  const hours = Math.floor(target / 60);
+  const mins = target % 60;
 
   const hInput = document.querySelector<HTMLInputElement>('#setting-total-hours');
-  const mInput = document.querySelector<HTMLSelectElement>('#setting-total-mins');
-  const fInput = document.querySelector<HTMLInputElement>('#setting-focus-mins');
-  const bInput = document.querySelector<HTMLInputElement>('#setting-break-mins');
+  const mInput = document.querySelector<HTMLInputElement>('#setting-total-mins');
   const autoBInput = document.querySelector<HTMLInputElement>('#setting-auto-break');
   const autoFInput = document.querySelector<HTMLInputElement>('#setting-auto-focus');
 
   if (hInput) hInput.value = String(hours);
   if (mInput) mInput.value = String(mins);
-  if (fInput) fInput.value = String(cfg.focusDurationMin);
-  if (bInput) bInput.value = String(cfg.breakDurationMin);
   if (autoBInput) autoBInput.checked = cfg.autostartBreak;
   if (autoFInput) autoFInput.checked = cfg.autostartNextFocus;
+  const hoverInput = document.querySelector<HTMLInputElement>('#setting-hover');
+  if (hoverInput) hoverInput.checked = cfg.hoverEnabled === true;
+  const momoIntensity = document.querySelector<HTMLSelectElement>('#setting-momo-intensity');
+  if (momoIntensity) momoIntensity.value = cfg.momoIntensity ?? 'expressive';
 
   const seasonCycleRadio = document.querySelector<HTMLInputElement>('#season-mode-cycle');
   const seasonManualRadio = document.querySelector<HTMLInputElement>('#season-mode-manual');
@@ -2057,24 +2718,31 @@ function updateSettingsFormInputs() {
   }
 
   const autoAppInput = document.querySelector<HTMLInputElement>('#setting-autostart-app');
-  if (autoAppInput) {
-    isAutostartEnabled().then((enabled) => {
-      autoAppInput.checked = enabled;
-    }).catch(() => {
-      autoAppInput.checked = false;
-    });
+  const saveButton = document.querySelector<HTMLButtonElement>('#btn-save-settings');
+  const version = ++settingsReadVersion;
+  settingsStartupStatus = null;
+  if (autoAppInput) { autoAppInput.disabled = true; autoAppInput.checked = false; }
+  if (!isTauri()) {
+    showSettingsStatus('Startup otomatis hanya tersedia di aplikasi desktop.');
+    return;
   }
+  if (saveButton) saveButton.disabled = true;
+  showSettingsStatus('Membaca pengaturan startup…');
+  void isAutostartEnabled().then((enabled) => {
+    if (version !== settingsReadVersion) return;
+    settingsStartupStatus = enabled;
+    if (autoAppInput) {
+      autoAppInput.disabled = enabled === null;
+      autoAppInput.checked = enabled === true;
+    }
+    if (saveButton) saveButton.disabled = false;
+    showSettingsStatus(enabled === null
+      ? 'Status startup gagal dibaca. Preferensi lain dapat disimpan; startup tidak akan diubah.' : '');
+  });
 }
 
 function updateModalPlanPreview() {
-  const h = parseInt((document.querySelector<HTMLInputElement>('#setting-total-hours')?.value || '4'), 10) || 0;
-  const m = parseInt((document.querySelector<HTMLSelectElement>('#setting-total-mins')?.value || '0'), 10) || 0;
-  const focus = parseInt((document.querySelector<HTMLInputElement>('#setting-focus-mins')?.value || '30'), 10) || 30;
-  const brk = parseInt((document.querySelector<HTMLInputElement>('#setting-break-mins')?.value || '10'), 10) || 10;
-
-  const totalMin = h * 60 + m;
-  const validation = validatePomodoroInput(totalMin, focus, brk);
-
+  const result = readSettingsDuration();
   const summaryEl = document.querySelector<HTMLElement>('#preview-plan-summary');
   const trackEl = document.querySelector<HTMLElement>('#modal-preview-timeline-track');
   const alertEl = document.querySelector<HTMLElement>('#preview-shortened-alert');
@@ -2085,13 +2753,16 @@ function updateModalPlanPreview() {
   const activeSessionTextEl = document.querySelector<HTMLElement>('#preview-active-session-text');
   const footerStatsEl = document.querySelector<HTMLElement>('#modal-footer-stats');
 
-  if (!validation.isValid) {
+  if (!result.valid) {
     if (summaryEl) {
-      summaryEl.innerText = `Peringatan: ${validation.errorMessage}`;
+      summaryEl.innerText = `Peringatan: ${result.message}`;
       summaryEl.style.color = '#ff8080';
     }
     if (alertEl) alertEl.style.display = 'none';
     if (trackEl) trackEl.innerHTML = '';
+    for (const element of [cardTotalEl, cardFocusEl, cardBreakEl, rangeMetaEl, activeSessionTextEl, footerStatsEl]) {
+      if (element) element.innerText = '—';
+    }
     return;
   }
 
@@ -2099,7 +2770,7 @@ function updateModalPlanPreview() {
     summaryEl.style.color = '';
   }
 
-  const plan = buildPomodoroPlan(totalMin, focus, brk);
+  const plan = buildFocusTargetPlan(result.total);
 
   // Update elemen sesuai Figma 1:1
   if (summaryEl) {
@@ -2127,7 +2798,7 @@ function updateModalPlanPreview() {
   }
 
   if (activeSessionTextEl) {
-    activeSessionTextEl.innerText = `Putaran 1 · Fokus ${plan.focusDurationMin} menit · Menit 0-${plan.focusDurationMin}`;
+    activeSessionTextEl.innerText = getFirstPhasePreview(plan);
   }
 
   if (footerStatsEl) {
@@ -2145,103 +2816,80 @@ function updateModalPlanPreview() {
 }
 
 async function saveSettingsFromModal(onSuccess: () => void) {
-  const h = parseInt((document.querySelector<HTMLInputElement>('#setting-total-hours')?.value || '4'), 10) || 0;
-  const m = parseInt((document.querySelector<HTMLInputElement>('#setting-total-mins')?.value || '0'), 10) || 0;
-  const focus = parseInt((document.querySelector<HTMLInputElement>('#setting-focus-mins')?.value || '30'), 10) || 30;
-  const brk = parseInt((document.querySelector<HTMLInputElement>('#setting-break-mins')?.value || '10'), 10) || 10;
-
-  const totalMin = h * 60 + m;
-
-  // Validasi input batas waktu menggunakan validator resmi mesin
-  const validation = validatePomodoroInput(totalMin, focus, brk);
-  if (!validation.isValid) {
-    alert(validation.errorMessage || 'Pengaturan durasi tidak valid.');
+  if (settingsSaving) return;
+  const result = readSettingsDuration();
+  if (!result.valid) {
+    showSettingsStatus(result.message);
+    document.querySelector<HTMLInputElement>('[aria-invalid="true"]')?.focus();
     return;
   }
-
-  const autoBreak = document.querySelector<HTMLInputElement>('#setting-auto-break')?.checked ?? true;
-  const autoFocus = document.querySelector<HTMLInputElement>('#setting-auto-focus')?.checked ?? true;
-  const autoApp = document.querySelector<HTMLInputElement>('#setting-autostart-app')?.checked ?? false;
-
-  const waterTarget = parseInt((document.querySelector<HTMLInputElement>('#setting-water-target')?.value || '2000'), 10) || 2000;
-  const waterInterval = parseInt((document.querySelector<HTMLInputElement>('#setting-water-interval')?.value || '45'), 10) || 45;
-  const soundEnabled = document.querySelector<HTMLInputElement>('#setting-sound-enabled')?.checked ?? true;
-
-  if (waterTarget < 100 || waterTarget > 10000) {
-    alert('Target minum air harian harus antara 100 ml dan 10.000 ml.');
-    return;
-  }
-  if (waterInterval < 1 || waterInterval > 360) {
-    alert('Interval pengingat minum harus antara 1 dan 360 menit.');
-    return;
-  }
-
-  const isSeasonManual = document.querySelector<HTMLInputElement>('#season-mode-manual')?.checked ?? false;
-  const chosenSeasonMode: SeasonMode = isSeasonManual ? 'manual' : 'cycle';
-  const chosenManualSeason = (document.querySelector<HTMLSelectElement>('#setting-manual-season')?.value || 'spring') as IslandSeason;
-
-  const tempPlan = buildPomodoroPlan(totalMin, focus, brk);
-
+  const tempPlan = buildFocusTargetPlan(result.total);
   const newConfig: PomodoroConfig = {
-    totalDurationMin: totalMin,
-    focusDurationMin: focus,
-    breakDurationMin: brk,
-    autostartBreak: autoBreak,
-    autostartNextFocus: autoFocus,
-    soundEnabled,
-    volume: appState.config.volume ?? 0.5,
-    // Preferensi pin mengikuti status tombol pin aktif, bukan selalu true
+    ...appState.config,
+    focusTargetMin: result.total,
+    hoverEnabled: document.querySelector<HTMLInputElement>('#setting-hover')?.checked ?? false,
+    momoIntensity: document.querySelector<HTMLSelectElement>('#setting-momo-intensity')?.value === 'calm' ? 'calm' : 'expressive',
+    totalDurationMin: tempPlan.totalDurationMin,
+    focusDurationMin: result.focus,
+    breakDurationMin: result.rest,
+    autostartBreak: document.querySelector<HTMLInputElement>('#setting-auto-break')?.checked ?? appState.config.autostartBreak,
+    autostartNextFocus: document.querySelector<HTMLInputElement>('#setting-auto-focus')?.checked ?? appState.config.autostartNextFocus,
     alwaysOnTop: isAlwaysOnTopActive,
     targetDailySessions: tempPlan.focusSessionCount,
-    dailyWaterTargetMl: waterTarget,
-    hydrationReminderIntervalMin: waterInterval,
-    seasonMode: chosenSeasonMode,
+    seasonMode: document.querySelector<HTMLInputElement>('#season-mode-manual')?.checked ? 'manual' : 'cycle',
   };
+  const chosenSeason = document.querySelector<HTMLSelectElement>('#setting-manual-season')?.value;
+  if (!['spring', 'summer', 'autumn', 'winter'].includes(chosenSeason ?? '')) {
+    showSettingsStatus('Pilih musim yang tersedia.');
+    return;
+  }
+  const scheduleChanged = hasScheduleChanged(appState.config, newConfig);
+  const active = ['running', 'paused', 'waiting_next'].includes(engine.getStatus());
+  if (scheduleChanged && active && !confirm('Durasi berubah. Hentikan rencana aktif dan siapkan rencana baru dari awal?')) return;
 
-  // Jika timer sedang aktif berjalan atau jeda, konfirmasi kepada pengguna
-  const isTimerActive = engine.getStatus() === 'running' || engine.getStatus() === 'paused';
-  if (isTimerActive) {
-    const confirmChange = confirm(
-      'Sesi timer sedang berjalan. Terapkan rencana baru sekarang dan mulai ulang sesi?'
-    );
-    if (!confirmChange) {
+  const startupBefore = settingsStartupStatus;
+  const startupAfter = document.querySelector<HTMLInputElement>('#setting-autostart-app')?.checked ?? startupBefore;
+  const changeStartup = startupBefore !== null && startupAfter !== startupBefore;
+  const controls = Array.from(document.querySelectorAll<HTMLInputElement | HTMLButtonElement | HTMLSelectElement>(
+    '#modal-settings input, #modal-settings select, #modal-settings button'));
+  const disabledBefore = controls.map(control => control.disabled);
+  settingsSaving = true;
+  controls.forEach(control => { control.disabled = true; });
+  showSettingsStatus('Menyimpan pengaturan…');
+  try {
+    if (changeStartup && !await setAutostartEnabled(startupAfter!)) {
+      showSettingsStatus('Gagal mengubah startup otomatis. Pengaturan belum disimpan. Coba lagi.');
       return;
     }
-  }
-
-  // Hitung ulang jadwal pengingat minum jika interval diubah
-  const oldWaterInterval = appState.config.hydrationReminderIntervalMin || 45;
-  if (oldWaterInterval !== waterInterval) {
-    appState.nextHydrationReminderTimestamp = Date.now() + waterInterval * 60 * 1000;
-    hasNotifiedHydrationDue = false;
-  }
-
-  // Terapkan autostart sistem dan TUNGU hasil operasi native.
-  // Kegagalan dilaporkan ke pengguna alih-alih dianggap berhasil diam-diam.
-  if (isTauri()) {
-    try {
-      const autostartOk = await setAutostartEnabled(autoApp);
-      if (!autostartOk) {
-        alert(
-          'Pengaturan tersimpan, tetapi gagal mengatur startup otomatis pada sistem operasi. Coba buka aplikasi sebagai administrator atau atur manual dari Task Manager.'
-        );
-      }
-    } catch (_err) {
-      alert('Pengaturan tersimpan, tetapi terjadi kesalahan saat mengatur startup otomatis.');
+    // Capture progress after the native operation so timer completions are retained.
+    const candidate: StoredAppState = {
+      ...appState,
+      config: { ...newConfig, volume: appState.config.volume, alwaysOnTop: isAlwaysOnTopActive },
+      progress: { ...appState.progress, currentSeason: newConfig.seasonMode === 'manual'
+        ? chosenSeason as IslandSeason : appState.progress.currentSeason },
+      timerSession: scheduleChanged ? null : engine.getSnapshot(),
+    };
+    if (!saveAppState(candidate)) {
+      const rolledBack = !changeStartup || await setAutostartEnabled(startupBefore!);
+      if (!rolledBack) settingsStartupStatus = startupAfter!;
+      showSettingsStatus(rolledBack
+        ? 'Gagal menyimpan pengaturan di perangkat. Perubahan belum diterapkan; coba lagi.'
+        : 'Penyimpanan gagal. Startup sudah berubah dan gagal dikembalikan; preferensi lain belum diterapkan.');
+      return;
     }
+    appState = candidate;
+    musicMomo?.refresh();
+    settingsStartupStatus = changeStartup ? startupAfter! : startupBefore;
+    const wasActive = ['running', 'paused', 'waiting_next'].includes(engine.getStatus());
+    engine.updateConfig(candidate.config);
+    if (scheduleChanged && wasActive) engine.rebuildPlan();
+    if (newConfig.seasonMode === 'manual') renderer?.setSeason(chosenSeason as IslandSeason);
+    syncUI();
+  } finally {
+    settingsSaving = false;
+    controls.forEach((control, index) => { control.disabled = disabledBefore[index]; });
   }
-
-  appState.config = newConfig;
-  if (chosenSeasonMode === 'manual') {
-    appState.progress.currentSeason = chosenManualSeason;
-    renderer?.setSeason(chosenManualSeason);
-  }
-  saveAppState(appState);
-
-  engine.updateConfig(newConfig);
-  engine.rebuildPlan();
-
-  syncUI();
+  showSettingsStatus('');
   onSuccess();
 }
 

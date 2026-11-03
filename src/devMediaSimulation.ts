@@ -25,7 +25,9 @@ let mockIsPlaying = true;
 let mockSeekBaseSecs = 0;
 let mockLastResumeTime = 0;
 let mockArtworkCache: string[] = [];
-let mockRequestCount = 0;
+let mockSessionKey = 'media-session-sim-1';
+let mockRepeatMode = 'off';
+let mockStopped = false;
 
 function makeArtworkBase64(colors: [string, string], label: string): string {
   if (typeof document === 'undefined') return '';
@@ -51,35 +53,43 @@ function makeArtworkBase64(colors: [string, string], label: string): string {
   return dataUrl.replace('data:image/png;base64,', '');
 }
 
-function mockTrackPayload() {
+function mockTrackPayload(sessionKey: string = mockSessionKey) {
   const track = mockTracks[mockCurrentIdx];
   const elapsed = mockIsPlaying ? (Date.now() - mockLastResumeTime) / 1000 : 0;
   const position = Math.min(track.durationSecs, mockSeekBaseSecs + elapsed);
-  const isSpotifyDesktop = (window as unknown as { __MOCK_MEDIA_SPOTIFY?: boolean }).__MOCK_MEDIA_SPOTIFY === true;
+  if (mockIsPlaying && position >= track.durationSecs) {
+    mockIsPlaying = false;
+    mockStopped = true;
+    mockSeekBaseSecs = track.durationSecs;
+  }
+  const isSpotifyDesktop = sessionKey !== 'media-session-sim-2' && (window as unknown as { __MOCK_MEDIA_SPOTIFY?: boolean }).__MOCK_MEDIA_SPOTIFY === true;
   return {
     title: track.title,
     artist: track.artist,
     album: track.album,
     is_playing: mockIsPlaying,
+    playback_status: mockIsPlaying ? 'playing' : mockStopped ? 'stopped' : 'paused',
     source_app: isSpotifyDesktop ? 'Spotify.exe' : 'OperaInternetBrowser.1655713752.3114608054!OperaStable',
     source_display_name: isSpotifyDesktop ? 'Spotify' : 'Opera',
     service_kind: isSpotifyDesktop ? 'spotify_desktop' : 'web_media',
     is_spotify: isSpotifyDesktop,
     has_session: true,
-    session_key: 'media-session-sim-1',
+    session_key: sessionKey,
     record_key: track.recordKey,
     has_thumbnail: true,
     position_secs: position,
     duration_secs: track.durationSecs,
+    playback_rate: 1,
+    capabilities: { toggle: true, next: true, previous: true, seek: true, repeat: isSpotifyDesktop },
+    repeat_mode: isSpotifyDesktop ? mockRepeatMode : null,
   };
 }
 
-function mockArtworkPayload(recordKey: string) {
+function mockArtworkPayload(recordKey: string, sessionKey: string) {
   const idx = mockTracks.findIndex((t) => t.recordKey === recordKey);
   if (idx === -1) return null;
-  mockRequestCount++;
   return {
-    session_key: 'media-session-sim-1',
+    session_key: sessionKey,
     record_key: recordKey,
     artwork_key: `media-session-sim-1#${recordKey}`,
     data_base64: mockArtworkCache[idx],
@@ -126,12 +136,28 @@ export function installMockMediaSession(mode: string | null): void {
     invoke(cmd: string, args?: Record<string, unknown>): Promise<unknown> {
       switch (cmd) {
         case 'get_system_media_track':
+          mockSessionKey = String(args?.sessionKey || 'media-session-sim-1');
           return Promise.resolve(mockTrackPayload());
+        case 'get_system_media_sessions':
+          return Promise.resolve([mockTrackPayload('media-session-sim-1'), mockTrackPayload('media-session-sim-2')]);
+        case 'system_media_repeat':
+          mockRepeatMode = String(args?.mode || 'off');
+          return Promise.resolve(true);
+        case 'fetch_lyrics': {
+          const params = new URLSearchParams(args?.params as [string, string][]);
+          const track = mockTracks[mockCurrentIdx];
+          const record = { trackName: track.title, artistName: track.artist, albumName: track.album,
+            duration: track.durationSecs, syncedLyrics: '[00:00]SIMULASI · baris pertama\n[00:03]SIMULASI · baris kedua\n[00:45]SIMULASI · baris ketiga' };
+          return Promise.resolve({ status: 200, body: args?.endpoint === 'get' && params.get('track_name') === track.title ? record : [record] });
+        }
+        case 'get_device_volume': return Promise.resolve(0.5);
+        case 'set_device_volume': return Promise.resolve(true);
         case 'get_system_media_artwork':
           return Promise.resolve(
-            mockArtworkPayload(String(args?.recordKey ?? ''))
+            mockArtworkPayload(String(args?.recordKey ?? ''), String(args?.sessionKey || mockSessionKey))
           );
         case 'system_media_toggle_play':
+          mockStopped = false;
           if (mockIsPlaying) {
             mockSeekBaseSecs = Math.min(
               mockTracks[mockCurrentIdx].durationSecs,
@@ -144,16 +170,19 @@ export function installMockMediaSession(mode: string | null): void {
           }
           return Promise.resolve(true);
         case 'system_media_next':
+          mockStopped = false;
           mockCurrentIdx = (mockCurrentIdx + 1) % mockTracks.length;
           mockSeekBaseSecs = 0;
           mockLastResumeTime = Date.now();
           return Promise.resolve(true);
         case 'system_media_prev':
+          mockStopped = false;
           mockCurrentIdx = (mockCurrentIdx - 1 + mockTracks.length) % mockTracks.length;
           mockSeekBaseSecs = 0;
           mockLastResumeTime = Date.now();
           return Promise.resolve(true);
         case 'system_media_seek':
+          mockStopped = false;
           mockSeekBaseSecs = Math.max(0, Number(args?.positionSecs ?? 0));
           mockLastResumeTime = Date.now();
           return Promise.resolve(true);

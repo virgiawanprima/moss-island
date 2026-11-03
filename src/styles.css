@@ -255,6 +255,7 @@ body.is-tauri-native .island-widget {
   transform: none !important;
   width: 100% !important;
   height: 100% !important;
+  box-shadow: none;
 }
 
 body.is-tauri-native .island-widget:not(.expanded-ready) {
@@ -281,13 +282,12 @@ body.is-tauri-native .island-widget:not(.expanded-ready) {
 
 /* --- STATE A: MINIMAL / HIDDEN NOTCH (Menempel Bezel Atas) --- */
 .island-widget.state-hidden {
-  width: 130px;
-  height: 28px;
-  border-top: none;
-  border-top-left-radius: 0;
-  border-top-right-radius: 0;
-  border-bottom-left-radius: 14px;
-  border-bottom-right-radius: 14px;
+  width: 44px;
+  height: 44px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
   cursor: pointer;
 }
 
@@ -302,12 +302,17 @@ body.is-tauri-native .island-widget:not(.expanded-ready) {
   align-items: center;
   justify-content: center;
   gap: 8px;
-  background: var(--color-island-bg);
-  transition: background 0.15s ease;
+  background: transparent;
 }
 
-.view-minimal:hover {
-  background: #182721;
+.view-minimal:focus-visible { outline: 2px solid #c4f59b; outline-offset: -2px; }
+.minimal-momo { display: block; line-height: 0; }
+@keyframes minimal-momo-sway { 0%, 100% { transform: rotate(0); } 50% { transform: rotate(2deg); } }
+@keyframes minimal-momo-nod { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(1px) rotate(2deg); } }
+@keyframes minimal-momo-blink { 0%, 46%, 50%, 100% { opacity: 1; } 48% { opacity: 0; } }
+@media (prefers-reduced-motion: reduce) {
+  .state-hidden .minimal-momo svg, .state-hidden [data-playing="true"] .minimal-momo svg,
+  .state-hidden .minimal-momo path { animation: none; }
 }
 
 .minimal-notch-handle {
@@ -462,6 +467,35 @@ body.is-tauri-native .island-widget:not(.expanded-ready) {
   background: #2a3d35;
 }
 
+html[data-dock-edge="bottom"] .island-widget.state-compact {
+  border: 1px solid var(--color-island-border);
+  border-bottom: 0;
+  border-radius: 18px 18px 0 0;
+}
+html[data-dock-edge="left"] .island-widget.state-compact,
+html[data-dock-edge="right"] .island-widget.state-compact {
+  width: 96px;
+  height: 300px;
+  border: 1px solid var(--color-island-border);
+}
+html[data-dock-edge="left"] .island-widget.state-compact { border-left: 0; border-radius: 0 18px 18px 0; }
+html[data-dock-edge="right"] .island-widget.state-compact { border-right: 0; border-radius: 18px 0 0 18px; }
+html[data-dock-edge="left"] .view-compact,
+html[data-dock-edge="right"] .view-compact {
+  flex-direction: column;
+  padding: 16px 6px;
+  gap: 10px;
+}
+html[data-dock-edge="left"] .compact-left,
+html[data-dock-edge="right"] .compact-left,
+html[data-dock-edge="left"] .compact-center,
+html[data-dock-edge="right"] .compact-center {
+  flex-direction: column;
+  max-width: 100%;
+}
+html[data-dock-edge="left"] .compact-track-name,
+html[data-dock-edge="right"] .compact-track-name { max-width: 80px; }
+
 /* --- STATE C: EXPANDED EXACT FIGMA PANEL (Menempel Bezel Atas) --- */
 .island-widget.state-expanded {
   width: 960px;
@@ -479,7 +513,7 @@ body.is-tauri-native .island-widget:not(.expanded-ready) {
 }
 
 /* Penyesuaian tinggi per tab saat expanded:
-   Tab musik berukuran 960 × 248 px sesuai acuan desain Figma,
+   Tab musik memakai tinggi 228 px dengan jarak yang lebih rapat,
    sedangkan tab fokus dan minum tetap memakai tinggi 308 px untuk ruang hutan isometrik dan hidrasi. */
 .island-widget.state-expanded.tab-focus,
 .island-widget.state-expanded.tab-hydration {
@@ -497,8 +531,8 @@ body.is-tauri-native .island-widget:not(.expanded-ready) {
   box-sizing: border-box;
   width: 960px;
   max-width: 100vw;
-  height: 248px;
-  max-height: 248px;
+  height: 228px;
+  max-height: 228px;
   background: #17231F;
   border: 1px solid #35483E;
   border-top: none;
@@ -508,9 +542,25 @@ body.is-tauri-native .island-widget:not(.expanded-ready) {
   border-bottom-right-radius: 18px;
 }
 
+html[data-dock-edge="bottom"] .island-widget.state-expanded {
+  border: 1px solid var(--color-island-border);
+  border-bottom: 0;
+  border-radius: 20px 20px 0 0;
+}
+html[data-dock-edge="left"] .island-widget.state-expanded {
+  border: 1px solid var(--color-island-border);
+  border-left: 0;
+  border-radius: 0 20px 20px 0;
+}
+html[data-dock-edge="right"] .island-widget.state-expanded {
+  border: 1px solid var(--color-island-border);
+  border-right: 0;
+  border-radius: 20px 0 0 20px;
+}
+
 .island-widget.state-expanded.expanded-ready.tab-music {
-  min-height: 248px;
-  max-height: 248px;
+  min-height: 228px;
+  max-height: 228px;
 }
 
 .island-widget.state-expanded .view-minimal { display: none; }
@@ -529,17 +579,19 @@ body.is-tauri-native .island-widget:not(.expanded-ready) {
   display: flex;
   flex-direction: column;
   align-items: flex-start;
-  padding: 16px;
-  gap: 12px;
+  padding: 8px;
+  gap: 8px;
   width: 100%;
-  height: 248px;
-  max-height: 248px;
+  height: 228px;
+  max-height: 228px;
 }
 
 /* ==========================================================================
    3. EXPANDED PANEL HEADER (Brand + Pill Tabs + Window Controls)
    ========================================================================== */
 .panel-header {
+  width: 100%;
+  flex-shrink: 0;
   display: flex;
   justify-content: space-between;
   align-items: center;
@@ -560,15 +612,23 @@ body.is-tauri-native .island-widget:not(.expanded-ready) {
   display: flex;
   align-items: center;
   gap: 12px;
+  padding-inline-start: 12px;
+  min-width: 0;
 }
 
 .brand-momo-icon {
   display: flex;
   align-items: center;
+  flex-shrink: 0;
+}
+
+.brand-momo-icon svg {
+  width: 24px;
+  height: 36px;
 }
 
 .brand-title {
-  font-size: 0.95rem;
+  font-size: 1.1rem;
   font-weight: 700;
   color: var(--color-text-cream);
   letter-spacing: 0.5px;
@@ -610,7 +670,7 @@ body.is-tauri-native .island-widget:not(.expanded-ready) {
   color: var(--color-accent-lime);
 }
 
-/* Window Controls (Right: 32x32px square rounded) */
+/* Ukuran kontrol jendela sama di semua fitur. */
 .window-controls-group {
   display: flex;
   align-items: center;
@@ -618,8 +678,9 @@ body.is-tauri-native .island-widget:not(.expanded-ready) {
 }
 
 .win-control-btn {
-  width: 32px;
-  height: 32px;
+  width: 44px;
+  height: 44px;
+  flex: 0 0 44px;
   background-color: var(--color-tab-active);
   border: none;
   border-radius: 6px;
@@ -661,6 +722,41 @@ body.is-tauri-native .island-widget:not(.expanded-ready) {
   display: grid;
 }
 
+.tab-panel {
+  opacity: 1;
+  transition: opacity 140ms ease-out;
+}
+
+.island-widget.is-switching-tab .tab-panel {
+  opacity: 0;
+  pointer-events: none;
+  transition-duration: 70ms;
+}
+
+.island-widget:not(.is-switching-tab) .tab-panel.active {
+  animation: feature-panel-enter 140ms ease-out;
+}
+
+@keyframes feature-panel-enter {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+/* Konten panjang tetap dapat dijangkau lewat roda mouse, sentuhan, dan keyboard. */
+html,
+body,
+body * {
+  scrollbar-width: none;
+}
+
+body *::-webkit-scrollbar,
+body::-webkit-scrollbar,
+html::-webkit-scrollbar {
+  display: none;
+  width: 0;
+  height: 0;
+}
+
 /* Penataan khusus panel musik agar rapat, presisi, dan sejajar horizontal */
 #panel-music {
   width: 100%;
@@ -670,7 +766,7 @@ body.is-tauri-native .island-widget:not(.expanded-ready) {
   flex: 0 0 156px;
   margin-top: 0;
   margin-bottom: 0;
-  gap: 12px;
+  gap: 6px;
   align-items: center;
   box-sizing: border-box;
 }
@@ -678,49 +774,89 @@ body.is-tauri-native .island-widget:not(.expanded-ready) {
 #panel-music .col-left {
   display: flex;
   flex-direction: column;
-  justify-content: center;
-  gap: 8px;
+  justify-content: safe center;
+  gap: 4px;
   min-width: 0;
   height: 100%;
+  padding-inline-start: 4px;
+  overflow-y: auto;
+  scroll-padding: 4px;
 }
 
 #panel-music .col-center {
-  display: flex;
-  justify-content: center;
-  align-items: center;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr) 44px;
+  gap: 4px;
+  align-items: stretch;
   min-width: 0;
   height: 100%;
 }
 
 #panel-music .col-right {
   display: flex;
-  flex-direction: column;
-  justify-content: center;
   align-items: center;
-  gap: 6px;
+  justify-content: center;
   min-width: 0;
   height: 100%;
 }
 
 #panel-music .lyrics-card {
   width: 100%;
-  max-width: 420px;
+  max-width: none;
   box-sizing: border-box;
-  padding: 12px 18px;
-  gap: 6px;
+  padding: 5px 10px;
+  gap: 4px;
+  height: 100%;
+  min-height: 0;
 }
 
 #panel-music .music-timeline-box {
-  margin-top: 6px;
+  margin-top: 2px;
   width: 100%;
+  min-height: 44px;
+  flex-shrink: 0;
+  justify-content: center;
 }
 
 #panel-music .music-momo-stage {
-  height: 50px;
+  height: 100%;
+  width: 100%;
+}
+
+#panel-music .dancing-momo > svg {
+  display: block;
+  width: 84px;
+  height: 98px;
 }
 
 #panel-music .music-controls-row {
+  justify-content: flex-start;
+  gap: 6px;
   margin-top: 2px;
+}
+
+#panel-music .album-cover-box { gap: 8px; }
+#panel-music .album-info-meta { gap: 2px; }
+
+#panel-music {
+  grid-template-columns: minmax(280px, 320px) minmax(0, 1fr) 104px;
+}
+
+.island-widget.tab-music .pill-tabs-nav {
+  padding: 2px;
+}
+
+.pill-tab-btn:focus-visible,
+.win-control-btn:focus-visible,
+.island-widget.tab-music button:focus-visible {
+  outline: 2px solid var(--color-accent-lime);
+  outline-offset: 2px;
+}
+
+#music-track-block:focus-visible {
+  outline: 2px solid var(--color-accent-lime);
+  outline-offset: -2px;
 }
 
 #panel-music .auto-loop-meta {
@@ -840,13 +976,22 @@ body.is-tauri-native .island-widget:not(.expanded-ready) {
   display: block;
 }
 
+#panel-focus .canvas-wrapper {
+  max-height: 160px;
+}
+#panel-focus #island-canvas {
+  max-height: 160px;
+  object-fit: contain;
+}
+
 /* Progress Meta & Track */
 .island-progress-meta {
   width: 100%;
   max-width: 380px;
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: end;
+  gap: 6px 12px;
   font-size: 0.75rem;
   margin-top: 2px;
   margin-bottom: 6px;
@@ -854,11 +999,16 @@ body.is-tauri-native .island-widget:not(.expanded-ready) {
 
 .growth-caption {
   color: var(--color-text-cream);
+  grid-column: 1 / -1;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
 }
 
 .growth-percent {
   color: var(--color-accent-lime);
   font-weight: 700;
+  grid-column: 2;
+  white-space: nowrap;
 }
 
 .progress-bar-track {
@@ -891,6 +1041,20 @@ body.is-tauri-native .island-widget:not(.expanded-ready) {
   flex-direction: column;
   gap: 8px;
 }
+
+.actions-stack[hidden],
+.focus-cancel-confirm[hidden] { display: none; }
+.focus-cancel-confirm {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.focus-cancel-confirm p {
+  font-size: 0.68rem;
+  line-height: 1.5;
+  color: var(--color-text-main);
+}
+.focus-cancel-confirm button { min-height: 32px; }
 
 #panel-hydration .actions-stack {
   display: flex;
@@ -1172,6 +1336,50 @@ body.is-tauri-native .island-widget:not(.expanded-ready) {
   width: 100%;
 }
 
+.lyrics-timing-controls {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.music-text-btn,
+.settings-music select {
+  min-height: 44px;
+  min-width: 44px;
+  padding: 6px;
+  border: 1px solid #91ad9d;
+  border-radius: 6px;
+  background: #17231f;
+  color: #f1f5eb;
+  font: inherit;
+  font-size: 0.7rem;
+  cursor: pointer;
+}
+.music-text-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+#panel-music .transport-btn { width: 44px; height: 44px; flex: 0 0 44px; }
+#panel-music .transport-btn.btn-play { width: 48px; flex-basis: 48px; }
+.transport-icon { display: block; flex-shrink: 0; }
+.btn-play .icon-pause { display: none; }
+.btn-play[data-playing="true"] .icon-play { display: none; }
+.btn-play[data-playing="true"] .icon-pause { display: block; }
+.btn-repeat { position: relative; color: var(--color-text-muted); }
+.btn-repeat[aria-pressed="true"] { color: var(--color-accent-lime); }
+.repeat-one-mark { display: none; position: absolute; top: 13px; left: 19px; font-size: 0.6rem; line-height: 1; }
+.btn-repeat[data-repeat="one"] .repeat-one-mark { display: block; }
+.transport-btn:disabled { opacity: 0.45; cursor: not-allowed; }
+.music-text-btn:focus-visible,
+.settings-music select:focus-visible,
+#music-progress-track:focus-visible { outline: 2px solid #c4f59b; outline-offset: 2px; }
+.music-action-status { font-size: 0.65rem; color: var(--color-text-cream); }
+.music-action-status:empty { display: none; }
+.lyrics-provider { font-size: 0.6rem; line-height: 1.3; color: var(--color-text-cream); overflow-wrap: anywhere; }
+.settings-music { display: grid; gap: 8px; padding: 16px 0; color: var(--color-text-cream); }
+.settings-music h3,
+.settings-music p { margin: 0; }
+.settings-music p { font-size: 0.75rem; line-height: 1.5; }
+.settings-music select { width: 100%; min-width: 0; }
+.lyrics-timing-controls output { min-width: 65px; text-align: center; }
+
 .album-art-pine {
   width: 64px;
   height: 64px;
@@ -1187,7 +1395,7 @@ body.is-tauri-native .island-widget:not(.expanded-ready) {
   gap: 4px;
   min-width: 0;
   flex: 1;
-  overflow: hidden;
+  overflow: visible;
 }
 
 .album-art-pine > svg {
@@ -1206,18 +1414,25 @@ body.is-tauri-native .island-widget:not(.expanded-ready) {
   font-weight: 700;
   color: var(--color-text-cream);
   max-width: 100%;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  line-height: 1.4;
+}
+
+@media (min-width: 800px) {
+  #panel-music {
+    grid-template-columns: minmax(288px, 320px) minmax(0, 1fr) 112px;
+  }
 }
 
 .track-artist {
   font-size: 0.7rem;
   color: var(--color-text-muted);
   max-width: 100%;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  line-height: 1.5;
+  min-width: 0;
 }
 
 .album-art-pine.spotify-art svg {
@@ -1279,21 +1494,78 @@ body.is-tauri-native .island-widget:not(.expanded-ready) {
   flex-shrink: 0;
 }
 
-/* Viewport 3 baris teks tetap */
+/* Lirik panjang membungkus dan tetap dapat dibaca dengan keyboard. */
 .lyrics-viewport {
   position: relative;
   width: 100%;
   height: 78px;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overflow-anchor: none;
+  scrollbar-width: none;
+}
+
+.lyrics-viewport::-webkit-scrollbar {
+  display: none;
+  width: 0;
+  height: 0;
+}
+
+.lyrics-card.is-plain-lyrics .row-prev,
+.lyrics-card.is-plain-lyrics .row-next,
+.lyrics-card.is-plain-lyrics .row-incoming {
+  display: none;
+}
+.lyrics-card.is-plain-lyrics .lyrics-line-highlight {
+  white-space: pre-line;
+  color: var(--color-text-main);
+  font-weight: 400;
+  line-height: 1.7;
+}
+
+.lyrics-card.is-local-music .lyrics-viewport {
+  height: 78px;
   overflow: hidden;
-  transition: opacity 80ms ease-out;
+  scrollbar-width: none;
 }
 
-.lyrics-viewport.is-fading {
-  opacity: 0.25;
+.lyrics-card.is-local-music .lyrics-track {
+  height: 100%;
+  justify-content: center;
 }
 
-/* Track baris yang bergeser lembut ke atas selama 200 ms */
+.lyrics-card.is-local-music .row-prev,
+.lyrics-card.is-local-music .row-incoming {
+  display: none;
+}
+
+.lyrics-card.is-local-music .row-active {
+  justify-content: center;
+  min-height: 32px;
+  padding: 0;
+}
+
+.lyrics-card.is-local-music .row-next {
+  justify-content: center;
+  min-height: 0;
+  padding: 2px 0 0;
+  opacity: 1;
+}
+
+.lyrics-card.is-local-music .row-next .lyrics-line {
+  text-align: center;
+  font-size: 0.68rem;
+  line-height: 1.5;
+}
+
+.lyrics-card.is-local-music .pixel-instrumental-dots {
+  font-size: 1.5rem;
+  gap: 16px;
+  padding: 4px 0;
+}
+
 .lyrics-track {
+  position: relative;
   display: flex;
   flex-direction: column;
   width: 100%;
@@ -1301,22 +1573,18 @@ body.is-tauri-native .island-widget:not(.expanded-ready) {
   will-change: transform;
 }
 
-.lyrics-track.is-sliding-up {
-  transform: translateY(-26px);
-  transition: transform 200ms cubic-bezier(0.22, 1, 0.36, 1);
-}
-
 .lyrics-row {
-  height: 26px;
+  height: auto;
   min-height: 26px;
-  max-height: 26px;
+  flex-shrink: 0;
+  padding: 4px 0;
   display: flex;
   align-items: center;
   justify-content: flex-start;
   width: 100%;
   min-width: 0;
   box-sizing: border-box;
-  overflow: hidden;
+  overflow: visible;
 }
 
 /* Baris sebelumnya, berikutnya, dan baris yang akan masuk: warna redup tetapi tetap terbaca */
@@ -1334,9 +1602,8 @@ body.is-tauri-native .island-widget:not(.expanded-ready) {
   font-size: 0.78rem;
   font-weight: 400;
   color: inherit;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  white-space: normal;
+  overflow-wrap: anywhere;
   margin: 0;
 }
 
@@ -1348,33 +1615,13 @@ body.is-tauri-native .island-widget:not(.expanded-ready) {
 }
 
 .lyrics-row.row-active .lyrics-line-highlight {
-  font-size: 0.84rem;
-  font-weight: 700;
+  font-size: 0.78rem;
+  font-weight: 400;
   color: inherit;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  white-space: normal;
+  overflow-wrap: anywhere;
   margin: 0;
   line-height: 1.2;
-}
-
-/* Animasi perpindahan warna saat track bergeser ke atas */
-.lyrics-track.is-sliding-up .row-prev {
-  opacity: 0;
-  transition: opacity 200ms ease;
-}
-
-.lyrics-track.is-sliding-up .row-active {
-  color: #859F92;
-  opacity: 0.65;
-  transition: color 200ms ease, opacity 200ms ease;
-}
-
-.lyrics-track.is-sliding-up .row-next {
-  color: #A8F0C6;
-  opacity: 1;
-  font-weight: 700;
-  transition: color 200ms ease, opacity 200ms ease;
 }
 
 /* Tiga titik pixel instrumental yang bergerak pelan */
@@ -1391,7 +1638,34 @@ body.is-tauri-native .island-widget:not(.expanded-ready) {
 
 .pixel-dot {
   display: inline-block;
+  font-family: "Segoe UI Symbol", sans-serif;
   animation: pixel-dot-gentle 1.8s infinite ease-in-out;
+}
+
+.music-volume {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  font-size: 0.65rem;
+  color: var(--color-text-main);
+}
+
+.music-volume label { white-space: nowrap; }
+.music-volume input {
+  grid-column: 1 / -1;
+  grid-row: 2;
+  min-width: 0;
+  width: 100%;
+  height: 24px;
+  margin: 0;
+  accent-color: var(--color-accent-mint);
+}
+.music-volume output { grid-column: 2; grid-row: 1; min-width: 4ch; text-align: right; }
+.music-volume input:focus-visible {
+  outline: 2px solid var(--color-accent-mint);
+  outline-offset: 2px;
 }
 
 .pixel-dot.dot-1 {
@@ -1425,14 +1699,6 @@ body.is-tauri-native .island-widget:not(.expanded-ready) {
 
 /* Mode prefers-reduced-motion: cukup ganti warna baris aktif tanpa pergeseran */
 @media (prefers-reduced-motion: reduce) {
-  .lyrics-track.is-sliding-up {
-    transform: none !important;
-    transition: none !important;
-  }
-  .lyrics-viewport.is-fading {
-    opacity: 1 !important;
-    transition: none !important;
-  }
   .pixel-dot {
     animation: none !important;
     transform: none !important;
@@ -1440,7 +1706,7 @@ body.is-tauri-native .island-widget:not(.expanded-ready) {
   }
 }
 
-/* Dancing Momo & Player Controls */
+/* Momo menempati kolom tersendiri agar animasinya tidak menggeser kontrol. */
 .music-momo-stage {
   position: relative;
   display: flex;
@@ -1450,40 +1716,7 @@ body.is-tauri-native .island-widget:not(.expanded-ready) {
 }
 
 .dancing-momo {
-  animation: momo-dance-groove 7.2s infinite ease-in-out;
-  animation-play-state: paused;
   transform-origin: center bottom;
-  transition: transform 0.25s ease;
-}
-
-.dancing-momo.turn-head {
-  transform: scaleX(-1);
-}
-
-/* 3 Variasi tarian Momo:
-   0% - 33%: Mengangguk (head-bobbing naik turun)
-   34% - 66%: Goyang kanan-kiri (swaying tilt)
-   67% - 100%: Mengetuk kaki (foot tapping hop)
-*/
-@keyframes momo-dance-groove {
-  /* Fase 1: Mengangguk (Nodding) */
-  0%, 16%, 32% { transform: translateY(0) rotate(0deg); }
-  8%, 24% { transform: translateY(-5px) rotate(0deg); }
-  
-  /* Fase 2: Goyang kanan-kiri (Swaying) */
-  38% { transform: translateX(-4px) translateY(-2px) rotate(-4deg); }
-  46% { transform: translateX(4px) translateY(-2px) rotate(4deg); }
-  54% { transform: translateX(-3px) translateY(-1px) rotate(-3deg); }
-  62% { transform: translateX(3px) translateY(-1px) rotate(3deg); }
-  
-  /* Fase 3: Mengetuk kaki (Foot Tapping) */
-  68% { transform: translateY(-3px) rotate(-1deg); }
-  72% { transform: translateY(0) rotate(0deg); }
-  76% { transform: translateY(-4px) rotate(2deg); }
-  80% { transform: translateY(0) rotate(0deg); }
-  86% { transform: translateY(-5px) rotate(-2deg); }
-  92% { transform: translateY(0) rotate(0deg); }
-  100% { transform: translateY(0) rotate(0deg); }
 }
 
 /* Not musik pixel melayang lembut */
@@ -1576,6 +1809,150 @@ body.is-tauri-native .island-widget:not(.expanded-ready) {
   background-color: #d8ffb3;
 }
 
+@media (min-width: 601px) and (max-width: 799px) {
+  .island-widget.tab-music .brand-title {
+    display: block;
+    font-size: 0.95rem;
+  }
+}
+
+@media (max-width: 600px) {
+  .island-widget.state-expanded.tab-music,
+  .island-widget.state-expanded.expanded-ready.tab-music {
+    height: auto;
+    min-height: 0;
+    max-height: 100dvh;
+  }
+
+  .island-widget.state-expanded.tab-music .view-expanded {
+    height: auto;
+    max-height: 100dvh;
+    overflow-y: auto;
+    padding: 12px;
+    gap: 8px;
+  }
+
+  .island-widget.state-expanded.tab-music .panel-header {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 8px;
+    height: auto;
+  }
+
+  .island-widget.tab-music .brand-group {
+    grid-column: 1;
+    grid-row: 1;
+    padding-inline-start: 4px;
+    gap: 8px;
+  }
+
+  .island-widget.tab-music .brand-title {
+    display: block;
+    min-width: 0;
+    font-size: 0.95rem;
+  }
+
+  .island-widget.tab-music .pill-tabs-nav {
+    grid-column: 1 / -1;
+    grid-row: 2;
+    width: 100%;
+    height: 48px;
+  }
+
+  .island-widget.tab-music .window-controls-group {
+    grid-column: 2;
+    grid-row: 1;
+    gap: 4px;
+  }
+
+  #panel-music {
+    grid-template-columns: minmax(0, 1fr) 88px;
+    height: auto;
+    min-height: 0;
+    max-height: none;
+    flex: auto;
+    gap: 8px;
+  }
+
+  #panel-music .col-left {
+    grid-column: 1 / -1;
+    height: auto;
+    padding: 0;
+    overflow: visible;
+  }
+
+  #panel-music .col-center,
+  #panel-music .col-right { height: auto; }
+
+  #panel-music .col-center { grid-column: 1; }
+  #panel-music .col-right { grid-column: 2; }
+  #panel-music .lyrics-viewport { height: 104px; }
+  #panel-music .music-momo-stage { min-height: 124px; }
+  #panel-music .dancing-momo > svg { width: 72px; height: 84px; }
+  #panel-music .track-title,
+  #panel-music .track-artist { max-width: 100%; }
+}
+
+/* Panel samping memakai viewport sempit dan konten bergulir, tanpa memutar teks. */
+html[data-dock-edge="left"] body.is-tauri-native .island-widget.state-expanded,
+html[data-dock-edge="right"] body.is-tauri-native .island-widget.state-expanded {
+  min-height: 0 !important;
+  max-height: none !important;
+}
+html[data-dock-edge="left"] body.is-tauri-native .island-widget.state-expanded .view-expanded,
+html[data-dock-edge="right"] body.is-tauri-native .island-widget.state-expanded .view-expanded {
+  height: 100%;
+  max-height: 100%;
+  overflow-y: auto;
+}
+
+html[data-dock-edge="left"] body.is-tauri-native .island-widget.state-expanded #panel-music,
+html[data-dock-edge="right"] body.is-tauri-native .island-widget.state-expanded #panel-music,
+html[data-dock-edge="left"] body.is-tauri-native .island-widget.state-expanded #panel-hydration,
+html[data-dock-edge="right"] body.is-tauri-native .island-widget.state-expanded #panel-hydration {
+  flex: 0 0 auto;
+  align-content: start;
+  grid-auto-rows: max-content;
+  gap: 12px;
+}
+
+html[data-dock-edge="left"] body.is-tauri-native .island-widget.state-expanded #panel-music .col-left,
+html[data-dock-edge="right"] body.is-tauri-native .island-widget.state-expanded #panel-music .col-left {
+  width: min(100%, 360px);
+  justify-self: center;
+  padding-inline-start: 0;
+}
+
+html[data-dock-edge="left"] body.is-tauri-native .island-widget.state-expanded.tab-music .view-expanded,
+html[data-dock-edge="right"] body.is-tauri-native .island-widget.state-expanded.tab-music .view-expanded {
+  overflow-y: hidden;
+}
+
+@media (max-width: 600px) {
+  .island-widget.state-expanded,
+  .island-widget.state-expanded.expanded-ready {
+    height: auto;
+    min-height: 0;
+    max-height: 100dvh;
+  }
+  .island-widget.state-expanded .view-expanded {
+    height: auto;
+    max-height: 100dvh;
+    overflow-y: auto;
+  }
+  .island-widget.state-expanded .panel-header {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    height: auto;
+    gap: 8px;
+  }
+  .island-widget.state-expanded .brand-group { grid-column: 1; grid-row: 1; padding-inline-start: 4px; }
+  .island-widget.state-expanded .window-controls-group { grid-column: 2; grid-row: 1; gap: 4px; }
+  .island-widget.state-expanded .pill-tabs-nav { grid-column: 1 / -1; grid-row: 2; width: 100%; height: 48px; }
+  #panel-focus,
+  #panel-hydration { grid-template-columns: minmax(0, 1fr); }
+}
+
 /* ==========================================================================
    7. STATE TESTER BAR (Bottom Right)
    ========================================================================== */
@@ -1654,7 +2031,7 @@ body.is-tauri-native .island-widget:not(.expanded-ready) {
     padding: 10px 14px 12px 14px;
   }
   .panel-header {
-    height: 38px;
+    height: 48px;
     margin-bottom: 4px;
   }
   .brand-title {
@@ -1665,7 +2042,7 @@ body.is-tauri-native .island-widget:not(.expanded-ready) {
   }
   .pill-tabs-nav {
     width: 220px;
-    height: 34px;
+    height: 48px;
     padding: 2px;
     gap: 2px;
   }
@@ -1677,10 +2054,8 @@ body.is-tauri-native .island-widget:not(.expanded-ready) {
     gap: 4px;
   }
   .win-control-btn {
-    width: 26px;
-    height: 26px;
-    font-size: 0.9rem;
-    border-radius: 4px;
+    font-size: 1.1rem;
+    border-radius: 6px;
   }
   .panel-body {
     grid-template-columns: minmax(140px, 1fr) minmax(180px, 1.5fr) minmax(135px, 1fr);
@@ -1799,12 +2174,8 @@ body.is-tauri-native .island-widget:not(.expanded-ready) {
     height: 66px;
   }
   .lyrics-row {
-    height: 22px;
+    height: auto;
     min-height: 22px;
-    max-height: 22px;
-  }
-  .lyrics-track.is-sliding-up {
-    transform: translateY(-22px);
   }
   .lyrics-row.row-prev .lyrics-line,
   .lyrics-row.row-next .lyrics-line,
@@ -1812,7 +2183,7 @@ body.is-tauri-native .island-widget:not(.expanded-ready) {
     font-size: 0.68rem;
   }
   .lyrics-row.row-active .lyrics-line-highlight {
-    font-size: 0.74rem;
+    font-size: 0.68rem;
   }
   .pixel-instrumental-dots {
     font-size: 0.8rem;
@@ -2290,14 +2661,12 @@ button, input, select, textarea, [role="button"], a {
    ========================================================================== */
 
 .growth-caption-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  flex: 1;
+  display: contents;
 }
 
 .forest-gen-badge {
+  grid-column: 1;
+  justify-self: start;
   font-family: var(--font-pixel);
   font-size: 0.7rem;
   font-weight: 700;
@@ -2488,3 +2857,152 @@ body.is-tauri-native .modal-dialog.figma-settings-modal {
   outline: none;
 }
 
+
+.settings-field-error { color: #ffb4ab; font-size: 0.7rem; }
+.settings-field-error:empty { display: none; }
+.settings-input-combo { flex-wrap: wrap; }
+.settings-field-error { flex-basis: 100%; }
+.settings-mini-input[aria-invalid="true"] { border-color: #ffb4ab; }
+#settings-status { font-size: 0.75rem; line-height: 1.5; }
+#settings-status:empty { display: none; }
+#btn-save-settings:disabled { opacity: 0.6; cursor: wait; }
+
+.settings-input-combo:focus-within { border-color: var(--color-accent-mint); }
+.settings-input-combo:has([aria-invalid="true"]) { border-color: #ffb4ab; }
+
+.settings-inputs-row.settings-focus-target { grid-template-columns: 1fr; }
+.settings-focus-target .settings-input-combo { width: fit-content; gap: 10px; }
+
+/* Mode wajah menjadi pet; bilah minimize tetap memakai tampilan compact lama. */
+html[data-dock-edge] .island-widget.state-hidden,
+.island-widget.state-hidden {
+  width: 76px;
+  height: 92px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  overflow: visible;
+}
+html[data-dock-edge] .view-minimal,
+.view-minimal {
+  padding: 8px 6px 20px;
+  gap: 0;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  position: relative;
+  touch-action: none;
+}
+.state-hidden .minimal-momo { width: 64px; height: 64px; position: relative; z-index: 1; }
+.view-minimal::after {
+  content: '';
+  position: absolute;
+  width: 32px;
+  height: 5px;
+  bottom: 16px;
+  border-radius: 50%;
+  background: #101b1540;
+  pointer-events: none;
+}
+.view-minimal:focus-visible { outline: 2px solid var(--color-accent-lime); outline-offset: -3px; border-radius: 12px; }
+#desktop-pet-sprite { display: block; overflow: visible; will-change: translate; }
+.pet-front { animation: pet-figma-idle 2s linear infinite; }
+.pet-front image { image-rendering: pixelated; }
+@keyframes pet-figma-idle {
+  0% { animation-timing-function: step-end; translate: 0 0; }
+  15% { animation-timing-function: step-end; translate: 0 -2px; }
+  30%, 100% { translate: 0 0; }
+}
+.pet-profile { display: none; }
+.view-minimal[data-walking="true"] .pet-profile { display: block; }
+.view-minimal[data-walking="true"] .pet-front { display: none; }
+.pet-profile .pet-body, .pet-profile .pet-head, .pet-profile .pet-sprout,
+.pet-profile .pet-left-foot, .pet-profile .pet-right-foot,
+.pet-profile .pet-left-arm, .pet-profile .pet-right-arm { animation: none; }
+.view-minimal[data-walking="true"][data-facing="left"] #desktop-pet-sprite { transform: scaleX(-1); }
+@media (prefers-reduced-motion: reduce) {
+  #view-minimal #desktop-pet-sprite * { animation: none; }
+}
+
+html[data-dock-edge="floating"] .island-widget.state-expanded {
+  border: 1px solid var(--color-island-border);
+  border-radius: 20px;
+}
+html[data-dock-edge="floating"] .island-widget.state-compact {
+  border: 1px solid var(--color-island-border);
+  border-radius: 18px;
+}
+
+/* Panel samping: header dua baris, lalu komposisi khusus setiap fitur. */
+html:is([data-dock-edge="left"], [data-dock-edge="right"]) body.is-tauri-native .island-widget.state-expanded .view-expanded {
+  height: 100%;
+  max-height: 100%;
+  padding: 16px 20px 20px;
+  gap: 16px;
+  overflow-y: auto;
+  align-items: stretch;
+}
+html:is([data-dock-edge="left"], [data-dock-edge="right"]) .state-expanded .panel-header {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  height: auto;
+  gap: 12px;
+  margin: 0;
+}
+html:is([data-dock-edge="left"], [data-dock-edge="right"]) .state-expanded .brand-group { grid-area: 1 / 1; padding: 0; gap: 8px; }
+html:is([data-dock-edge="left"], [data-dock-edge="right"]) .state-expanded .brand-title { display: block; font-size: 0.95rem; }
+html:is([data-dock-edge="left"], [data-dock-edge="right"]) .state-expanded .window-controls-group { grid-area: 1 / 2; gap: 4px; }
+html:is([data-dock-edge="left"], [data-dock-edge="right"]) .state-expanded .pill-tabs-nav { grid-area: 2 / 1 / 3 / -1; width: 100%; height: 44px; }
+html:is([data-dock-edge="left"], [data-dock-edge="right"]) .state-expanded .panel-body {
+  flex: 0 0 auto;
+  min-height: 0;
+  max-height: none;
+  height: auto;
+  grid-auto-rows: max-content;
+  align-content: start;
+  margin: 0;
+  gap: 20px;
+}
+html:is([data-dock-edge="left"], [data-dock-edge="right"]) #panel-focus { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+html:is([data-dock-edge="left"], [data-dock-edge="right"]) #panel-focus .col-left { grid-area: 1 / 1; gap: 10px; justify-content: center; }
+html:is([data-dock-edge="left"], [data-dock-edge="right"]) #panel-focus .col-right { grid-area: 1 / 2; justify-content: center; gap: 12px; }
+html:is([data-dock-edge="left"], [data-dock-edge="right"]) #panel-focus .col-center { grid-area: 2 / 1 / 3 / -1; width: 100%; }
+html:is([data-dock-edge="left"], [data-dock-edge="right"]) #panel-focus .timer-digits-display { font-size: 2.8rem; line-height: 1.2; }
+html:is([data-dock-edge="left"], [data-dock-edge="right"]) #panel-focus .btn-action-primary { height: 44px; }
+html:is([data-dock-edge="left"], [data-dock-edge="right"]) #panel-focus .btn-action-secondary { min-height: 36px; height: auto; }
+html:is([data-dock-edge="left"], [data-dock-edge="right"]) #panel-focus .canvas-wrapper { max-height: 190px; }
+html:is([data-dock-edge="left"], [data-dock-edge="right"]) #panel-focus #island-canvas { max-height: 190px; }
+html:is([data-dock-edge="left"], [data-dock-edge="right"]) #panel-hydration { grid-template-columns: minmax(0, 1fr) 160px; gap: 18px; }
+html:is([data-dock-edge="left"], [data-dock-edge="right"]) #panel-hydration .col-left { grid-area: 1 / 1; justify-content: center; gap: 10px; }
+html:is([data-dock-edge="left"], [data-dock-edge="right"]) #panel-hydration .col-center { grid-area: 1 / 2; min-height: 120px; }
+html:is([data-dock-edge="left"], [data-dock-edge="right"]) #panel-hydration .col-right { grid-area: 2 / 1 / 3 / -1; gap: 12px; }
+html:is([data-dock-edge="left"], [data-dock-edge="right"]) #panel-hydration .sub-heading-text { font-size: 1.25rem; }
+html:is([data-dock-edge="left"], [data-dock-edge="right"]) #panel-hydration .tea-cup-scene {
+  display: grid;
+  grid-template-columns: 64px 48px;
+  justify-content: center;
+  gap: 4px 8px;
+  padding: 12px 8px;
+  background: transparent;
+  border: 0;
+}
+html:is([data-dock-edge="left"], [data-dock-edge="right"]) #panel-hydration .cup-meta-tag { grid-area: 2 / 1 / 3 / -1; text-align: center; white-space: nowrap; font-size: 0.75rem; }
+html:is([data-dock-edge="left"], [data-dock-edge="right"]) #panel-music { grid-template-columns: minmax(0, 1fr) 100px; gap: 16px; }
+html:is([data-dock-edge="left"], [data-dock-edge="right"]) #panel-music .col-left { grid-area: 1 / 1 / 2 / -1; width: 100%; max-width: 100%; height: auto; padding: 0; gap: 10px; }
+html:is([data-dock-edge="left"], [data-dock-edge="right"]) #panel-music .col-center { grid-area: 2 / 1; height: 152px; }
+html:is([data-dock-edge="left"], [data-dock-edge="right"]) #panel-music .col-right { grid-area: 2 / 2; height: 152px; }
+html:is([data-dock-edge="left"], [data-dock-edge="right"]) #panel-music .album-cover-box { width: 100%; gap: 14px; }
+html:is([data-dock-edge="left"], [data-dock-edge="right"]) #panel-music .album-art-pine { width: 64px; height: 64px; flex: 0 0 64px; }
+html:is([data-dock-edge="left"], [data-dock-edge="right"]) #panel-music .track-title { font-size: 1rem; }
+html:is([data-dock-edge="left"], [data-dock-edge="right"]) #panel-music .music-controls-row { justify-content: center; gap: 10px; }
+html:is([data-dock-edge="left"], [data-dock-edge="right"]) #panel-music .lyrics-viewport { height: 92px; }
+@media (max-width: 480px) {
+  html:is([data-dock-edge="left"], [data-dock-edge="right"]) .state-expanded .brand-title { display: none; }
+  html:is([data-dock-edge="left"], [data-dock-edge="right"]) #panel-focus,
+  html:is([data-dock-edge="left"], [data-dock-edge="right"]) #panel-hydration { grid-template-columns: minmax(0, 1fr); }
+  html:is([data-dock-edge="left"], [data-dock-edge="right"]) #panel-focus .col-right,
+  html:is([data-dock-edge="left"], [data-dock-edge="right"]) #panel-hydration .col-center { grid-area: 2 / 1; }
+  html:is([data-dock-edge="left"], [data-dock-edge="right"]) #panel-focus .col-center,
+  html:is([data-dock-edge="left"], [data-dock-edge="right"]) #panel-hydration .col-right { grid-area: 3 / 1; }
+}

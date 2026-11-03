@@ -1,5 +1,20 @@
 use serde::{Deserialize, Serialize};
 
+#[derive(Serialize, Deserialize, Clone, Debug, Default)]
+pub struct MediaCapabilities {
+    pub toggle: bool,
+    pub next: bool,
+    pub previous: bool,
+    pub seek: bool,
+    pub repeat: bool,
+}
+
+fn relative_timeline(position: f64, start: f64, end: f64, elapsed: f64, rate: f64) -> (f64, f64) {
+    let duration = (end - start).max(0.0);
+    let position = (position - start + elapsed * rate).max(0.0);
+    (if duration > 0.0 { position.min(duration) } else { position }, duration)
+}
+
 /// Representasi artwork pada kontrak Rust -> TypeScript.
 /// `artwork_key` mengikat gambar ke identitas sesi + rekaman yang menghasilkannya.
 #[derive(Serialize, Deserialize, Clone, Debug)]
@@ -17,6 +32,8 @@ pub struct SystemMediaTrack {
     pub artist: String,
     pub album: String,
     pub is_playing: bool,
+    #[serde(default)]
+    pub playback_status: String,
     /// AUMID mentah dari sesi (bisa kosong)
     pub source_app: String,
     /// Nama aplikasi sumber yang ramah pengguna, mis. "Opera", "Spotify"
@@ -34,6 +51,9 @@ pub struct SystemMediaTrack {
     pub has_thumbnail: bool,
     pub position_secs: f64,
     pub duration_secs: f64,
+    pub playback_rate: f64,
+    pub capabilities: MediaCapabilities,
+    pub repeat_mode: Option<String>,
 }
 
 impl SystemMediaTrack {
@@ -43,6 +63,7 @@ impl SystemMediaTrack {
             artist: String::new(),
             album: String::new(),
             is_playing: false,
+            playback_status: "closed".to_string(),
             source_app: String::new(),
             source_display_name: String::new(),
             service_kind: "unknown".to_string(),
@@ -53,6 +74,9 @@ impl SystemMediaTrack {
             has_thumbnail: false,
             position_secs: 0.0,
             duration_secs: 0.0,
+            playback_rate: 1.0,
+            capabilities: MediaCapabilities::default(),
+            repeat_mode: None,
         }
     }
 }
@@ -65,7 +89,8 @@ const ARTWORK_CACHE_CAP: usize = 6;
 
 #[cfg(target_os = "windows")]
 mod win_media {
-    use super::{SystemMediaArtwork, SystemMediaTrack, ARTWORK_CACHE_CAP, MAX_ARTWORK_BYTES};
+    use super::{relative_timeline, MediaCapabilities, SystemMediaArtwork, SystemMediaTrack, ARTWORK_CACHE_CAP, MAX_ARTWORK_BYTES};
+    use windows::Media::MediaPlaybackAutoRepeatMode;
     use base64::engine::general_purpose::STANDARD as BASE64_STANDARD;
     use base64::Engine as _;
     use std::collections::HashMap;
@@ -84,15 +109,6 @@ mod win_media {
             .map_err(|e| format!("Gagal meminta MediaSessionManager: {}", e))?;
         op.await
             .map_err(|e| format!("Gagal menginisialisasi MediaSessionManager: {}", e))
-    }
-
-    fn is_session_playing(session: &GlobalSystemMediaTransportControlsSession) -> bool {
-        session
-            .GetPlaybackInfo()
-            .ok()
-            .and_then(|info| info.PlaybackStatus().ok())
-            .map(|st| st == GlobalSystemMediaTransportControlsSessionPlaybackStatus::Playing)
-            .unwrap_or(false)
     }
 
     // ======================================================================
@@ -184,14 +200,13 @@ mod win_media {
             .map(|u| u.as_raw() as usize)
             .unwrap_or(0);
 
-        if ptr != 0 {
-            if let Some(id) = SESSION_ID_BY_PTR
+        if ptr != 0
+            && let Some(id) = SESSION_ID_BY_PTR
                 .lock()
                 .unwrap_or_else(|e| e.into_inner())
                 .get(&ptr)
-            {
-                return format!("media-session-{}", id);
-            }
+        {
+            return format!("media-session-{}", id);
         }
 
         // Pointer baru: cocokkan fingerprint agar id tetap stabil saat objek dibungkus ulang
@@ -241,11 +256,16 @@ mod win_media {
         service_kind: String,
         is_spotify: bool,
         is_playing: bool,
+        playback_status: String,
         session_key: String,
         record_key: String,
         has_thumbnail: bool,
         position_secs: f64,
         duration_secs: f64,
+        timeline_start_secs: f64,
+        playback_rate: f64,
+        capabilities: MediaCapabilities,
+        repeat_mode: Option<String>,
     }
 
     async fn extract_candidate(
@@ -256,7 +276,35 @@ mod win_media {
             .map(|s| s.to_string())
             .unwrap_or_default();
 
-        let is_playing = is_session_playing(&session);
+        let playback = session.GetPlaybackInfo().ok();
+        let playback_status = playback.as_ref().and_then(|p| p.PlaybackStatus().ok())
+            .map(|status| match status {
+                GlobalSystemMediaTransportControlsSessionPlaybackStatus::Playing => "playing",
+                GlobalSystemMediaTransportControlsSessionPlaybackStatus::Paused => "paused",
+                GlobalSystemMediaTransportControlsSessionPlaybackStatus::Stopped => "stopped",
+                GlobalSystemMediaTransportControlsSessionPlaybackStatus::Changing => "changing",
+                GlobalSystemMediaTransportControlsSessionPlaybackStatus::Opened => "opened",
+                GlobalSystemMediaTransportControlsSessionPlaybackStatus::Closed => "closed",
+                _ => "unknown",
+            }).unwrap_or("unknown").to_string();
+        let is_playing = playback_status == "playing";
+        let controls = playback.as_ref().and_then(|p| p.Controls().ok());
+        let capabilities = controls.map(|c| MediaCapabilities {
+            toggle: c.IsPlayPauseToggleEnabled().unwrap_or(false)
+                || if is_playing { c.IsPauseEnabled().unwrap_or(false) } else { c.IsPlayEnabled().unwrap_or(false) },
+            next: c.IsNextEnabled().unwrap_or(false),
+            previous: c.IsPreviousEnabled().unwrap_or(false),
+            seek: c.IsPlaybackPositionEnabled().unwrap_or(false),
+            repeat: c.IsRepeatEnabled().unwrap_or(false),
+        }).unwrap_or_default();
+        let playback_rate = playback.as_ref().and_then(|p| p.PlaybackRate().ok())
+            .and_then(|r| r.Value().ok()).filter(|r| r.is_finite() && *r >= 0.0).unwrap_or(1.0);
+        let repeat_mode = playback.as_ref().and_then(|p| p.AutoRepeatMode().ok())
+            .and_then(|r| r.Value().ok()).map(|mode| match mode {
+                MediaPlaybackAutoRepeatMode::Track => "one",
+                MediaPlaybackAutoRepeatMode::List => "all",
+                _ => "off",
+            }.to_string());
 
         let media_props = if let Ok(op) = session.TryGetMediaPropertiesAsync() {
             op.await.ok()
@@ -300,7 +348,9 @@ mod win_media {
 
         let is_spotify = check_is_spotify(&source_app);
 
+        let mut timeline_start_secs = 0.0;
         let (position_secs, duration_secs) = if let Ok(timeline) = session.GetTimelineProperties() {
+            timeline_start_secs = timeline.StartTime().map(|t| t.Duration as f64 / 10_000_000.0).unwrap_or(0.0);
             let raw_pos = timeline
                 .Position()
                 .map(|ts| (ts.Duration as f64) / 10_000_000.0)
@@ -326,7 +376,7 @@ mod win_media {
                         let now_100ns = (now_dur.as_nanos() / 100) as i64 + 116_444_736_000_000_000i64;
                         let elapsed_100ns = (now_100ns - lut.UniversalTime).max(0);
                         let elapsed_secs = (elapsed_100ns as f64) / 10_000_000.0;
-                        let calculated = raw_pos + elapsed_secs;
+                        let calculated = raw_pos + elapsed_secs * playback_rate;
                         if dur > 0.0 {
                             calculated.min(dur)
                         } else {
@@ -342,7 +392,7 @@ mod win_media {
                 raw_pos
             };
 
-            (current_pos.max(0.0), dur)
+            relative_timeline(current_pos, timeline_start_secs, dur, 0.0, playback_rate)
         } else {
             (0.0, 0.0)
         };
@@ -379,11 +429,16 @@ mod win_media {
             service_kind,
             is_spotify,
             is_playing,
+            playback_status,
             session_key,
             record_key,
             has_thumbnail,
             position_secs,
             duration_secs,
+            timeline_start_secs,
+            playback_rate,
+            capabilities,
+            repeat_mode,
         })
     }
 
@@ -395,20 +450,17 @@ mod win_media {
         if let Ok(sessions) = manager.GetSessions() {
             let count = sessions.Size().unwrap_or(0);
             for i in 0..count {
-                if let Ok(s) = sessions.GetAt(i) {
-                    if let Some(c) = extract_candidate(s).await {
-                        candidates.push(c);
-                    }
+                if let Ok(s) = sessions.GetAt(i)
+                    && let Some(c) = extract_candidate(s).await {
+                    candidates.push(c);
                 }
             }
         }
 
-        if candidates.is_empty() {
-            if let Ok(current) = manager.GetCurrentSession() {
-                if let Some(c) = extract_candidate(current).await {
-                    candidates.push(c);
-                }
-            }
+        if candidates.is_empty()
+            && let Ok(current) = manager.GetCurrentSession()
+            && let Some(c) = extract_candidate(current).await {
+            candidates.push(c);
         }
 
         candidates
@@ -447,6 +499,7 @@ mod win_media {
             artist: c.artist.clone(),
             album: c.album.clone(),
             is_playing: c.is_playing,
+            playback_status: c.playback_status.clone(),
             source_app: c.source_app.clone(),
             source_display_name: c.source_display_name.clone(),
             service_kind: c.service_kind.clone(),
@@ -457,10 +510,13 @@ mod win_media {
             has_thumbnail: c.has_thumbnail,
             position_secs: c.position_secs,
             duration_secs: c.duration_secs,
+            playback_rate: c.playback_rate,
+            capabilities: c.capabilities.clone(),
+            repeat_mode: c.repeat_mode.clone(),
         }
     }
 
-    pub async fn get_info() -> Result<SystemMediaTrack, String> {
+    pub async fn get_info(session_key: Option<String>) -> Result<SystemMediaTrack, String> {
         let manager = match get_manager().await {
             Ok(m) => m,
             Err(_) => {
@@ -469,11 +525,16 @@ mod win_media {
         };
 
         let candidates = extract_all_candidates(&manager).await;
-        if let Some(c) = find_best_candidate(candidates) {
+        if let Some(c) = pick_controlled_candidate(candidates, &session_key) {
             Ok(to_track(&c))
         } else {
             Ok(SystemMediaTrack::empty())
         }
+    }
+
+    pub async fn get_sessions() -> Result<Vec<SystemMediaTrack>, String> {
+        let manager = get_manager().await?;
+        Ok(extract_all_candidates(&manager).await.iter().map(to_track).collect())
     }
 
     // ======================================================================
@@ -529,7 +590,7 @@ mod win_media {
         if bytes.len() > 12 && &bytes[0..4] == b"RIFF" && &bytes[8..12] == b"WEBP" {
             return Some("image/webp".to_string());
         }
-        if bytes.starts_with(&[b'G', b'I', b'F', b'8']) {
+        if bytes.starts_with(b"GIF8") {
             return Some("image/gif".to_string());
         }
         None
@@ -641,13 +702,16 @@ mod win_media {
     }
 
     pub async fn toggle_play_pause(session_key: Option<String>) -> Result<bool, String> {
+        if session_key.as_deref().is_none_or(|key| key.trim().is_empty()) { return Err("Identitas sesi wajib".into()); }
         let manager = get_manager().await?;
         let candidates = extract_all_candidates(&manager).await;
         if let Some(c) = pick_controlled_candidate(candidates, &session_key) {
-            let op = c
-                .session
-                .TryTogglePlayPauseAsync()
-                .map_err(|e| e.to_string())?;
+            if !c.capabilities.toggle { return Ok(false); }
+            let toggle_enabled = c.session.GetPlaybackInfo().ok().and_then(|p| p.Controls().ok())
+                .and_then(|p| p.IsPlayPauseToggleEnabled().ok()).unwrap_or(false);
+            let op = if toggle_enabled { c.session.TryTogglePlayPauseAsync() }
+                else if c.is_playing { c.session.TryPauseAsync() }
+                else { c.session.TryPlayAsync() }.map_err(|e| e.to_string())?;
             let success = op.await.map_err(|e| e.to_string())?;
             Ok(success)
         } else if session_key.is_some() {
@@ -659,9 +723,11 @@ mod win_media {
     }
 
     pub async fn skip_next(session_key: Option<String>) -> Result<bool, String> {
+        if session_key.as_deref().is_none_or(|key| key.trim().is_empty()) { return Err("Identitas sesi wajib".into()); }
         let manager = get_manager().await?;
         let candidates = extract_all_candidates(&manager).await;
         if let Some(c) = pick_controlled_candidate(candidates, &session_key) {
+            if !c.capabilities.next { return Ok(false); }
             let op = c.session.TrySkipNextAsync().map_err(|e| e.to_string())?;
             let success = op.await.map_err(|e| e.to_string())?;
             Ok(success)
@@ -673,9 +739,11 @@ mod win_media {
     }
 
     pub async fn skip_prev(session_key: Option<String>) -> Result<bool, String> {
+        if session_key.as_deref().is_none_or(|key| key.trim().is_empty()) { return Err("Identitas sesi wajib".into()); }
         let manager = get_manager().await?;
         let candidates = extract_all_candidates(&manager).await;
         if let Some(c) = pick_controlled_candidate(candidates, &session_key) {
+            if !c.capabilities.previous { return Ok(false); }
             let op = c
                 .session
                 .TrySkipPreviousAsync()
@@ -694,17 +762,22 @@ mod win_media {
         session_key: Option<String>,
         record_key: Option<String>,
     ) -> Result<bool, String> {
+        if session_key.as_deref().is_none_or(|key| key.trim().is_empty())
+            || record_key.as_deref().is_none_or(|key| key.trim().is_empty()) { return Err("Identitas sesi dan rekaman wajib".into()); }
+        if !position_secs.is_finite() || position_secs < 0.0 {
+            return Err("Posisi media tidak valid".into());
+        }
         let manager = get_manager().await?;
         let candidates = extract_all_candidates(&manager).await;
         if let Some(c) = pick_controlled_candidate(candidates, &session_key) {
+            if !c.capabilities.seek || c.duration_secs <= 0.0 { return Ok(false); }
             // Seek terkait rekaman: tolak bila rekaman sudah berganti sejak
             // permintaan dikirim agar posisi tidak ditulis ke lagu yang salah
-            if let Some(requested) = record_key {
-                if !requested.trim().is_empty() && c.record_key != requested {
-                    return Err("Rekaman sudah berganti; posisi tidak diubah".to_string());
-                }
+            if let Some(requested) = record_key
+                && !requested.trim().is_empty() && c.record_key != requested {
+                return Err("Rekaman sudah berganti; posisi tidak diubah".to_string());
             }
-            let pos_100ns = (position_secs * 10_000_000.0).round() as i64;
+            let pos_100ns = ((position_secs.min(c.duration_secs) + c.timeline_start_secs) * 10_000_000.0).round() as i64;
             let op = c
                 .session
                 .TryChangePlaybackPositionAsync(pos_100ns)
@@ -717,13 +790,29 @@ mod win_media {
             Err("Tidak ada sesi media yang sedang aktif".to_string())
         }
     }
+
+    pub async fn set_repeat(session_key: Option<String>, mode: String) -> Result<bool, String> {
+        if session_key.as_deref().is_none_or(|key| key.trim().is_empty()) { return Err("Identitas sesi wajib".into()); }
+        let repeat = match mode.as_str() {
+            "off" => MediaPlaybackAutoRepeatMode::None,
+            "one" => MediaPlaybackAutoRepeatMode::Track,
+            "all" => MediaPlaybackAutoRepeatMode::List,
+            _ => return Err("Mode repeat tidak valid".into()),
+        };
+        let manager = get_manager().await?;
+        let candidates = extract_all_candidates(&manager).await;
+        let c = pick_controlled_candidate(candidates, &session_key).ok_or("Sesi media tidak tersedia")?;
+        if !c.capabilities.repeat { return Ok(false); }
+        c.session.TryChangeAutoRepeatModeAsync(repeat).map_err(|e| e.to_string())?
+            .await.map_err(|e| e.to_string())
+    }
 }
 
 #[cfg(not(target_os = "windows"))]
 mod non_win_media {
     use super::{SystemMediaArtwork, SystemMediaTrack};
 
-    pub async fn get_info() -> Result<SystemMediaTrack, String> {
+    pub async fn get_info(_session_key: Option<String>) -> Result<SystemMediaTrack, String> {
         Ok(SystemMediaTrack::empty())
     }
 
@@ -756,12 +845,12 @@ mod non_win_media {
 }
 
 #[tauri::command]
-pub async fn get_system_media_track() -> Result<SystemMediaTrack, String> {
+pub async fn get_system_media_track(session_key: Option<String>) -> Result<SystemMediaTrack, String> {
     #[cfg(target_os = "windows")]
     {
-        tauri::async_runtime::spawn_blocking(|| {
-            tauri::async_runtime::block_on(async {
-                win_media::get_info().await
+        tauri::async_runtime::spawn_blocking(move || {
+            tauri::async_runtime::block_on(async move {
+                win_media::get_info(session_key).await
             })
         })
         .await
@@ -769,7 +858,42 @@ pub async fn get_system_media_track() -> Result<SystemMediaTrack, String> {
     }
     #[cfg(not(target_os = "windows"))]
     {
-        non_win_media::get_info().await
+        non_win_media::get_info(session_key).await
+    }
+}
+
+#[tauri::command]
+pub async fn get_system_media_sessions() -> Result<Vec<SystemMediaTrack>, String> {
+    #[cfg(target_os = "windows")]
+    {
+        tauri::async_runtime::spawn_blocking(|| tauri::async_runtime::block_on(win_media::get_sessions()))
+            .await.map_err(|e| e.to_string())?
+    }
+    #[cfg(not(target_os = "windows"))]
+    { Ok(Vec::new()) }
+}
+
+#[tauri::command]
+pub async fn system_media_repeat(session_key: Option<String>, mode: String) -> Result<bool, String> {
+    #[cfg(target_os = "windows")]
+    {
+        tauri::async_runtime::spawn_blocking(move || tauri::async_runtime::block_on(win_media::set_repeat(session_key, mode)))
+            .await.map_err(|e| e.to_string())?
+    }
+    #[cfg(not(target_os = "windows"))]
+    { let _ = (session_key, mode); Err("Repeat native tidak tersedia".into()) }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::relative_timeline;
+
+    #[test]
+    fn timeline_handles_start_rate_and_bounds() {
+        assert_eq!(relative_timeline(110.0, 100.0, 300.0, 4.0, 1.5), (16.0, 200.0));
+        assert_eq!(relative_timeline(110.0, 100.0, 300.0, 0.0, 1.5), (10.0, 200.0));
+        assert_eq!(relative_timeline(299.0, 100.0, 300.0, 4.0, 2.0), (200.0, 200.0));
+        assert_eq!(relative_timeline(90.0, 100.0, 300.0, 0.0, 1.0), (0.0, 200.0));
     }
 }
 

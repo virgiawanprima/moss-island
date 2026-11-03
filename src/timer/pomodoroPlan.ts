@@ -1,5 +1,8 @@
 import { PlanPhase, PomodoroPlan, PomodoroConfig } from '../types';
 
+export const LONG_BREAK_MINUTES = 15;
+export const FOCUS_SESSIONS_PER_SET = 4;
+
 export function validatePomodoroInput(
   totalDurationMin: number,
   focusDurationMin: number,
@@ -80,15 +83,18 @@ export function buildPomodoroPlan(
       focusCount++;
       nextType = 'break';
     } else {
-      const dur = Math.min(remaining, breakDur);
+      const isLongBreak = (focusCount - 1) % FOCUS_SESSIONS_PER_SET === 0;
+      const plannedDuration = isLongBreak ? LONG_BREAK_MINUTES : breakDur;
+      const dur = Math.min(remaining, plannedDuration);
       if (dur <= 0) break;
-      const isShortened = dur < breakDur;
+      const isShortened = dur < plannedDuration;
       phases.push({
         id: phases.length + 1,
         type: 'break',
+        breakKind: isLongBreak ? 'long' : 'short',
         durationMin: dur,
         isShortened,
-        label: `Istirahat ${breakCount}${isShortened ? ' (disesuaikan)' : ''}`,
+        label: `Istirahat${isLongBreak ? ' panjang' : ''} ${breakCount}${isShortened ? ' (disesuaikan)' : ''}`,
       });
       remaining -= dur;
       breakCount++;
@@ -117,10 +123,38 @@ export function buildPomodoroPlan(
   };
 }
 
+export function buildFocusTargetPlan(focusTargetMin: number): PomodoroPlan {
+  const validation = validatePomodoroInput(focusTargetMin, 25, 5);
+  if (!validation.isValid) throw new Error(validation.errorMessage);
+  const phases: PlanPhase[] = [];
+  let remaining = focusTargetMin;
+  let session = 0;
+  let totalBreakMin = 0;
+  while (remaining > 0) {
+    const durationMin = Math.min(25, remaining);
+    session++;
+    phases.push({ id: phases.length + 1, type: 'focus', durationMin,
+      isShortened: durationMin < 25, label: `Fokus ${session}${durationMin < 25 ? ' (disesuaikan)' : ''}` });
+    remaining -= durationMin;
+    const long = session % FOCUS_SESSIONS_PER_SET === 0 && durationMin === 25;
+    if (remaining > 0 || long) {
+      const rest = long ? LONG_BREAK_MINUTES : 5;
+      phases.push({ id: phases.length + 1, type: 'break', breakKind: long ? 'long' : 'short',
+        durationMin: rest, isShortened: false, label: `Istirahat${long ? ' panjang' : ''} ${session}` });
+      totalBreakMin += rest;
+    }
+  }
+  return { totalDurationMin: focusTargetMin + totalBreakMin, totalFocusMin: focusTargetMin,
+    totalBreakMin, focusSessionCount: session, focusDurationMin: 25, breakDurationMin: 5, phases };
+}
+
 export const DEFAULT_POMODORO_CONFIG: PomodoroConfig = {
-  totalDurationMin: 240, // 4 jam
-  focusDurationMin: 30,  // 30 menit
-  breakDurationMin: 10,  // 10 menit
+  hoverEnabled: false,
+  momoIntensity: 'expressive',
+  totalDurationMin: 305,
+  focusTargetMin: 240,
+  focusDurationMin: 25,
+  breakDurationMin: 5,
   autostartBreak: true,
   autostartNextFocus: true,
   soundEnabled: true,
@@ -131,3 +165,18 @@ export const DEFAULT_POMODORO_CONFIG: PomodoroConfig = {
   hydrationReminderIntervalMin: 45,
   seasonMode: 'cycle',
 };
+
+export function getFirstPhasePreview(plan: PomodoroPlan): string {
+  const first = plan.phases[0];
+  if (!first) return '';
+  const label = first.type === 'focus' ? 'Fokus' : 'Istirahat';
+  return `Putaran 1 · ${label} ${first.durationMin} menit · Menit 0–${first.durationMin}`;
+}
+
+export function getNextPhaseLabel(plan: PomodoroPlan, index: number, config: PomodoroConfig): string {
+  const next = plan.phases[index + 1];
+  if (!next) return 'Sesi terakhir · Rencana selesai setelah fase ini.';
+  const label = next.type === 'focus' ? 'Fokus' : next.breakKind === 'long' ? 'Istirahat panjang' : 'Istirahat';
+  const automatic = next.type === 'focus' ? config.autostartNextFocus : config.autostartBreak;
+  return `Berikutnya: ${label} ${next.durationMin} menit · ${automatic ? 'otomatis' : 'mulai manual'}`;
+}

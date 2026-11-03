@@ -5,6 +5,9 @@
  */
 
 import { base64ToBlobUrl } from './mediaSourceIdentity';
+import { STUDY_TRACKS, type StudyTrackId } from './studyMusic';
+import { LyricsCooldownError, requestLyrics } from './lyricsTransport';
+import { LyricsTiming } from './lyricsTiming';
 
 export interface SyncedLyricLine {
   timeSecs: number;
@@ -28,6 +31,9 @@ export interface LyricsLinesUpdate {
   lineIndex?: number;
   totalLines?: number;
   transitionType?: 'step' | 'jump' | 'none';
+  loadStatus?: 'loading' | 'not_found' | 'error';
+  offsetSeconds?: number;
+  isLoading?: boolean;
 }
 
 export type ArtworkSource = 'session' | 'search' | 'ambient' | 'none';
@@ -113,13 +119,13 @@ export class LyricsService {
   private currentKey: string = '';
   private currentArtKey: string = '';
   private listeners: LyricsCallback[] = [];
+  private lastLyricsRenderKey: string = '';
   private artListeners: ArtworkCallback[] = [];
   private activeLyrics: ParsedLyricsData | null = null;
   private currentPositionSecs: number = 0;
   private currentLineIdx: number = 0;
   private rollTimer: number | null = null;
   private currentTitle: string = '';
-  private currentArtist: string = '';
   private lastArtworkInfo: TrackArtworkInfo | null = null;
   private currentIsPlaying: boolean = true;
   private previousActiveIdx: number = -999;
@@ -132,6 +138,7 @@ export class LyricsService {
   private explicitArtIdentity: string | null = null;
   // Penanda fallback pencarian sudah dijalankan untuk identitas aktif
   private searchFallbackDoneFor: string = '';
+  private searchFallbackRetryAt = 0;
   // Object URL artwork sesi beserta kuncinya; dicabut saat tidak terpakai lagi
   private sessionObjectUrls = new Map<string, string>();
   // Status unduhan lirik per versi rekaman: loading/ready/not_found/error
@@ -141,27 +148,8 @@ export class LyricsService {
   >();
   // Dasar penundaan percobaan ulang lirik (ms); diperbesar eksponensial hingga 60 dtk
   private lyricsRetryBaseMs: number = 5000;
-
-  private ambientPoems: Record<string, string[]> = {
-    rain: [
-      'Rintik hujan menyapa daun lumut,',
-      'fokus kita mengalir tenang.',
-      'Segarkan pikiran, satu demi satu.',
-      'Dengarkan ritme alam yang damai.',
-    ],
-    stream: [
-      'Air jernih membasahi bebatuan,',
-      'alur waktu melaju tanpa desakan.',
-      'Momo duduk tenang di tepi pulau,',
-      'menikmati hening di antara pikiran.',
-    ],
-    breeze: [
-      'Semilir sejuk dari lembah pinus,',
-      'daun di kepala Momo bergoyang lembut.',
-      'Napas perlahan, pikiran semakin jernih,',
-      'pulau bertumbuh bersama usahamu.',
-    ],
-  };
+  private lyricsGeneration = 0;
+  private timing = new LyricsTiming();
 
   public subscribe(cb: LyricsCallback): () => void {
     this.listeners.push(cb);
@@ -196,6 +184,7 @@ export class LyricsService {
   ): void {
     if (this.currentArtKey !== identityKey) {
       this.currentArtKey = identityKey;
+      this.searchFallbackRetryAt = 0;
       // Kosongkan cover lama seketika: jangan biarkan sampul lagu sebelumnya terlihat
       this.notifyArtwork({
         albumArtUrl: null,
@@ -293,17 +282,31 @@ export class LyricsService {
     if (this.currentArtKey !== identityKey) return;
     if (this.explicitArtIdentity !== identityKey) return;
     if (this.searchFallbackDoneFor === identityKey) return;
+    if (Date.now() < this.searchFallbackRetryAt) return;
+    if (this.lastArtworkInfo?.artworkKey === identityKey && this.lastArtworkInfo.albumArtUrl) return;
     if (this.lastArtworkInfo && this.lastArtworkInfo.source === 'session' && this.lastArtworkInfo.artworkKey === identityKey) {
       // Sampul sesi sudah tampil: pencarian tidak diperlukan
       return;
     }
 
     this.searchFallbackDoneFor = identityKey;
-    await this.fetchArtworkAndArtistPic(meta.title, meta.artist, {
-      album: meta.album,
-      durationSecs: meta.durationSecs,
-      identityKey,
-    });
+    try {
+      const info = await this.fetchArtworkAndArtistPic(meta.title, meta.artist, {
+        album: meta.album,
+        durationSecs: meta.durationSecs,
+        identityKey,
+      });
+      if (!info.albumArtUrl && this.currentArtKey === identityKey) {
+        this.searchFallbackDoneFor = '';
+        this.searchFallbackRetryAt = Date.now() + 30_000;
+      }
+    } catch (error) {
+      if (this.currentArtKey === identityKey) {
+        this.searchFallbackDoneFor = '';
+        this.searchFallbackRetryAt = Date.now() + 30_000;
+      }
+      console.warn('Gagal mencari sampul cadangan:', error);
+    }
   }
 
   private notify(update: LyricsLinesUpdate): void {
@@ -313,8 +316,15 @@ export class LyricsService {
       lineIndex: this.currentLineIdx,
       totalLines: this.activeLyrics?.syncedLines.length || this.activeLyrics?.plainLines.length || 0,
       transitionType: 'none',
+      offsetSeconds: this.timing.get(this.currentKey),
+      isLoading: this.lyricsLoadState.get(this.currentKey)?.status === 'loading',
       ...update,
     };
+    // Polling OS dan ticker lokal dapat mengirim baris yang sama dalam satu frame.
+    const { transitionType: _transitionType, ...visibleState } = fullUpdate;
+    const renderKey = JSON.stringify([this.currentKey, visibleState]);
+    if (renderKey === this.lastLyricsRenderKey) return;
+    this.lastLyricsRenderKey = renderKey;
     for (const cb of this.listeners) {
       try {
         cb(fullUpdate);
@@ -346,8 +356,9 @@ export class LyricsService {
     return data;
   }
 
-  public setAmbientTrack(trackId: 'rain' | 'stream' | 'breeze' | 'off', isPlaying: boolean = true) {
+  public setAmbientTrack(trackId: StudyTrackId | 'off', isPlaying: boolean = true) {
     this.stopRolling();
+    const track = STUDY_TRACKS.find((item) => item.id === trackId);
     this.currentKey = `ambient:${trackId}`;
     this.currentIsPlaying = isPlaying;
     // Kembali ke jalur artwork lokal ambient (tanpa identitas sesi media)
@@ -356,36 +367,23 @@ export class LyricsService {
     this.notifyArtwork({
       albumArtUrl: null,
       artistPicUrl: null,
-      title: trackId === 'rain' ? 'Suara Hujan Hutan' : trackId === 'stream' ? 'Gemericik Sungai' : 'Semilir Angin Pinus',
-      artist: 'Moss Audio · Forest Tape',
+      title: track?.title || 'Musik Belajar',
+      artist: track?.artist || '',
       source: 'ambient',
       artworkKey: `ambient:${trackId}`,
     });
 
-    if (trackId === 'off' || !this.ambientPoems[trackId]) {
-      this.activeLyrics = null;
-      this.notify({
-        line1: 'LYRICS / AMBIENT',
-        highlight: 'Di antara riuh dunia, kita tumbuh perlahan.',
-        line2: 'Satu langkah, satu cerita.',
-        isSynced: false,
-      });
-      return;
-    }
-
-    this.activeLyrics = {
-      isSynced: false,
-      syncedLines: [],
-      plainLines: this.ambientPoems[trackId],
-    };
+    this.activeLyrics = null;
     this.currentLineIdx = 0;
-    this.currentTitle = trackId === 'rain' ? 'Suara Hujan Hutan' : trackId === 'stream' ? 'Gemericik Sungai' : 'Semilir Angin Pinus';
-    this.currentArtist = 'Moss Audio · Forest Tape';
-
-    this.emitCurrentRollingLines();
-    if (isPlaying) {
-      this.startRolling();
-    }
+    this.currentTitle = track?.title || 'Musik Belajar';
+    this.notify({
+      line1: track ? `${track.artist} · Playlist berulang` : 'Musik bawaan',
+      highlight: this.currentTitle,
+      line2: track?.description || 'Pilih musik untuk mulai mendengarkan.',
+      isSynced: false,
+      isPlaying,
+      transitionType: 'none',
+    });
   }
 
   // ========================================================================
@@ -397,7 +395,7 @@ export class LyricsService {
   private normalizeForMatch(value: string): string {
     return value
       .toLowerCase()
-      .replace(/\s*[\(\[\{].*?[\)\]\}]/g, ' ')
+      .replace(/\s*[([{].*?[)\]}]/g, ' ')
       .replace(/\s*[-–—].*$/, ' ')
       .replace(/\b(feat|ft|featuring)\b.*$/g, ' ')
       .replace(/[^\p{L}\p{N}\s]/gu, ' ')
@@ -434,7 +432,7 @@ export class LyricsService {
     const durationSecs = options?.durationSecs ?? 0;
     const identityKey = options?.identityKey ?? '';
 
-    const cleanTitle = title.replace(/\s*[\(\[].*?[\)\]]/g, '').trim() || title.trim();
+    const cleanTitle = title.replace(/\s*[([].*?[)\]]/g, '').trim() || title.trim();
     const cleanArtist = artist.split(/[,&]/)[0].trim() || artist.trim();
     const roundedDur = durationSecs > 0 ? Math.round(durationSecs) : 0;
     // Cache key mencakup album+durasi agar versi rekaman berbeda dapat sampul berbeda
@@ -446,7 +444,7 @@ export class LyricsService {
       const cached = this.artCache.get(artKey)!;
       const isCurrent = identityKey ? this.currentArtKey === identityKey : this.currentArtKey === guardKey;
       if (isCurrent) {
-        this.notifyArtwork(cached);
+        this.notifyArtwork({ ...cached, artworkKey: identityKey || cached.artworkKey });
       }
       return cached;
     }
@@ -551,9 +549,11 @@ export class LyricsService {
       artworkKey: identityKey || artKey,
     };
 
-    this.artCache.set(artKey, info);
+    if (chosen) this.artCache.set(artKey, info);
     const isCurrent = identityKey ? this.currentArtKey === identityKey : this.currentArtKey === guardKey;
-    if (isCurrent) {
+    const hasSessionArtwork = identityKey && this.lastArtworkInfo?.artworkKey === identityKey
+      && this.lastArtworkInfo.source === 'session';
+    if (isCurrent && !hasSessionArtwork) {
       this.notifyArtwork(info);
     }
     return info;
@@ -569,21 +569,28 @@ export class LyricsService {
       plainLyrics?: string;
     }>,
     album?: string,
-    targetDuration: number = 0
+    targetDuration: number = 0,
+    title: string = '',
+    artist: string = ''
   ) {
     if (!items || items.length === 0) return null;
 
-    const candidates = items.filter((it) => it.syncedLyrics || it.plainLyrics);
-    if (candidates.length === 0) return items[0];
+    const normalize = (value: string) => value.normalize('NFKC').toLowerCase()
+      .replace(/['’‘]/g, '').replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
+    const normalizeArtist = (value: string) => value.split(/\s+(?:feat\.?|ft\.?|featuring)\s+|[,;&]/i)
+      .map(normalize).filter(Boolean).sort().join('|');
+    const candidates = items.filter((it) => {
+      if (!it.syncedLyrics && !it.plainLyrics) return false;
+      if (title && normalize(it.trackName || '') !== normalize(title)) return false;
+      if (artist && normalizeArtist(it.artistName || '') !== normalizeArtist(artist)) return false;
+      return targetDuration <= 0 || (typeof it.duration === 'number'
+        && Number.isFinite(it.duration) && Math.abs(it.duration - targetDuration) <= 3);
+    });
+    if (candidates.length === 0) return null;
 
     // Jika durasi rekaman tersedia, cari kandidat yang selisih durasinya paling mendekati rekaman Spotify
     if (targetDuration > 0) {
       candidates.sort((a, b) => {
-        // Prioritaskan kandidat yang memiliki lirik tersinkron
-        const aHasSynced = Boolean(a.syncedLyrics) ? 1 : 0;
-        const bHasSynced = Boolean(b.syncedLyrics) ? 1 : 0;
-        if (aHasSynced !== bHasSynced) return bHasSynced - aHasSynced;
-
         // Cocokkan nama album jika tersedia
         const aAlbumMatch = album && a.albumName?.toLowerCase() === album.toLowerCase() ? 1 : 0;
         const bAlbumMatch = album && b.albumName?.toLowerCase() === album.toLowerCase() ? 1 : 0;
@@ -592,7 +599,7 @@ export class LyricsService {
         // Urutkan berdasarkan selisih durasi terkecil terhadap Spotify
         const aDiff = typeof a.duration === 'number' ? Math.abs(a.duration - targetDuration) : 999;
         const bDiff = typeof b.duration === 'number' ? Math.abs(b.duration - targetDuration) : 999;
-        return aDiff - bDiff;
+        return aDiff - bDiff || Number(Boolean(b.syncedLyrics)) - Number(Boolean(a.syncedLyrics));
       });
 
       return candidates[0];
@@ -605,12 +612,24 @@ export class LyricsService {
     title: string,
     artist: string,
     album?: string,
-    durationSecs: number = 0
+    durationSecs: number = 0,
+    onPlainLyrics?: (lyrics: ParsedLyricsData) => void
   ): Promise<ParsedLyricsData | null> {
     const roundedDur = durationSecs > 0 ? Math.round(durationSecs) : 0;
     // Membedakan "lirik memang tidak tersedia" (layanan menjawab) dari
     // "layanan tidak dapat dijangkau" (semua permintaan gagal jaringan)
     let sawAnyResponse = false;
+    let sawFailure = false;
+    let lastFailure: unknown;
+    let plainFallback: ParsedLyricsData | null = null;
+    const preferSynced = (parsed: ParsedLyricsData | null): ParsedLyricsData | null => {
+      if (parsed?.isSynced) return parsed;
+      if (parsed && !plainFallback) {
+        plainFallback = parsed;
+        onPlainLyrics?.(parsed);
+      }
+      return null;
+    };
 
     // 1. Coba pencarian presisi /api/get dengan judul asli, artis, album, dan durasi rekaman
     try {
@@ -624,16 +643,30 @@ export class LyricsService {
       if (roundedDur > 0) {
         getParams.append('duration', roundedDur.toString());
       }
-      const res = await fetch(`https://lrclib.net/api/get?${getParams.toString()}`, {
-        signal: AbortSignal.timeout(3500),
-      });
+      const res = await requestLyrics('get', getParams);
       sawAnyResponse = true;
+      if (!res.ok && res.status !== 404) throw new Error(`LRCLIB HTTP ${res.status}`);
       if (res.ok) {
         const data = await res.json();
-        const parsed = this.parseLrclibResponse(data);
+        const matched = this.selectBestRecordMatch(data && typeof data === 'object' && !Array.isArray(data) ? [data] : [], album, roundedDur, title, artist);
+        const parsed = preferSynced(this.parseLrclibResponse(matched));
         if (parsed) return parsed;
       }
-    } catch {
+      if (res.status === 404 && album?.trim()) {
+        getParams.delete('album_name');
+        const withoutAlbum = await requestLyrics('get', getParams);
+        if (!withoutAlbum.ok && withoutAlbum.status !== 404) throw new Error(`LRCLIB HTTP ${withoutAlbum.status}`);
+        if (withoutAlbum.ok) {
+          const data = await withoutAlbum.json();
+          const matched = this.selectBestRecordMatch(data && typeof data === 'object' && !Array.isArray(data) ? [data] : [], undefined, roundedDur, title, artist);
+          const parsed = preferSynced(this.parseLrclibResponse(matched));
+          if (parsed) return parsed;
+        }
+      }
+    } catch (error) {
+      if (error instanceof LyricsCooldownError) { if (plainFallback) return plainFallback; throw error; }
+      sawFailure = true;
+      lastFailure = error;
       // Lanjut ke pencarian multi-versi jika get gagal atau 404
     }
 
@@ -643,48 +676,55 @@ export class LyricsService {
         track_name: title,
         artist_name: artist,
       });
-      const res = await fetch(`https://lrclib.net/api/search?${searchParams.toString()}`, {
-        signal: AbortSignal.timeout(3500),
-      });
+      const res = await requestLyrics('search', searchParams);
       sawAnyResponse = true;
+      if (!res.ok) throw new Error(`LRCLIB HTTP ${res.status}`);
       if (res.ok) {
         const items = await res.json();
+        if (!Array.isArray(items)) throw new Error('Respons pencarian lirik tidak valid');
         if (Array.isArray(items) && items.length > 0) {
-          const matched = this.selectBestRecordMatch(items, album, roundedDur);
-          const parsed = this.parseLrclibResponse(matched);
+          const matched = this.selectBestRecordMatch(items, album, roundedDur, title, artist);
+          const parsed = preferSynced(this.parseLrclibResponse(matched));
           if (parsed) return parsed;
         }
       }
-    } catch {
+    } catch (error) {
+      if (error instanceof LyricsCooldownError) { if (plainFallback) return plainFallback; throw error; }
+      sawFailure = true;
+      lastFailure = error;
       // Abaikan dan lanjut ke query fleksibel
     }
 
     // 3. Fallback pencarian /api/search dengan query fleksibel
-    const cleanTitle = title.replace(/\s*[\(\[].*?[\)\]]/g, '').trim() || title.trim();
+    const cleanTitle = title.replace(/\s*[([].*?[)\]]/g, '').trim() || title.trim();
     const cleanArtist = artist.split(/[,&]/)[0].trim() || artist.trim();
 
     try {
-      const qRes = await fetch(
-        `https://lrclib.net/api/search?q=${encodeURIComponent(`${cleanTitle} ${cleanArtist}`)}`,
-        { signal: AbortSignal.timeout(3500) }
-      );
+      const qRes = await requestLyrics('search', new URLSearchParams({ q: `${cleanTitle} ${cleanArtist}` }));
       sawAnyResponse = true;
+      if (!qRes.ok) throw new Error(`LRCLIB HTTP ${qRes.status}`);
       if (qRes.ok) {
         const items = await qRes.json();
+        if (!Array.isArray(items)) throw new Error('Respons pencarian lirik tidak valid');
         if (Array.isArray(items) && items.length > 0) {
-          const matched = this.selectBestRecordMatch(items, album, roundedDur);
-          const parsed = this.parseLrclibResponse(matched);
+          const matched = this.selectBestRecordMatch(items, album, roundedDur, title, artist);
+          const parsed = preferSynced(this.parseLrclibResponse(matched));
           if (parsed) return parsed;
         }
       }
-    } catch {
+    } catch (error) {
+      if (error instanceof LyricsCooldownError) { if (plainFallback) return plainFallback; throw error; }
+      sawFailure = true;
+      lastFailure = error;
       // Fallback tetap menampilkan info kartu
     }
 
+    if (plainFallback) return plainFallback;
+
     // Semua permintaan gagal tanpa satu pun respons: layanan tidak terjangkau.
     // Lemparkan agar pemanggil membedakannya dari "lirik tidak tersedia".
-    if (!sawAnyResponse) {
-      throw new Error('Layanan lirik tidak dapat dijangkau');
+    if (!sawAnyResponse || sawFailure) {
+      throw lastFailure instanceof Error ? lastFailure : new Error('Layanan lirik tidak dapat dijangkau');
     }
 
     return null;
@@ -721,6 +761,24 @@ export class LyricsService {
     return null;
   }
 
+  private notifyLyricsLoadStatus(status: 'loading' | 'not_found' | 'error') {
+    const messages = {
+      loading: ['Memuat lirik…', this.currentTitle],
+      not_found: ['Lirik belum tersedia', 'Tidak ditemukan kecocokan di LRCLIB.'],
+      error: ['Lirik gagal dimuat', 'Akan dicoba lagi secara otomatis.'],
+    };
+    this.notify({
+      line1: '',
+      highlight: messages[status][0],
+      line2: messages[status][1],
+      incoming: '',
+      isSynced: false,
+      totalLines: 0,
+      loadStatus: status,
+      transitionType: 'none',
+    });
+  }
+
   public async loadLyrics(
     title: string,
     artist: string,
@@ -733,7 +791,7 @@ export class LyricsService {
     // Cache key spesifik per versi rekaman mencakup judul asli, artis, album, dan durasi
     const versionKey = `${title}:::${artist}:::${album || ''}:::${roundedDur}`.toLowerCase();
     const simpleKey = `${title}:::${artist}`.toLowerCase();
-    const cleanTitle = title.replace(/\s*[\(\[].*?[\)\]]/g, '').trim() || title.trim();
+    const cleanTitle = title.replace(/\s*[([].*?[)\]]/g, '').trim() || title.trim();
     const cleanArtist = artist.split(/[,&]/)[0].trim() || artist.trim();
     const isNewTrack = this.currentKey !== versionKey;
 
@@ -748,7 +806,6 @@ export class LyricsService {
     if (isNewTrack) {
       this.currentKey = versionKey;
       this.currentTitle = title;
-      this.currentArtist = artist;
       this.currentLineIdx = 0;
       this.activeLyrics = null;
       this.stopRolling();
@@ -761,60 +818,86 @@ export class LyricsService {
       }
     }
 
-    const defaultLine2 = isPlaying
-      ? album
-        ? `Album · ${album}`
-        : 'Sedang Diputar · Sesi Media Sistem'
-      : 'Pemutaran Dijeda';
-
     let cached = this.cache.get(versionKey);
     if (!cached && roundedDur === 0) {
       cached = this.cache.get(simpleKey);
     }
 
+    const loadState = this.lyricsLoadState.get(versionKey);
+    const now = Date.now();
+    const refreshPlain = !!cached && !this.normalizeLyricsData(cached).isSynced
+      && loadState?.status === 'ready' && now >= loadState.nextRetryAt;
     if (cached) {
-      this.lyricsLoadState.set(versionKey, { status: 'ready', attempts: 0, nextRetryAt: 0 });
       this.activeLyrics = this.normalizeLyricsData(cached);
       this.syncPosition(this.currentPositionSecs, this.currentIsPlaying);
-      return;
+      if (!refreshPlain) return;
     }
 
-    // Unduh lirik: untuk lagu baru, atau percobaan ulang setelah kegagalan
-    // jaringan (dengan penundaan bertahap). Status "not_found" tidak diulang
-    // otomatis karena lirik memang tidak tersedia untuk rekaman ini.
-    const loadState = this.lyricsLoadState.get(versionKey);
-    const shouldRetryLoad = loadState?.status === 'error' && Date.now() >= loadState.nextRetryAt;
+    // Polling sesi menjadi pemicu retry; tidak ada timer jaringan tambahan
+    // yang bisa tertinggal setelah lagu berganti.
+    const shouldRetryLoad = refreshPlain
+      || (loadState?.status === 'error' && now >= loadState.nextRetryAt)
+      || (loadState?.status === 'not_found' && now >= loadState.nextRetryAt);
 
-    if (isNewTrack || shouldRetryLoad) {
-      // Tampilkan informasi awal sebelum lirik selesai diunduh
-      this.notify({
-        line1: artist ? `Artis · ${artist}` : 'Sesi Media Sistem',
-        highlight: title,
-        line2: defaultLine2,
-        isSynced: false,
-      });
+    if ((isNewTrack || shouldRetryLoad) && loadState?.status !== 'loading') {
+      const generation = this.lyricsGeneration;
+      const keepPlain = this.activeLyrics !== null && !this.activeLyrics.isSynced;
+      this.lyricsLoadState.set(versionKey, { status: 'loading', attempts: loadState?.attempts || 0, nextRetryAt: 0 });
+      if (keepPlain) this.syncPosition(this.currentPositionSecs, this.currentIsPlaying);
+      else this.notifyLyricsLoadStatus('loading');
 
       try {
-        const parsed = await this.fetchVersionMatchedLyrics(title, artist, album, durationSecs);
+        const parsed = await this.fetchVersionMatchedLyrics(title, artist, album, durationSecs, plain => {
+          if (generation !== this.lyricsGeneration || this.currentKey !== versionKey) return;
+          this.activeLyrics = plain;
+          this.syncPosition(this.currentPositionSecs, this.currentIsPlaying);
+        });
+        if (generation !== this.lyricsGeneration) return;
         if (parsed) {
           this.cache.set(versionKey, parsed);
-          this.lyricsLoadState.set(versionKey, { status: 'ready', attempts: 0, nextRetryAt: 0 });
+          const attempts = parsed.isSynced ? 0 : (loadState?.attempts || 0) + 1;
+          this.lyricsLoadState.set(versionKey, { status: 'ready', attempts,
+            nextRetryAt: parsed.isSynced ? 0 : Date.now() + Math.min(300_000, 30_000 * 2 ** Math.min(attempts - 1, 4)) });
           if (this.currentKey === versionKey) {
             this.activeLyrics = parsed;
             this.syncPosition(this.currentPositionSecs, this.currentIsPlaying);
           }
           return;
         }
-        // Layanan menjawab tetapi tidak ada lirik untuk rekaman ini
-        this.lyricsLoadState.set(versionKey, { status: 'not_found', attempts: 0, nextRetryAt: 0 });
-      } catch (_err) {
+        if (keepPlain) {
+          const attempts = (loadState?.attempts || 0) + 1;
+          this.lyricsLoadState.set(versionKey, { status: 'ready', attempts,
+            nextRetryAt: Date.now() + Math.min(300_000, 30_000 * 2 ** Math.min(attempts - 1, 4)) });
+          if (this.currentKey === versionKey) this.syncPosition(this.currentPositionSecs, this.currentIsPlaying);
+          return;
+        }
+        // Respons kosong dapat berubah jika provider memperbarui katalog.
+        const attempts = (loadState?.attempts || 0) + 1;
+        this.lyricsLoadState.set(versionKey, { status: 'not_found', attempts,
+          nextRetryAt: Date.now() + Math.min(300_000, 60_000 * 2 ** Math.min(attempts - 1, 3)) });
+        if (this.currentKey === versionKey) this.notifyLyricsLoadStatus('not_found');
+      } catch (error) {
+        if (generation !== this.lyricsGeneration) return;
+        console.warn('Gagal memuat lirik LRCLIB:', error);
         // Kegagalan jaringan/layanan: jadwalkan percobaan ulang bertahap
         const attempts = (loadState?.attempts || 0) + 1;
-        const backoffMs = Math.min(60000, this.lyricsRetryBaseMs * Math.pow(2, attempts - 1));
+        if (keepPlain) {
+          this.lyricsLoadState.set(versionKey, { status: 'ready', attempts,
+            nextRetryAt: Date.now() + Math.min(300_000, 30_000 * 2 ** Math.min(attempts - 1, 4)) });
+          if (this.currentKey === versionKey) this.syncPosition(this.currentPositionSecs, this.currentIsPlaying);
+          return;
+        }
+        const backoffMs = Math.max(Math.min(60000, this.lyricsRetryBaseMs * Math.pow(2, attempts - 1)),
+          error instanceof LyricsCooldownError ? Math.max(0, error.retryAt - Date.now()) : 0);
         this.lyricsLoadState.set(versionKey, { status: 'error', attempts, nextRetryAt: Date.now() + backoffMs });
+        if (this.currentKey === versionKey) this.notifyLyricsLoadStatus('error');
       }
     } else {
-      this.syncPosition(this.currentPositionSecs, this.currentIsPlaying);
+      if (!this.activeLyrics && loadState && loadState.status !== 'ready') {
+        this.notifyLyricsLoadStatus(loadState.status);
+      } else {
+        this.syncPosition(this.currentPositionSecs, this.currentIsPlaying);
+      }
     }
   }
 
@@ -823,6 +906,7 @@ export class LyricsService {
     this.currentIsPlaying = isPlaying;
 
     if (!this.activeLyrics) return;
+    const lyricsPositionSecs = Math.max(0, this.currentPositionSecs + this.timing.get(this.currentKey));
 
     if (this.activeLyrics.isSynced && this.activeLyrics.syncedLines.length > 0) {
       // Hentikan timer putaran tetap karena baris lirik ditentukan oleh posisi lagu
@@ -833,7 +917,7 @@ export class LyricsService {
       let activeIdx = -1;
 
       for (let i = 0; i < lines.length; i++) {
-        if (lines[i].timeSecs <= this.currentPositionSecs) {
+        if (lines[i].timeSecs <= lyricsPositionSecs) {
           activeIdx = i;
         } else {
           break;
@@ -858,9 +942,9 @@ export class LyricsService {
         this.currentLineIdx = -1;
 
         this.notify({
-          line1: this.currentArtist ? `Artis · ${this.currentArtist}` : 'Sesi Media Sistem',
+          line1: '',
           highlight: '♪ ♪ ♪',
-          line2: firstVocal ? firstVocal.text : (this.currentTitle || 'Musik Dimulai'),
+          line2: firstVocal ? firstVocal.text : '',
           incoming: secondVocal ? secondVocal.text : '',
           isSynced: true,
           isInstrumental: true,
@@ -875,38 +959,14 @@ export class LyricsService {
       const currentRawText = lines[activeIdx].text;
       const isExplicitEmpty = currentRawText.trim().length === 0;
 
-      // Periksa jeda instrumental antar baris (gap panjang di mana vokal sudah selesai dan tidak ada marker instrumental eksplisit)
-      let isGapInstrumental = false;
-      const nextRawLine = lines[activeIdx + 1];
-      if (nextRawLine && !isExplicitEmpty && nextRawLine.text.trim().length > 0) {
-        const gap = nextRawLine.timeSecs - lines[activeIdx].timeSecs;
-        // Hanya jika jeda antar baris vokal minimal 10 detik
-        const vocalHoldTime = Math.min(8.0, Math.max(5.0, gap * 0.5));
-        if (
-          gap >= 10.0 &&
-          this.currentPositionSecs >= lines[activeIdx].timeSecs + vocalHoldTime &&
-          nextRawLine.timeSecs - this.currentPositionSecs >= 3.0
-        ) {
-          isGapInstrumental = true;
-        }
-      }
-
-      const isInstrumental = isExplicitEmpty || isGapInstrumental;
-
-      // Cari lirik vokal sebelumnya
+      // Penanda kosong dari LRC menentukan jeda; jarak timestamp tidak membuktikan vokal berhenti.
+      const isInstrumental = isExplicitEmpty;
       let prevText = '';
-      if (isGapInstrumental) {
-        prevText = currentRawText;
-      } else {
-        for (let p = activeIdx - 1; p >= 0; p--) {
-          if (lines[p].text.trim().length > 0) {
-            prevText = lines[p].text;
-            break;
-          }
+      for (let p = activeIdx - 1; p >= 0; p--) {
+        if (lines[p].text.trim().length > 0) {
+          prevText = lines[p].text;
+          break;
         }
-      }
-      if (!prevText) {
-        prevText = this.currentArtist ? `Artis · ${this.currentArtist}` : 'Sesi Media Sistem';
       }
 
       // Cari lirik vokal selanjutnya
@@ -918,9 +978,6 @@ export class LyricsService {
           nextVocalIdx = n;
           break;
         }
-      }
-      if (!nextText) {
-        nextText = this.currentTitle || 'Musik Instrumental';
       }
 
       // Cari lirik setelah nextText (incoming untuk animasi slide)
@@ -935,7 +992,7 @@ export class LyricsService {
       }
 
       // Tentukan tipe transisi (step vs jump vs none)
-      let transitionType: 'step' | 'jump' | 'none' = 'none';
+      let transitionType: 'step' | 'jump' | 'none';
       if (this.previousKey !== this.currentKey) {
         transitionType = 'jump';
         this.previousKey = this.currentKey;
@@ -973,29 +1030,19 @@ export class LyricsService {
       });
     } else if (this.activeLyrics.plainLines.length > 0) {
       // Lirik biasa tanpa penanda waktu: tampilkan dengan keterangan sinkronisasi tidak tersedia
+      this.stopRolling();
       this.emitCurrentRollingLines();
-      if (isPlaying && this.rollTimer === null && this.activeLyrics.plainLines.length > 1) {
-        this.startRolling();
-      } else if (!isPlaying) {
-        this.stopRolling();
-      }
     }
   }
 
-  private startRolling() {
-    if (this.rollTimer !== null) return;
-    const linesCount = this.activeLyrics?.plainLines.length || 0;
-    if (linesCount <= 1) return;
-
-    this.rollTimer = window.setInterval(() => {
-      if (!this.activeLyrics || this.activeLyrics.isSynced) {
-        this.stopRolling();
-        return;
-      }
-      this.currentLineIdx = (this.currentLineIdx + 1) % this.activeLyrics.plainLines.length;
-      this.emitCurrentRollingLines();
-    }, 7000);
+  public adjustTiming(delta: number, reset: boolean = false): boolean {
+    if (!this.activeLyrics?.isSynced) return false;
+    if (!this.timing.set(this.currentKey, reset ? 0 : this.timing.get(this.currentKey) + delta)) return false;
+    this.syncPosition(this.currentPositionSecs, this.currentIsPlaying);
+    return true;
   }
+
+
 
   private stopRolling() {
     if (this.rollTimer !== null) {
@@ -1009,31 +1056,23 @@ export class LyricsService {
 
     const lines = this.activeLyrics.plainLines;
     const total = lines.length;
-    const prevIdx = (this.currentLineIdx - 1 + total) % total;
-    const nextIdx = (this.currentLineIdx + 1) % total;
-    const incIdx = (this.currentLineIdx + 2) % total;
-
-    const prevLineText =
-      this.currentLineIdx === 0
-        ? 'Lirik biasa (sinkronisasi tidak tersedia)'
-        : lines[prevIdx];
-
     this.notify({
-      line1: prevLineText,
-      highlight: lines[this.currentLineIdx],
-      line2: lines[nextIdx] || this.currentTitle,
-      incoming: lines[incIdx] || '',
+      line1: 'Lirik biasa (sinkronisasi tidak tersedia)',
+      highlight: lines.join('\n'),
+      line2: '',
       isSynced: false,
       isInstrumental: false,
       isPlaying: this.currentIsPlaying,
-      lineIndex: this.currentLineIdx,
+      lineIndex: 0,
       totalLines: total,
-      transitionType: this.currentLineIdx === 0 ? 'none' : 'step',
+      transitionType: 'none',
     });
   }
 
   public clear(): void {
+    this.lyricsGeneration++;
     this.stopRolling();
+    this.lastLyricsRenderKey = '';
     this.cache.clear();
     this.artCache.clear();
     this.lyricsLoadState.clear();
@@ -1045,7 +1084,6 @@ export class LyricsService {
     this.currentLineIdx = 0;
     this.currentPositionSecs = 0;
     this.currentTitle = '';
-    this.currentArtist = '';
     this.lastArtworkInfo = null;
     // Lepaskan seluruh object URL artwork sesi yang masih tersimpan
     for (const url of this.sessionObjectUrls.values()) {
@@ -1054,6 +1092,7 @@ export class LyricsService {
     this.sessionObjectUrls.clear();
     this.explicitArtIdentity = null;
     this.searchFallbackDoneFor = '';
+    this.searchFallbackRetryAt = 0;
   }
 }
 

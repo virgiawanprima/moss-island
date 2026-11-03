@@ -1,3 +1,4 @@
+import { hasScheduleChanged } from '../settings';
 import {
   PlanPhase,
   PomodoroPlan,
@@ -5,7 +6,7 @@ import {
   TimerStatus,
   TimerSnapshot,
 } from '../types';
-import { buildPomodoroPlan, DEFAULT_POMODORO_CONFIG } from './pomodoroPlan';
+import { buildPomodoroPlan, buildFocusTargetPlan, DEFAULT_POMODORO_CONFIG } from './pomodoroPlan';
 
 export interface PomodoroEngineCallbacks {
   onTick?: (
@@ -42,7 +43,7 @@ export class PomodoroEngine {
   ) {
     this.config = { ...config };
     this.callbacks = { ...callbacks };
-    this.plan = buildPomodoroPlan(
+    this.plan = this.config.focusTargetMin !== undefined ? buildFocusTargetPlan(this.config.focusTargetMin) : buildPomodoroPlan(
       this.config.totalDurationMin,
       this.config.focusDurationMin,
       this.config.breakDurationMin
@@ -55,15 +56,16 @@ export class PomodoroEngine {
   }
 
   public updateConfig(newConfig: PomodoroConfig) {
+    const changed = hasScheduleChanged(this.config, newConfig);
     this.config = { ...newConfig };
-    if (this.status === 'idle' || this.status === 'completed') {
+    if (changed && (this.status === 'idle' || this.status === 'completed')) {
       this.rebuildPlan();
     }
   }
 
   public rebuildPlan() {
     this.stopInterval();
-    this.plan = buildPomodoroPlan(
+    this.plan = this.config.focusTargetMin !== undefined ? buildFocusTargetPlan(this.config.focusTargetMin) : buildPomodoroPlan(
       this.config.totalDurationMin,
       this.config.focusDurationMin,
       this.config.breakDurationMin
@@ -123,6 +125,7 @@ export class PomodoroEngine {
       if (remaining <= 0) {
         // Jeda terjadi tepat saat batas waktu: fase diselesaikan dari deadline lama
         this.handlePhaseEnd(missedDeadline);
+        if (this.getStatus() === 'running') this.pause();
         return;
       }
 
@@ -369,7 +372,7 @@ export class PomodoroEngine {
   // SNAPSHOT UNTUK PEMULIHAN SESI (aplikasi ditutup / crash / restart komputer)
   // ==========================================================================
   public getSnapshot(): TimerSnapshot | null {
-    if (this.status !== 'running' && this.status !== 'paused') return null;
+    if (this.status !== 'running' && this.status !== 'paused' && this.status !== 'waiting_next') return null;
     if (this.phaseRemainingSeconds <= 0) return null;
 
     const remaining =
@@ -379,6 +382,8 @@ export class PomodoroEngine {
     if (remaining <= 0) return null;
 
     return {
+      scheduleVersion: this.config.focusTargetMin === undefined ? 2 : 3,
+      focusTargetMin: this.config.focusTargetMin,
       phaseIndex: this.currentPhaseIndex,
       status: this.status,
       phaseRemainingSeconds: remaining,
@@ -399,7 +404,11 @@ export class PomodoroEngine {
    */
   public restoreFromSnapshot(snapshot: TimerSnapshot): boolean {
     if (!snapshot || typeof snapshot !== 'object') return false;
-    if (snapshot.status !== 'running' && snapshot.status !== 'paused') return false;
+    // Older schedules diverge at the fourth break; do not resume a different phase.
+    if (this.config.focusTargetMin !== undefined) {
+      if (snapshot.scheduleVersion !== 3 || snapshot.focusTargetMin !== this.config.focusTargetMin) return false;
+    } else if (snapshot.scheduleVersion !== 2 && (snapshot.scheduleVersion !== undefined || snapshot.phaseIndex >= 7)) return false;
+    if (snapshot.status !== 'running' && snapshot.status !== 'paused' && snapshot.status !== 'waiting_next') return false;
     if (
       !Number.isInteger(snapshot.phaseIndex) ||
       snapshot.phaseIndex < 0 ||
@@ -418,17 +427,18 @@ export class PomodoroEngine {
     const phase = this.plan.phases[snapshot.phaseIndex];
     const maxRemaining = phase.durationMin * 60;
     const storedRemaining =
-      typeof snapshot.phaseRemainingSeconds === 'number' && snapshot.phaseRemainingSeconds > 0
+      typeof snapshot.phaseRemainingSeconds === 'number' && Number.isFinite(snapshot.phaseRemainingSeconds) && snapshot.phaseRemainingSeconds > 0
         ? Math.min(Math.floor(snapshot.phaseRemainingSeconds), maxRemaining)
         : 0;
 
+    if (storedRemaining <= 0 && snapshot.status !== 'running') return false;
     this.stopInterval();
     this.currentPhaseIndex = snapshot.phaseIndex;
     this.phaseTotalSeconds = maxRemaining;
     this.phaseRemainingSeconds = storedRemaining;
 
-    if (snapshot.status === 'paused' && storedRemaining > 0) {
-      this.status = 'paused';
+    if (snapshot.status === 'paused' || snapshot.status === 'waiting_next') {
+      this.status = snapshot.status;
       this.targetEndTime = null;
       this.notifyStatusChange();
       this.notifyTick();

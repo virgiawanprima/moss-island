@@ -5,13 +5,13 @@ import { isTauri } from './storage';
  * Mengelola pendaftaran aplikasi untuk dimulai otomatis saat pengguna login desktop
  * pada Windows dan Linux.
  */
-export async function isAutostartEnabled(): Promise<boolean> {
-  if (!isTauri()) return false;
+export async function isAutostartEnabled(): Promise<boolean | null> {
+  if (!isTauri()) return null;
   try {
     const { isEnabled } = await import('@tauri-apps/plugin-autostart');
     return await isEnabled();
   } catch {
-    return false;
+    return null;
   }
 }
 

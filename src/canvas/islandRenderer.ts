@@ -1,30 +1,35 @@
-import { drawOakTree, drawPineTree, drawSproutProgress } from './treeSprites';
+import { TREE_RENDERERS, drawSproutProgress, type TreeType } from './treeSprites';
 import { drawMomoV2, MomoV2Action } from './momoV2Atlas';
 import { MomoSeasonalAction } from './momoSeasonAccessories';
 import { PlantedTree, IslandSeason } from '../types';
+import { getTreeOpacity } from './treeOcclusion';
+import { GardenSchedule } from './gardenSchedule';
+import { buildGardenRoute, type GardenWaypoint, type GardenAction } from './gardening';
+import { FocusWeather, createPuddles, type Puddle } from './focusWeather';
+import { MomoLeisure } from './momoLeisure';
 
 export interface PlantingSlot {
   r: number;
   c: number;
-  type: 'oak' | 'pine';
+  type: TreeType;
 }
 
 // 14 petak tanam yang strategis mengelilingi jalur jalan setapak
 export const PLANTING_SLOTS: PlantingSlot[] = [
-  { r: 0, c: 2, type: 'oak' },
-  { r: 1, c: 0, type: 'pine' },
-  { r: 0, c: 4, type: 'pine' },
-  { r: 4, c: 1, type: 'oak' },
-  { r: 2, c: 5, type: 'pine' },
-  { r: 5, c: 3, type: 'oak' },
-  { r: 1, c: 4, type: 'pine' },
-  { r: 4, c: 5, type: 'oak' },
-  { r: 0, c: 1, type: 'pine' },
-  { r: 5, c: 2, type: 'pine' },
-  { r: 1, c: 5, type: 'oak' },
-  { r: 4, c: 0, type: 'pine' },
-  { r: 0, c: 3, type: 'oak' },
-  { r: 5, c: 4, type: 'pine' },
+  { r: 0, c: 2, type: 'banana' },
+  { r: 1, c: 0, type: 'mango' },
+  { r: 0, c: 4, type: 'durian' },
+  { r: 4, c: 1, type: 'palm' },
+  { r: 2, c: 5, type: 'guava' },
+  { r: 5, c: 3, type: 'banana' },
+  { r: 1, c: 4, type: 'palm' },
+  { r: 4, c: 5, type: 'mango' },
+  { r: 0, c: 1, type: 'durian' },
+  { r: 5, c: 2, type: 'palm' },
+  { r: 1, c: 5, type: 'guava' },
+  { r: 4, c: 0, type: 'mango' },
+  { r: 0, c: 3, type: 'palm' },
+  { r: 5, c: 4, type: 'durian' },
 ];
 
 export class IslandRenderer {
@@ -45,7 +50,16 @@ export class IslandRenderer {
   private waveTimer: number = 0;
   private songFinishedTimer: number = 0;
   private isMusicPlaying: boolean = false;
-  private isOverviewMode: boolean = false;
+  private focusPaused = false;
+  private inBreak = false;
+  private weather = new FocusWeather();
+  private puddles: Puddle[] = [];
+  private rainJoyTimer = 0;
+  private leisure = new MomoLeisure();
+  private gardenSchedule = new GardenSchedule();
+  private sproutGrowthStage = 0;
+  private pendingSproutCare = false;
+  private leisureRunIndex = 0;
   private ambientMode: 'rain' | 'stream' | 'breeze' | null = null;
   private rainDrops: Array<{ x: number; y: number; speed: number; length: number }> = [];
   private musicNotes: Array<{ x: number; y: number; vy: number; opacity: number; symbol: string }> = [];
@@ -59,16 +73,17 @@ export class IslandRenderer {
 
   // Tree & Sprout States
   private permanentTrees: PlantedTree[] = [];
+  private bloomingTrees = new Map<string, number>();
+  private occlusionLayer: HTMLCanvasElement | null = null;
   private activeSprout: {
     slotIndex: number;
     progress: number;
     isPaused: boolean;
-    isBlooming: boolean;
-    bloomTimer: number;
   } | null = null;
 
   // Walking path & waypoints for Momo (mengikuti jalan setapak di tengah)
-  private normalWaypoints: Array<{ r: number; c: number; waitFrames: number }> = [
+  private gardeningActivity: { action: GardenAction; targetR: number; targetC: number } | null = null;
+  private normalWaypoints: GardenWaypoint[] = [
     { r: 2.2, c: 2.2, waitFrames: 60 },
     { r: 2.8, c: 2.2, waitFrames: 45 },
     { r: 2.8, c: 2.8, waitFrames: 50 },
@@ -146,7 +161,7 @@ export class IslandRenderer {
       let vx = 0.25 + Math.random() * 0.35;
       let vy = 0.2 + Math.random() * 0.3;
       let size = 2 + Math.random() * 1.5;
-      let opacity = 0.4 + Math.random() * 0.45;
+      const opacity = 0.4 + Math.random() * 0.45;
 
       if (this.currentSeason === 'spring') {
         const pinks = ['#FFB7C5', '#FFAAA6', '#FFC0CB', '#FFD1DC'];
@@ -216,6 +231,25 @@ export class IslandRenderer {
   // ==========================================================================
   public setPlantedTrees(trees: PlantedTree[]) {
     this.permanentTrees = [...trees];
+    this.bloomingTrees.clear();
+    this.rebuildGardenRoute();
+  }
+
+  private rebuildGardenRoute(includePlant = true) {
+    const slot = this.activeSprout ? PLANTING_SLOTS[this.activeSprout.slotIndex] : undefined;
+    const route = buildGardenRoute(this.getCurrentGenTrees(), slot, includePlant);
+    this.waypoints = route.length ? route : this.normalWaypoints;
+    this.currentWaypointIndex = 0;
+    this.waitCounter = 0;
+    this.gardeningActivity = null;
+  }
+
+  private beginSproutCare() {
+    if (!this.activeSprout) return;
+    this.pendingSproutCare = false;
+    this.rebuildGardenRoute(false);
+    this.gardenSchedule.start();
+    this.leisure.stop();
   }
 
   public getPlantedTrees(): PlantedTree[] {
@@ -283,6 +317,12 @@ export class IslandRenderer {
    * Momo berjalan ke petak kosong lalu menanam benih
    */
   public startFocusPlanting(): { r: number; c: number; slotIndex: number } {
+    this.focusPaused = false;
+    this.inBreak = false;
+    this.gardenSchedule.start();
+    this.leisure.stop();
+    this.sproutGrowthStage = 0;
+    this.pendingSproutCare = false;
     const slotIndex = this.getNextSlotIndex();
     const slot = PLANTING_SLOTS[slotIndex];
 
@@ -290,16 +330,10 @@ export class IslandRenderer {
       slotIndex,
       progress: 0.05,
       isPaused: false,
-      isBlooming: false,
-      bloomTimer: 0,
     };
 
     // Arahkan Momo berjalan mendekati petak tanam
-    this.waypoints = [
-      { r: slot.r > 2 ? slot.r - 0.5 : slot.r + 0.5, c: slot.c > 2 ? slot.c - 0.5 : slot.c + 0.5, waitFrames: 90 },
-      ...this.normalWaypoints,
-    ];
-    this.currentWaypointIndex = 0;
+    this.rebuildGardenRoute();
     this.momoMood = 'idle';
 
     return { r: slot.r, c: slot.c, slotIndex };
@@ -310,8 +344,14 @@ export class IslandRenderer {
    * Petak menunjukkan progres pertumbuhan tunas (0.0 sampai 1.0)
    */
   public updateFocusProgress(progress: number) {
-    if (this.activeSprout && !this.activeSprout.isBlooming) {
+    if (this.activeSprout) {
       this.activeSprout.progress = Math.max(0.05, Math.min(1.0, progress));
+      const stage = progress >= 0.8 ? 2 : progress >= 0.4 ? 1 : 0;
+      if (stage > this.sproutGrowthStage && progress < 1) {
+        this.sproutGrowthStage = stage;
+        this.pendingSproutCare = true;
+        if (!this.gardenSchedule.active) this.beginSproutCare();
+      }
     }
   }
 
@@ -319,6 +359,8 @@ export class IslandRenderer {
    * Dipanggil saat timer dijeda / di-resume
    */
   public setTimerPaused(paused: boolean) {
+    this.focusPaused = paused;
+    if (!paused) this.inBreak = false;
     if (this.activeSprout) {
       this.activeSprout.isPaused = paused;
     }
@@ -334,7 +376,7 @@ export class IslandRenderer {
    * Memeriksa apakah terdapat tunas aktif yang sedang bertumbuh (belum mekar)
    */
   public hasActiveSprout(): boolean {
-    return this.activeSprout !== null && !this.activeSprout.isBlooming;
+    return this.activeSprout !== null;
   }
 
   /**
@@ -343,12 +385,9 @@ export class IslandRenderer {
    * Jika petak terakhir generasi ini terisi, generasi baru dimulai secara otomatis.
    */
   public completeFocusSession(): PlantedTree {
-    let slotIndex = this.getNextSlotIndex();
-    if (this.activeSprout) {
-      slotIndex = this.activeSprout.slotIndex;
-      this.activeSprout.isBlooming = true;
-      this.activeSprout.bloomTimer = 48; // ~2 detik perayaan mekar
-    }
+    const slotIndex = this.getNextSlotIndex();
+    this.activeSprout = null;
+    this.pendingSproutCare = false;
 
     const slot = PLANTING_SLOTS[slotIndex];
     const newTree: PlantedTree = {
@@ -360,9 +399,11 @@ export class IslandRenderer {
     };
 
     this.permanentTrees.push(newTree);
+    this.gardenSchedule.finish();
+    if (this.isRunning && this.shouldRender() && !document.hidden) this.bloomingTrees.set(newTree.id, 48);
     this.momoMood = 'happy';
     this.celebrationTimer = 48; // 2 detik perayaan Momo
-    this.waypoints = this.normalWaypoints;
+    this.rebuildGardenRoute();
 
     return newTree;
   }
@@ -372,15 +413,19 @@ export class IslandRenderer {
    * Tidak mendapat pohon; pohon dari sesi sebelumnya tetap ada
    */
   public cancelFocusSession() {
+    this.focusPaused = false;
+    this.gardenSchedule.finish();
     this.activeSprout = null;
+    this.pendingSproutCare = false;
     this.momoMood = 'idle';
-    this.waypoints = this.normalWaypoints;
+    this.rebuildGardenRoute();
   }
 
   /**
    * Dipanggil saat fase istirahat
    */
   public setBreakMode(isBreak: boolean) {
+    this.inBreak = isBreak;
     if (isBreak) {
       this.momoMood = 'resting';
       this.isWalking = false;
@@ -409,6 +454,10 @@ export class IslandRenderer {
   }
 
   public setAmbientMode(mode: 'rain' | 'stream' | 'breeze' | 'off' | null) {
+    if (this.focusPaused) {
+      this.ambientMode = mode === 'off' ? null : mode;
+      return;
+    }
     if (mode === 'off' || mode === null) {
       this.ambientMode = null;
       if (!this.isMusicPlaying && this.momoMood === 'resting') {
@@ -431,6 +480,7 @@ export class IslandRenderer {
 
   public setMusicPlaying(playing: boolean) {
     this.isMusicPlaying = playing;
+    if (this.focusPaused) return;
     if (!playing) {
       this.musicNotes = [];
       // Musik dijeda: Momo berhenti menari lalu duduk santai
@@ -439,10 +489,6 @@ export class IslandRenderer {
     } else {
       this.momoMood = 'idle';
     }
-  }
-
-  public setOverviewMode(overview: boolean) {
-    this.isOverviewMode = overview;
   }
 
   public waveHello(frames: number = 40) {
@@ -486,6 +532,7 @@ export class IslandRenderer {
 
   public pause() {
     this.isRunning = false;
+    this.bloomingTrees.clear();
     if (this.rafId !== null) {
       cancelAnimationFrame(this.rafId);
       this.rafId = null;
@@ -508,16 +555,37 @@ export class IslandRenderer {
 
     this.rafId = requestAnimationFrame(this.loop);
 
-    const delta = currentTime - this.lastFrameTime;
+    const delta = Math.min(250, Math.max(0, currentTime - this.lastFrameTime));
     if (delta >= this.frameInterval) {
-      this.lastFrameTime = currentTime - (delta % this.frameInterval);
-      this.update();
+      const steps = Math.floor((delta + 0.000001) / this.frameInterval);
+      this.lastFrameTime = currentTime - Math.max(0, delta - steps * this.frameInterval);
+      for (let step = 0; step < steps; step++) this.update();
       this.draw();
     }
   };
 
   private update() {
     this.frameCount++;
+    this.gardeningActivity = null;
+    const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    const weatherEnabled = !this.focusPaused && !this.inBreak;
+    if (this.rainJoyTimer > 0 && weatherEnabled) this.rainJoyTimer--;
+    if (this.weather.step(this.frameInterval / 1000, weatherEnabled, this.currentSeason !== 'winter')) {
+      const occupied = this.getCurrentGenTrees().map(tree => ({ r: tree.gridR, c: tree.gridC }));
+      if (this.activeSprout) occupied.push(PLANTING_SLOTS[this.activeSprout.slotIndex]);
+      this.puddles = createPuddles(occupied);
+      if (!reducedMotion) {
+        this.rainJoyTimer = 72;
+        this.celebrateBriefly(72);
+      }
+    }
+    if (this.gardenSchedule.step(this.frameInterval / 1000,
+      weatherEnabled && !reducedMotion && this.rainJoyTimer === 0 && this.waypoints.some(wp => wp.action))) {
+      this.leisure.stop();
+    }
+    const oldLeisure = this.leisure.action;
+    this.leisure.step(this.frameInterval / 1000, weatherEnabled && !reducedMotion && this.rainJoyTimer === 0 && !this.gardenSchedule.active);
+    if (oldLeisure !== this.leisure.action && this.leisure.action === 'run') this.leisureRunIndex = 0;
 
     // Hitung mundur perayaan selesai fokus
     if (this.celebrationTimer > 0) {
@@ -587,12 +655,9 @@ export class IslandRenderer {
       this.snowAccumulationTimer = 0;
     }
 
-    // Hitung mundur mekar tunas aktif
-    if (this.activeSprout?.isBlooming) {
-      this.activeSprout.bloomTimer--;
-      if (this.activeSprout.bloomTimer <= 0) {
-        this.activeSprout = null; // Tunas selesai mekar menjadi pohon permanen
-      }
+    for (const [id, remaining] of this.bloomingTrees) {
+      if (remaining <= 1) this.bloomingTrees.delete(id);
+      else this.bloomingTrees.set(id, remaining - 1);
     }
 
     // Blinking logic
@@ -642,7 +707,7 @@ export class IslandRenderer {
       }
 
       // Gerimis Hujan saat mode ambient rain aktif
-      if (this.ambientMode === 'rain') {
+      if (this.ambientMode === 'rain' || (this.weather.intensity > 0 && weatherEnabled)) {
         for (const drop of this.rainDrops) {
           drop.y += drop.speed;
           drop.x -= drop.speed * 0.4;
@@ -654,7 +719,7 @@ export class IslandRenderer {
       }
 
       // Not musik pixel melayang saat musik diputar
-      if (this.isMusicPlaying) {
+      if (this.isMusicPlaying && !this.focusPaused) {
         if (this.frameCount % 80 === 0 && this.musicNotes.length < 2) {
           this.musicNotes.push({
             x: 8 + (Math.random() - 0.5) * 6,
@@ -675,7 +740,31 @@ export class IslandRenderer {
       }
     }
 
-    if (prefersReducedMotion || this.momoMood === 'resting') {
+    if (prefersReducedMotion || this.focusPaused || this.inBreak || this.rainJoyTimer > 0 || this.momoMood === 'resting') {
+      this.isWalking = false;
+      return;
+    }
+
+    if (this.leisure.action) {
+      this.isWalking = false;
+      if (this.leisure.action === 'run') {
+        const target = this.normalWaypoints[this.leisureRunIndex];
+        const dr = target.r - this.currentPos.r;
+        const dc = target.c - this.currentPos.c;
+        const distance = Math.hypot(dr, dc);
+        if (distance > 0.06) {
+          this.currentPos.r += dr / distance * 0.045;
+          this.currentPos.c += dc / distance * 0.045;
+          this.isWalking = true;
+          if (Math.abs(dc - dr) > 0.01) this.facingRight = dc - dr > 0;
+        } else {
+          this.leisureRunIndex = (this.leisureRunIndex + 1) % this.normalWaypoints.length;
+        }
+      }
+      return;
+    }
+
+    if (!this.gardenSchedule.active) {
       this.isWalking = false;
       return;
     }
@@ -702,9 +791,18 @@ export class IslandRenderer {
     } else {
       this.isWalking = false;
       this.waitCounter++;
+      if (targetWp.action && targetWp.targetR !== undefined && targetWp.targetC !== undefined) {
+        const targetX = (targetWp.targetC - targetWp.targetR) * 24;
+        const momoX = (this.currentPos.c - this.currentPos.r) * 24;
+        this.facingRight = targetX >= momoX;
+        if (this.waitCounter > 8 && this.waitCounter < targetWp.waitFrames - 8) {
+          this.gardeningActivity = { action: targetWp.action, targetR: targetWp.targetR, targetC: targetWp.targetC };
+        }
+      }
 
       // Trigger aksi khas musiman secara alami saat Momo sedang menunggu di waypoint
       if (
+        !targetWp.action &&
         !this.activeSeasonalAction &&
         this.waitCounter > 20 &&
         this.waitCounter % 80 === 0 &&
@@ -732,7 +830,16 @@ export class IslandRenderer {
 
       if (this.waitCounter >= targetWp.waitFrames) {
         this.waitCounter = 0;
-        this.currentWaypointIndex = (this.currentWaypointIndex + 1) % this.waypoints.length;
+        if (targetWp.action === 'plant') {
+          this.waypoints.splice(this.currentWaypointIndex, 1);
+          this.currentWaypointIndex %= this.waypoints.length;
+        } else {
+          this.currentWaypointIndex = (this.currentWaypointIndex + 1) % this.waypoints.length;
+        }
+        if (targetWp.action === 'fertilize') {
+          this.gardenSchedule.finish();
+          if (this.pendingSproutCare) this.beginSproutCare();
+        }
       }
     }
   }
@@ -749,8 +856,7 @@ export class IslandRenderer {
 
     const baseW = 360;
     const baseH = 160;
-    const zoomScale = this.isOverviewMode ? 0.84 : 1.0;
-    const scale = Math.min(1, Math.min(w / baseW, h / baseH)) * zoomScale;
+    const scale = Math.min(1, Math.min(w / baseW, h / baseH));
 
     this.ctx.save();
     const offsetX = (w - baseW * scale) / 2;
@@ -766,12 +872,14 @@ export class IslandRenderer {
 
     // 2. Pulau Isometrik (Base geometry 1:1 Figma isometric_island_base.svg)
     this.drawIsometricIsland();
+    this.drawPuddles();
 
     // 3. Pohon, Tunas, dan Momo dengan Y-depth sorting
     this.drawDepthSortedEntities();
 
     // 4. Efek Rintik Gerimis Hujan saat mode ambient rain
-    if (this.ambientMode === 'rain') {
+    if ((this.ambientMode === 'rain' || this.weather.intensity > 0)
+      && !window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
       this.drawRain();
     }
 
@@ -790,6 +898,7 @@ export class IslandRenderer {
 
   private drawRain() {
     this.ctx.save();
+    this.ctx.globalAlpha = this.ambientMode === 'rain' ? 1 : this.weather.intensity;
     this.ctx.strokeStyle = 'rgba(168, 217, 230, 0.45)';
     this.ctx.lineWidth = 1.2;
     this.ctx.beginPath();
@@ -799,6 +908,36 @@ export class IslandRenderer {
     }
     this.ctx.stroke();
     this.ctx.restore();
+  }
+
+  private drawPuddles() {
+    if (this.weather.wetness <= 0.01) return;
+    const ctx = this.ctx;
+    const motion = !window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    ctx.save();
+    ctx.globalAlpha = this.weather.intensity * 0.12;
+    ctx.fillStyle = '#174C53';
+    ctx.beginPath();
+    ctx.moveTo(180, 24); ctx.lineTo(324, 84); ctx.lineTo(180, 144); ctx.lineTo(36, 84);
+    ctx.closePath(); ctx.fill();
+    this.puddles.forEach(({ r, c, radius, depth }, i) => {
+      const x = 180 + (c - r) * 24;
+      const y = 24 + (c + r + 1) * 10;
+      const size = 0.4 + this.weather.wetness * 0.6;
+      ctx.globalAlpha = this.weather.wetness * 0.7;
+      ctx.fillStyle = '#3D7E87';
+      ctx.beginPath(); ctx.ellipse(x, y, radius * size, depth * size, -0.05, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = '#94C8C4';
+      ctx.fillRect(Math.round(x - 4), Math.round(y - 1), Math.max(1, Math.round(6 * size)), 1);
+      if (motion && this.weather.intensity > 0.1) {
+        const phase = (this.frameCount / 30 + i / 3) % 1;
+        ctx.globalAlpha = (1 - phase) * this.weather.intensity * 0.5;
+        ctx.strokeStyle = '#B7DDDA';
+        ctx.lineWidth = 0.7;
+        ctx.beginPath(); ctx.ellipse(x, y, 1 + phase * 6, 0.5 + phase * 2, 0, 0, Math.PI * 2); ctx.stroke();
+      }
+    });
+    ctx.restore();
   }
 
   private drawSpores() {
@@ -961,30 +1100,38 @@ export class IslandRenderer {
       x: number;
       y: number;
       sortY: number;
-      treeType?: 'oak' | 'pine';
+      treeType?: TreeType;
       scale?: number;
       sproutProgress?: number;
       sway?: number;
+      beingTended?: boolean;
     }
 
     const entities: DrawableEntity[] = [];
 
     // Efek angin lembut sesekali
-    const globalWindSway = Math.floor(this.frameCount / 90) % 2 === 1 ? Math.round(Math.sin(this.frameCount * 0.25)) : 0;
+    const motion = !window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    const globalWindSway = motion && Math.floor(this.frameCount / 90) % 2 === 1 ? Math.round(Math.sin(this.frameCount * 0.25)) : 0;
 
     // 1. Hanya gambar pohon dari generasi aktif (generasi sebelumnya diarsipkan)
     const currentGenTrees = this.getCurrentGenTrees();
+    const visit = this.gardenSchedule.active && !this.isWalking
+      ? this.waypoints[this.currentWaypointIndex] : undefined;
     currentGenTrees.forEach((tree, idx) => {
       const pos = getTilePos(tree.gridR, tree.gridC);
       const treePhase = (idx + Math.floor(this.frameCount / 90)) % 3;
-      const treeSway = treePhase === 0 ? Math.round(Math.sin(this.frameCount * 0.18)) : 0;
+      const treeSway = motion && treePhase === 0 ? Math.round(Math.sin(this.frameCount * 0.18)) : 0;
+      const bloomRemaining = this.bloomingTrees.get(tree.id);
       entities.push({
         type: 'tree',
         x: pos.x,
         y: pos.y + 2,
         sortY: pos.y + 2,
         treeType: tree.treeType,
-        scale: 1.0,
+        beingTended: !this.focusPaused && !this.inBreak && visit?.action !== undefined
+          && Math.hypot(visit.r - this.currentPos.r, visit.c - this.currentPos.c) <= 0.06
+          && visit.targetR === tree.gridR && visit.targetC === tree.gridC,
+        scale: motion && bloomRemaining !== undefined ? 0.5 + (1 - bloomRemaining / 48) * 0.5 : 1,
         sway: treeSway,
       });
     });
@@ -994,28 +1141,14 @@ export class IslandRenderer {
       const slot = PLANTING_SLOTS[this.activeSprout.slotIndex];
       const pos = getTilePos(slot.r, slot.c);
 
-      if (this.activeSprout.isBlooming) {
-        // Tunas sedang mekar menjadi pohon utuh
-        const bloomScale = 0.5 + (1 - this.activeSprout.bloomTimer / 48) * 0.5;
-        entities.push({
-          type: 'tree',
-          x: pos.x,
-          y: pos.y + 2,
-          sortY: pos.y + 2,
-          treeType: slot.type,
-          scale: bloomScale,
-          sway: 0,
-        });
-      } else {
-        entities.push({
-          type: 'sprout',
-          x: pos.x,
-          y: pos.y + 2,
-          sortY: pos.y + 2,
-          sproutProgress: this.activeSprout.progress,
-          sway: globalWindSway,
-        });
-      }
+      entities.push({
+        type: 'sprout',
+        x: pos.x,
+        y: pos.y + 2,
+        sortY: pos.y + 2,
+        sproutProgress: this.activeSprout.progress,
+        sway: globalWindSway,
+      });
     }
 
     // 3. Posisi Momo dengan 3 variasi tarian musik, langkah jalan, dan istirahat
@@ -1027,7 +1160,8 @@ export class IslandRenderer {
     let musicYBob = 0;
     let musicTilt = 0;
 
-    if (this.isMusicPlaying) {
+    if ((this.isMusicPlaying || this.leisure.action === 'dance') && motion
+      && !this.focusPaused && !this.inBreak && !this.gardeningActivity && this.leisure.action !== 'sleep') {
       const dancePhase = Math.floor((this.frameCount % 360) / 120);
       if (dancePhase === 0) {
         // Variasi 1: Mengangguk (head-bobbing naik turun ritmis)
@@ -1059,19 +1193,95 @@ export class IslandRenderer {
     entities.sort((a, b) => a.sortY - b.sortY);
 
     // Render masing-masing entitas
+    const treePlacements = entities.filter(e => e.type === 'tree').map(e => ({
+      x: e.x, y: e.y, treeType: e.treeType!, scale: e.scale || 1,
+    }));
     for (const e of entities) {
       if (e.type === 'tree') {
-        if (e.treeType === 'oak') {
-          drawOakTree(this.ctx, e.x, e.y, e.scale || 1, e.sway || 0, this.currentSeason);
-        } else {
-          drawPineTree(this.ctx, e.x, e.y, e.scale || 1, e.sway || 0, this.currentSeason);
+        const opacity = getTreeOpacity(
+          { x: e.x, y: e.y, treeType: e.treeType!, scale: e.scale || 1 }, treePlacements, momoPos, !!e.beingTended);
+        if (opacity < 1) {
+          if (!this.occlusionLayer) {
+            this.occlusionLayer = document.createElement('canvas');
+            this.occlusionLayer.width = 64;
+            this.occlusionLayer.height = 64;
+          }
+          const layer = this.occlusionLayer.getContext('2d');
+          if (layer) {
+            layer.clearRect(0, 0, 64, 64);
+            const drawTree = TREE_RENDERERS[e.treeType!];
+            drawTree(layer, 32, 56, 1, e.sway || 0, this.currentSeason);
+            const scale = e.scale || 1;
+            this.ctx.save();
+            this.ctx.globalAlpha = opacity;
+            this.ctx.imageSmoothingEnabled = false;
+            this.ctx.drawImage(this.occlusionLayer, e.x - 32 * scale, e.y - 56 * scale, 64 * scale, 64 * scale);
+            this.ctx.restore();
+            continue;
+          }
         }
+        TREE_RENDERERS[e.treeType!](this.ctx, e.x, e.y, e.scale || 1, e.sway || 0, this.currentSeason);
       } else if (e.type === 'sprout') {
         drawSproutProgress(this.ctx, e.x, e.y, e.sproutProgress || 0.1, e.sway || 0);
       } else if (e.type === 'momo') {
         this.drawMomo(e.x, e.y, this.facingRight, e.scale || 0, e.sway || 0);
       }
     }
+  }
+
+  private drawGardeningTools(x: number, y: number) {
+    const activity = this.gardeningActivity;
+    if (!activity) return;
+    const direction = this.facingRight ? 1 : -1;
+    const ctx = this.ctx;
+    ctx.save();
+    ctx.scale(direction, 1);
+    const targetX = (180 + (activity.targetC - activity.targetR) * 24 - x) * direction;
+    const targetY = 24 + (activity.targetC + activity.targetR + 1) * 10 + 2 - y;
+    if (activity.action === 'water') {
+      ctx.fillStyle = '#245D59';
+      ctx.fillRect(5, -13, 9, 8);
+      ctx.fillStyle = '#79BDB2';
+      ctx.fillRect(6, -12, 5, 5);
+      ctx.strokeStyle = '#B8DDD0';
+      ctx.lineWidth = 1;
+      ctx.strokeRect(3, -15, 6, 6);
+      ctx.fillStyle = '#79BDB2';
+      ctx.beginPath();
+      ctx.moveTo(13, -10); ctx.lineTo(19, -14); ctx.lineTo(20, -12); ctx.lineTo(13, -7);
+      ctx.closePath(); ctx.fill();
+      for (let drop = 0; drop < 5; drop++) {
+        const t = ((this.frameCount / 26 + drop / 5) % 1);
+        const dx = 20 + (targetX - 20) * t;
+        const dy = -12 + (targetY + 12) * t - Math.sin(t * Math.PI) * 5;
+        ctx.fillStyle = drop % 2 ? '#77BAC7' : '#B5E6E7';
+        ctx.fillRect(Math.round(dx), Math.round(dy), 1, 2);
+      }
+      ctx.fillStyle = 'rgba(30, 87, 78, 0.4)';
+      ctx.beginPath(); ctx.ellipse(targetX, targetY, 5, 2, 0, 0, Math.PI * 2); ctx.fill();
+    } else if (activity.action === 'fertilize') {
+      ctx.fillStyle = '#72513A';
+      ctx.fillRect(6, -13, 9, 11);
+      ctx.fillStyle = '#C7AE78';
+      ctx.fillRect(7, -12, 6, 8);
+      ctx.fillStyle = '#49805A';
+      ctx.fillRect(9, -10, 3, 3);
+      ctx.fillRect(10, -7, 1, 2);
+      for (let grain = 0; grain < 4; grain++) {
+        const t = ((this.frameCount / 32 + grain / 4) % 1);
+        ctx.fillStyle = grain % 2 ? '#D7B079' : '#8F613C';
+        ctx.fillRect(Math.round(14 + (targetX - 14) * t + Math.sin(grain * 4) * 2),
+          Math.round(-6 + (targetY + 6) * t * t), 2, 1);
+      }
+    } else {
+      ctx.fillStyle = '#B4C3B5';
+      ctx.fillRect(9, -9, 3, 8);
+      ctx.fillStyle = '#72513A';
+      ctx.fillRect(10, -16, 1, 9);
+      ctx.fillStyle = '#92C18D';
+      ctx.fillRect(5, -9, 3, 2);
+    }
+    ctx.restore();
   }
 
   private drawMomo(x: number, y: number, facingRight: boolean, _yBob: number = 0, tilt: number = 0) {
@@ -1089,8 +1299,8 @@ export class IslandRenderer {
       window.matchMedia &&
       window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
-    let momoTilt = tilt;
-    if (this.activeSeasonalAction === 'winter_snow_shake' && !prefersReducedMotion) {
+    let momoTilt = prefersReducedMotion || this.focusPaused ? 0 : tilt;
+    if (this.activeSeasonalAction === 'winter_snow_shake' && !prefersReducedMotion && !this.focusPaused) {
       momoTilt += Math.sin(this.seasonalActionTimer * 1.5) * 0.14;
     }
 
@@ -1100,16 +1310,25 @@ export class IslandRenderer {
 
     // Tentukan aksi Momo v2 dari state animasi aktif
     let action: MomoV2Action = 'idle';
-    const frameDurationTicks = 3; // 8 frame/detik sesuai spesifikasi Figma (24 fps / 8 = 3 tick per frame)
+    const frameDurationTicks = this.leisure.action === 'run' ? 2 : this.leisure.action === 'sleep' ? 6 : 3;
 
-    if (this.celebrationTimer > 0) {
+    if (this.focusPaused || this.inBreak) {
+      action = 'sleep';
+    } else if (this.rainJoyTimer > 0 || this.celebrationTimer > 0) {
       action = 'celebrate';
+    } else if (this.leisure.action) {
+      action = this.leisure.action === 'run' ? 'walk'
+        : this.leisure.action === 'dance' ? 'dance'
+        : this.leisure.action === 'sleep' ? 'sleep'
+        : this.leisure.action === 'sing' ? 'wave' : 'idle';
     } else if (this.waveTimer > 0) {
       action = 'wave';
     } else if (this.activeSeasonalAction) {
       action = 'idle';
     } else if (this.isWalking) {
       action = 'walk';
+    } else if (this.gardeningActivity) {
+      action = this.gardeningActivity.action === 'water' ? 'drink' : 'plant';
     } else if (this.isMusicPlaying) {
       action = 'dance';
     } else if (this.hydrationTimer > 0 || this.momoMood === 'hydrated') {
@@ -1122,7 +1341,7 @@ export class IslandRenderer {
       action = 'celebrate';
     }
 
-    const frameIdx = Math.floor(this.frameCount / frameDurationTicks) % 8;
+    const frameIdx = prefersReducedMotion || this.focusPaused ? 0 : Math.floor(this.frameCount / frameDurationTicks) % 8;
     const scale = 0.52;
     const drawW = 64 * scale;
     const drawH = 64 * scale;
@@ -1151,6 +1370,22 @@ export class IslandRenderer {
         reducedMotion: Boolean(prefersReducedMotion),
       }
     );
+    if (this.gardeningActivity && !this.focusPaused && !this.inBreak && !prefersReducedMotion) {
+      this.drawGardeningTools(x, y);
+    }
+    if (this.leisure.action && !this.focusPaused && !this.inBreak && !prefersReducedMotion) {
+      this.ctx.font = 'bold 8px monospace';
+      if (this.leisure.action === 'sing') {
+        for (let note = 0; note < 3; note++) {
+          const t = (this.frameCount / 48 + note / 3) % 1;
+          this.ctx.fillStyle = `rgba(168, 217, 230, ${1 - t})`;
+          this.ctx.fillText(note % 2 ? '♫' : '♪', 10 + Math.round(t * 10), -17 - Math.round(t * 15));
+        }
+      } else if (this.leisure.action === 'sleep') {
+        this.ctx.fillStyle = '#B7CDBD';
+        this.ctx.fillText('z', 9, -22 - Math.round(Math.sin(this.frameCount / 24)));
+      }
+    }
 
     // Satu atau dua not musik pixel melayang saat musik diputar
     if (this.isMusicPlaying) {

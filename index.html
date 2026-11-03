@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>moss island · Dynamic Island</title>
     <link rel="stylesheet" href="/src/styles.css" />
+    <link rel="stylesheet" href="/src/audio/musicMomo.css" />
     <script type="module" src="/src/main.ts" defer></script>
   </head>
   <body>
@@ -55,9 +56,8 @@
       <!-- ============================================== -->
       <!-- VIEW A: MINIMAL / HIDDEN NOTCH STATE (Try/Hidden.svg) -->
       <!-- ============================================== -->
-      <div class="view-minimal" id="view-minimal" data-tauri-drag-region title="Klik untuk membuka Dynamic Island">
-        <div class="minimal-notch-handle"></div>
-        <div class="vital-dot" id="vital-dot"></div>
+      <div class="view-minimal" id="view-minimal" role="button" tabindex="0" aria-label="Buka Moss Island">
+        <span class="minimal-momo" aria-hidden="true"></span>
       </div>
 
       <!-- ============================================== -->
@@ -67,7 +67,7 @@
         <div class="compact-left">
           <!-- Mini Momo Pixel Avatar (1:1 Try/Compact.svg) -->
           <div class="compact-momo-badge">
-            <svg width="16" height="24" viewBox="23 27 20 30" fill="none" style="shape-rendering: crispEdges;">
+            <svg id="compact-momo-sprite" width="16" height="24" viewBox="23 27 20 30" fill="none" style="shape-rendering: crispEdges;">
               <path d="M29 27H31V29H29V27ZM31 27H33V29H31V27ZM27 29H29V31H27V29ZM29 29H31V31H29V29ZM31 29H33V31H31V29ZM29 31H31V33H29V31ZM31 31H33V33H31V31ZM33 31H35V33H33V31ZM25 35H27V37H25V35ZM27 35H29V37H27V35ZM29 35H31V37H29V35ZM31 35H33V37H31V35ZM33 35H35V37H33V35ZM35 35H37V37H35V35ZM37 35H39V37H37V35ZM39 35H41V37H39V35ZM23 37H25V39H23V37ZM41 37H43V39H41V37ZM23 39H25V41H23V39ZM41 39H43V41H41V39ZM23 41H25V43H23V41ZM41 41H43V43H41V41ZM23 43H25V45H23V43ZM41 43H43V45H41V43ZM25 45H27V47H25V45ZM39 45H41V47H39V45ZM27 47H29V49H27V47ZM29 47H31V49H29V47ZM31 47H33V49H31V47ZM33 47H35V49H33V47ZM35 47H37V49H35V47ZM37 47H39V49H37V47ZM25 49H27V51H25V49ZM27 49H29V51H27V49ZM29 49H31V51H29V49ZM31 49H33V51H31V49ZM33 49H35V51H33V49ZM35 49H37V51H35V49ZM37 49H39V51H37V49ZM39 49H41V51H39V49ZM25 51H27V53H25V51ZM29 51H31V53H29V51ZM31 51H33V53H31V51ZM33 51H35V53H33V51ZM35 51H37V53H35V51ZM39 51H41V53H39V51ZM29 53H31V55H29V53ZM35 53H37V55H35V53ZM27 55H29V57H27V55ZM29 55H31V57H29V55ZM35 55H37V57H35V55ZM37 55H39V57H37V55Z" fill="#71BA83"/>
               <path d="M37 29H39V31H37V29ZM39 29H41V31H39V29ZM35 31H37V33H35V31ZM37 31H39V33H37V31ZM25 37H27V39H25V37ZM27 37H29V39H27V37ZM29 37H31V39H29V37ZM31 37H33V39H31V37ZM33 37H35V39H33V37ZM35 37H37V39H35V37ZM37 37H39V39H37V37ZM39 37H41V39H39V37ZM25 39H27V41H25V39ZM27 39H29V41H27V39ZM29 39H31V41H29V39ZM31 39H33V41H31V39ZM33 39H35V41H33V39ZM35 39H37V41H35V39ZM37 39H39V41H37V39ZM39 39H41V41H39V39ZM25 41H27V43H25V41ZM29 41H31V43H29V41ZM31 41H33V43H31V41ZM35 41H37V43H35V41ZM37 41H39V43H37V41ZM25 43H27V45H25V43ZM27 43H29V45H27V43ZM29 43H31V45H29V43ZM31 43H33V45H31V43ZM33 43H35V45H33V43ZM35 43H37V45H35V43ZM37 43H39V45H37V43ZM39 43H41V45H39V43ZM27 45H29V47H27V45ZM29 45H31V47H29V45ZM35 45H37V47H35V45ZM37 45H39V47H37V45Z" fill="#C4F59B"/>
               <path d="M31 33H33V35H31V33ZM33 33H35V35H33V33Z" fill="#AF8055"/>
@@ -124,6 +124,7 @@
 
           <!-- Window Controls (Right: Exactly 2 buttons Collapse & Hide from Figma) -->
           <div class="window-controls-group" data-tauri-drag-region="false">
+            <button class="win-control-btn" id="btn-header-settings" title="Pengaturan Pomodoro dan musim" aria-label="Pengaturan Pomodoro dan musim">⚙</button>
             <button class="win-control-btn" id="btn-minimize-notch" title="Kecilkan ke Notch Meringkas">−</button>
             <button class="win-control-btn" id="btn-close-notch" title="Sembunyikan ke Notch Minimal">×</button>
             <button class="win-control-btn btn-quit" id="btn-header-quit" title="Keluar Aplikasi">⏻</button>
@@ -176,9 +177,14 @@
               <!-- Primary Action Button: Jeda / Mulai -->
               <button class="btn-action-primary" id="btn-toggle-timer">Mulai</button>
               <!-- Secondary Action Button: Selesai -->
-              <button class="btn-action-secondary" id="btn-finish-timer">Selesai</button>
+              <button class="btn-action-secondary" id="btn-finish-timer" title="Membatalkan rencana dan mengulang timer; pohon yang sudah tumbuh tetap tersimpan">Batalkan rencana</button>
             </div>
 
+            <div class="focus-cancel-confirm" id="focus-cancel-confirm" hidden role="group" aria-label="Konfirmasi pembatalan rencana">
+              <p>Ulangi waktu rencana ini? Pohon yang sudah tumbuh tetap tersimpan.</p>
+              <button class="btn-action-secondary" id="btn-keep-focus">Lanjutkan rencana</button>
+              <button class="btn-action-secondary" id="btn-confirm-cancel-focus">Ya, batalkan</button>
+            </div>
             <!-- Auto Loop Info (Exact from Figma) -->
             <div class="auto-loop-meta" id="auto-loop-meta">
               <p id="auto-loop-p1">Otomatis: fokus 30m &gt; istirahat 10m</p>
@@ -273,7 +279,7 @@
         <!-- ============================================== -->
         <section class="panel-body tab-panel" id="panel-music">
           <!-- Column Left: Album Art & Track Meta -->
-          <div class="col-left">
+          <div class="col-left" id="music-track-block" tabindex="0" aria-label="Informasi lagu dan kontrol pemutaran">
             <div class="album-cover-box">
               <div class="album-art-pine" id="music-album-art">
                 <svg width="42" height="42" viewBox="0 0 32 32" fill="none">
@@ -284,46 +290,62 @@
                 </svg>
               </div>
               <div class="album-info-meta">
-                <span class="session-badge badge-purple" id="music-source-badge">AMBIENT FOREST</span>
-                <div class="track-title" id="music-track-title">A Walk in the Moss</div>
+                <div class="track-title" id="music-track-title">Jazz Noir</div>
                 <div class="track-artist-row" id="track-artist-row">
                   <img id="music-artist-avatar" class="artist-avatar-mini" style="display: none;" alt="Foto Artis" />
-                  <div class="track-artist" id="music-track-artist">Moss Radio · Forest tapes</div>
+                  <div class="track-artist" id="music-track-artist">Tom’s Jazz Lounge</div>
+                </div>
+                <div class="music-controls-row" role="group" aria-label="Kontrol pemutaran musik">
+                  <button class="transport-btn" id="btn-music-prev" title="Lagu sebelumnya" aria-label="Lagu sebelumnya">
+                    <svg class="transport-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true" focusable="false"><path d="M6 5v14"/><path d="m19 5-10 7 10 7z" fill="currentColor" stroke="none"/></svg>
+                  </button>
+                  <button class="transport-btn btn-play" id="btn-music-toggle" data-playing="false" title="Putar musik" aria-label="Putar musik">
+                    <svg class="transport-icon icon-play" width="22" height="22" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" focusable="false"><path d="m8 5 11 7-11 7z"/></svg>
+                    <svg class="transport-icon icon-pause" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="4" aria-hidden="true" focusable="false"><path d="M8 5v14M16 5v14"/></svg>
+                  </button>
+                  <button class="transport-btn" id="btn-music-next" title="Lagu berikutnya" aria-label="Lagu berikutnya">
+                    <svg class="transport-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true" focusable="false"><path d="M18 5v14"/><path d="m5 5 10 7-10 7z" fill="currentColor" stroke="none"/></svg>
+                  </button>
+                  <button class="transport-btn btn-repeat" id="btn-music-repeat" disabled data-repeat="off" aria-pressed="false" title="Repeat tidak didukung pemutar ini" aria-label="Repeat tidak didukung pemutar ini">
+                    <svg class="transport-icon" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="m17 2 4 4-4 4M3 11V9a3 3 0 0 1 3-3h15M7 22l-4-4 4-4m14-1v2a3 3 0 0 1-3 3H3"/></svg>
+                    <span class="repeat-one-mark" aria-hidden="true">1</span>
+                  </button>
                 </div>
               </div>
             </div>
 
             <!-- Audio Timeline Bar -->
             <div class="music-timeline-box">
-              <div class="music-progress-track" id="music-progress-track" style="cursor: pointer;" title="Klik untuk menggeser posisi pemutaran lagu">
+              <div class="music-progress-track" id="music-progress-track" role="slider" tabindex="0" aria-label="Posisi pemutaran lagu" aria-valuemin="0" aria-valuemax="0" aria-valuenow="0" aria-disabled="true" style="cursor: pointer;" title="Klik atau gunakan tombol panah untuk menggeser posisi lagu">
                 <div class="music-progress-fill" id="music-progress-fill" style="width: 0%;"></div>
               </div>
               <div class="music-time-labels">
-                <span id="music-time-current">00:00</span>
-                <span id="music-time-total">00:00</span>
+                <span id="music-time-current">Sudah diputar 00:00:00</span>
+                <span id="music-time-total">00:00:00</span>
               </div>
             </div>
+            <span class="music-action-status" id="music-action-status" role="status"></span>
           </div>
 
-          <!-- Column Center: Lyrics / Demo Original Card -->
+          <!-- Lirik dan pengatur volume -->
           <div class="col-center">
-            <div class="lyrics-card" id="music-lyrics-card">
-              <div class="lyrics-tag" id="music-card-tag">LYRICS / AMBIENT</div>
-              <div class="lyrics-viewport" id="lyrics-viewport">
+            <div class="lyrics-card is-local-music" id="music-lyrics-card">
+              <div class="lyrics-provider" id="music-card-tag">PLAYLIST BAWAAN · LOOP</div>
+              <div class="lyrics-viewport" id="lyrics-viewport" tabindex="0" aria-label="Lirik lagu, gulir untuk membaca baris panjang">
                 <div class="lyrics-track" id="lyrics-track">
                   <div class="lyrics-row row-prev">
-                    <p class="lyrics-line" id="music-card-line1">Di antara riuh dunia,</p>
+                    <p class="lyrics-line" id="music-card-line1"></p>
                   </div>
                   <div class="lyrics-row row-active">
-                    <p class="lyrics-line-highlight" id="music-card-highlight">kita tumbuh perlahan.</p>
+                    <p class="lyrics-line-highlight" id="music-card-highlight"></p>
                     <div class="pixel-instrumental-dots" id="lyrics-instrumental-dots" style="display: none;" aria-label="Instrumental">
-                      <span class="pixel-dot dot-1">▪</span>
-                      <span class="pixel-dot dot-2">▪</span>
-                      <span class="pixel-dot dot-3">▪</span>
+                      <span class="pixel-dot dot-1" aria-hidden="true">♪</span>
+                      <span class="pixel-dot dot-2" aria-hidden="true">♫</span>
+                      <span class="pixel-dot dot-3" aria-hidden="true">♪</span>
                     </div>
                   </div>
                   <div class="lyrics-row row-next">
-                    <p class="lyrics-line" id="music-card-line2">Satu langkah, satu cerita.</p>
+                    <p class="lyrics-line" id="music-card-line2"></p>
                   </div>
                   <div class="lyrics-row row-incoming" aria-hidden="true">
                     <p class="lyrics-line" id="music-card-incoming"></p>
@@ -331,13 +353,18 @@
                 </div>
               </div>
             </div>
+            <div class="music-volume" id="music-volume-control">
+              <label for="music-volume">Volume bawaan</label>
+              <input id="music-volume" type="range" min="0" max="100" step="1" value="50" aria-label="Volume musik bawaan">
+              <output id="music-volume-value" for="music-volume">50%</output>
+            </div>
           </div>
 
-          <!-- Column Right: Dancing Momo & Playback Controls -->
+          <!-- Momo memiliki ruang sendiri, terpisah dari kontrol pemutaran. -->
           <div class="col-right">
             <div class="music-momo-stage" id="music-momo-stage">
-              <span class="pixel-music-note note-1">♪</span>
-              <div class="dancing-momo" id="dancing-momo" title="Momo menikmati alunan musik">
+              <span class="pixel-music-note note-1" aria-hidden="true">♪</span>
+              <button type="button" class="dancing-momo" id="dancing-momo" aria-label="Sapa Momo, teman mendengarkan musik" title="Sapa Momo">
                 <!-- Momo sprite dancing dengan Headphone Pixel Art -->
                 <svg width="42" height="49" viewBox="795 89 52 60" fill="none" style="shape-rendering: crispEdges;">
                   <!-- Tubuh & Tunas Momo -->
@@ -353,20 +380,10 @@
                     <path d="M801 113H805V121H801V113ZM837 113H841V121H837V113Z" fill="#15221A"/>
                   </g>
                 </svg>
-              </div>
-              <span class="pixel-music-note note-2">♫</span>
+              </button>
+              <span class="pixel-music-note note-2" aria-hidden="true">♫</span>
             </div>
 
-            <!-- Player Transport Buttons -->
-            <div class="music-controls-row">
-              <button class="transport-btn" id="btn-music-prev" title="Lagu Sebelumnya">|◀</button>
-              <button class="transport-btn btn-play" id="btn-music-toggle" title="Putar atau Jeda">❚❚</button>
-              <button class="transport-btn" id="btn-music-next" title="Lagu Berikutnya">▶|</button>
-            </div>
-
-            <div class="auto-loop-meta">
-              <p>Momo ikut menari mengikuti irama.</p>
-            </div>
           </div>
         </section>
 
@@ -392,45 +409,29 @@
         <!-- Top Subheader -->
         <div class="modal-top-meta">
           <span class="modal-brand-tag">moss island / fokus</span>
-          <span class="modal-sub-tag">TOTAL TERMASUK ISTIRAHAT</span>
+          <span class="modal-sub-tag">TARGET FOKUS · REHAT DITAMBAHKAN</span>
           <button class="modal-close-btn" id="btn-close-settings" title="Tutup">×</button>
         </div>
 
         <!-- Heading -->
-        <h2 class="modal-main-heading" id="modal-settings-heading">Hari ini mau belajar berapa lama?</h2>
+        <h2 class="modal-main-heading" id="modal-settings-heading">Mau fokus berapa lama?</h2>
 
-        <!-- 3-Column Inputs Row -->
-        <div class="settings-inputs-row">
+        <!-- Target waktu fokus -->
+        <div class="settings-inputs-row settings-focus-target">
           <div class="settings-input-block">
-            <span class="settings-input-label">Waktu sekali duduk</span>
+            <label for="setting-total-hours" class="settings-input-label">Target waktu fokus</label>
             <div class="settings-input-combo">
-              <input type="number" id="setting-total-hours" class="settings-mini-input" min="0" max="24" value="4" />
+              <input type="number" id="setting-total-hours" aria-describedby="setting-total-hours-error" class="settings-mini-input" min="0" max="24" value="4" />
+              <span id="setting-total-hours-error" class="settings-field-error" aria-live="polite"></span>
               <span class="input-unit">jam</span>
-              <select id="setting-total-mins" class="settings-select">
-                <option value="0">00 menit</option>
-                <option value="15">15 menit</option>
-                <option value="30">30 menit</option>
-                <option value="45">45 menit</option>
-              </select>
-            </div>
-          </div>
-
-          <div class="settings-input-block">
-            <span class="settings-input-label">Durasi fokus</span>
-            <div class="settings-input-combo">
-              <input type="number" id="setting-focus-mins" class="settings-mini-input" min="1" max="180" value="30" />
+              <input type="number" id="setting-total-mins" class="settings-mini-input" min="0" max="59" step="1" value="0" aria-label="Tambahan menit" aria-describedby="setting-total-mins-error" />
+              <span id="setting-total-mins-error" class="settings-field-error" aria-live="polite"></span>
               <span class="input-unit">menit</span>
             </div>
           </div>
 
-          <div class="settings-input-block">
-            <span class="settings-input-label">Durasi istirahat</span>
-            <div class="settings-input-combo">
-              <input type="number" id="setting-break-mins" class="settings-mini-input" min="1" max="60" value="10" />
-              <span class="input-unit">menit</span>
-            </div>
-          </div>
         </div>
+        <p class="settings-input-label">Pola tetap: fokus 25 menit · rehat 5 menit · rehat 15 menit setiap 4 sesi.</p>
 
         <!-- 3-Card Summary Row -->
         <div class="settings-summary-cards-row">
@@ -469,17 +470,24 @@
             Putaran 1 · Fokus 30 menit · Menit 0-30
           </div>
           <div id="preview-shortened-alert" style="display: none;" class="shortened-alert-tag">
-            Fase terakhir diperpendek agar tepat sesuai total waktu.
+            Sesi fokus terakhir disesuaikan dengan sisa target fokus.
           </div>
         </div>
 
         <!-- Autostart Checkboxes Row -->
         <div class="modal-checkboxes-section">
           <label class="figma-checkbox-row">
+            <input type="checkbox" id="setting-hover" class="settings-checkbox" />
+            <div class="checkbox-text-group">
+              <span class="checkbox-title">Buka notch saat kursor mendekat</span>
+              <span class="checkbox-subtitle">Tutup setelah kursor keluar, kecuali saat kontrol sedang digunakan.</span>
+            </div>
+          </label>
+          <label class="figma-checkbox-row">
             <input type="checkbox" id="setting-auto-break" class="settings-checkbox" checked />
             <div class="checkbox-text-group">
               <span class="checkbox-title">Istirahat dimulai otomatis</span>
-              <span class="checkbox-subtitle">Fokus menjadi Istirahat menjadi Fokus · otomatis</span>
+              <span class="checkbox-subtitle">Mulai jeda pendek atau panjang setelah sesi fokus selesai.</span>
             </div>
           </label>
 
@@ -487,7 +495,7 @@
             <input type="checkbox" id="setting-auto-focus" class="settings-checkbox" checked />
             <div class="checkbox-text-group">
               <span class="checkbox-title">Fokus berikutnya dimulai otomatis</span>
-              <span class="checkbox-subtitle">Termasuk istirahat terakhir.</span>
+              <span class="checkbox-subtitle">Mulai fokus berikutnya setelah istirahat selesai, selama rencana belum berakhir.</span>
             </div>
           </label>
 
@@ -517,7 +525,7 @@
             </label>
           </div>
           <div class="season-select-wrapper" id="season-select-wrapper" style="display: none;">
-            <select id="setting-manual-season" class="settings-season-dropdown">
+            <select id="setting-manual-season" aria-label="Pilih musim pulau" class="settings-season-dropdown">
               <option value="spring">Musim Semi (Bunga & Hijau Muda)</option>
               <option value="summer">Musim Panas (Hijau Zamrud & Cahaya Hangat)</option>
               <option value="autumn">Musim Gugur (Daun Jingga Keemasan)</option>
@@ -526,9 +534,38 @@
           </div>
         </div>
 
+        <section class="settings-music" aria-labelledby="music-settings-heading">
+          <h3 id="music-settings-heading">Musik dan lirik</h3>
+          <p>Momo mengikuti suara output Windows, termasuk notifikasi dan aplikasi lain. Audio dianalisis di memori, tidak disimpan atau dikirim. Analisis berhenti saat panel Musik tersembunyi atau gerakan sistem dikurangi.</p>
+          <p id="speaker-beat-status" role="status">Analisis output menunggu panel Musik.</p>
+          <label for="setting-momo-intensity">Gerak Momo saat mendengarkan</label>
+          <select id="setting-momo-intensity">
+            <option value="calm">Tenang</option>
+            <option value="expressive">Ekspresif</option>
+          </select>
+          <p>Gerak memakai tempo mandiri. Preferensi kurangi gerakan dari sistem tetap diutamakan.</p>
+          <label for="music-session-select">Sumber pemutaran</label>
+          <select id="music-session-select">
+            <option value="">Otomatis</option>
+            <option value="local">Musik bawaan</option>
+          </select>
+          <p id="music-session-status" role="status">Membaca sesi media…</p>
+          <p>Lirik dari LRCLIB, bukan katalog lirik Spotify.</p>
+          <div class="lyrics-timing-controls" role="group" aria-label="Koreksi waktu lirik, nilai positif mempercepat lirik">
+            <button type="button" id="btn-lyrics-slower" class="music-text-btn" disabled aria-label="Perlambat lirik setengah detik">−0,5 dtk</button>
+            <output id="lyrics-offset" aria-live="polite">0,0 dtk</output>
+            <button type="button" id="btn-lyrics-faster" class="music-text-btn" disabled aria-label="Percepat lirik setengah detik">+0,5 dtk</button>
+            <button type="button" id="btn-lyrics-reset" class="music-text-btn" disabled>Reset</button>
+          </div>
+          <p>Koreksi disimpan per rekaman dan tidak menggeser posisi lagu. Perubahan sumber dan koreksi langsung berlaku.</p>
+          <p id="lyrics-timing-status" role="status"></p>
+        </section>
+
+        <p id="settings-status" role="status" aria-live="polite"></p>
+
         <!-- Big CTA Button & Footer Stats -->
         <div class="modal-cta-section">
-          <button class="btn-figma-start-session" id="btn-save-settings">Mulai sesi</button>
+          <button class="btn-figma-start-session" id="btn-save-settings">Simpan pengaturan</button>
           <div class="modal-footer-caption" id="modal-footer-stats">
             240 menit total · 180 menit fokus · 60 menit istirahat
           </div>

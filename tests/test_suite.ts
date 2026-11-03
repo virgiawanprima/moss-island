@@ -1,13 +1,35 @@
+import { parseSettingsDuration, hasScheduleChanged } from '../src/settings';
+import { isAutostartEnabled } from '../src/autostartService';
 import assert from 'node:assert/strict';
+import { STUDY_COVERS, STUDY_TRACKS } from '../src/audio/studyMusic';
+import { AmbientSynth, describeAudioFailure } from '../src/audio/ambientSynth';
+import { shouldIgnoreAmbiguousWebViewSession, takeOverLocalPlayback } from '../src/audio/musicSource';
+import { DeviceVolumeSync } from '../src/audio/deviceVolumeSync';
+import { ArtworkRetry } from '../src/audio/artworkRetry';
+import { LyricsTiming } from '../src/audio/lyricsTiming';
+import { LyricsCooldownError, requestLyrics, resetLyricsCooldownForTests, retryAfterMilliseconds } from '../src/audio/lyricsTransport';
+import { HoverIntent } from '../src/hoverIntent';
+import { TabTransition } from '../src/tabTransition';
+import { BeatDetector } from '../src/audio/beatDetector';
+import { isVerticalDock, nearestDockEdge, dockWithinThreshold } from '../src/edgeDock';
+import { restingPet, stepDesktopPet, petGaitAt, figmaIdleFrameAt, FIGMA_IDLE_SOURCES, type PetContext } from '../src/desktopPet';
+import { canAnimateMomoBeat, createMomoBeatMotion } from '../src/audio/musicMomoView';
+import { SpeakerBeat } from '../src/audio/speakerBeat';
+import { MusicMomo, type MomoClock, type MomoFrame } from '../src/audio/musicMomo';
+import { formatPlaybackTime } from '../src/audio/formatPlaybackTime';
+import { advancePlayback, reconcilePlayback } from '../src/audio/playbackPosition';
 import fs from 'node:fs';
-import { buildPomodoroPlan, validatePomodoroInput } from '../src/timer/pomodoroPlan';
+import { buildPomodoroPlan, buildFocusTargetPlan, validatePomodoroInput, getFirstPhasePreview, getNextPhaseLabel } from '../src/timer/pomodoroPlan';
 import { PomodoroEngine } from '../src/timer/pomodoroEngine';
 import {
   sanitizePomodoroConfig,
-  DEFAULT_POMODORO_CONFIG,
+  DEFAULT_POMODORO_CONFIG as FIXED_DEFAULT_CONFIG,
   isYesterday,
   getTodayDateString,
   loadAppState,
+  sanitizeTimerSnapshot,
+  saveAppState,
+  getDefaultAppState,
 } from '../src/storage';
 import { LyricsService, parseSyncedLyrics, type TrackArtworkInfo } from '../src/audio/lyricsService';
 import {
@@ -16,13 +38,26 @@ import {
   base64ToBlobUrl,
 } from '../src/audio/mediaSourceIdentity';
 import { SystemMediaBridge, type SystemMediaTrack } from '../src/audio/systemMediaBridge';
-import { IslandRenderer } from '../src/canvas/islandRenderer';
+import { IslandRenderer, PLANTING_SLOTS } from '../src/canvas/islandRenderer';
+import { coversRearTree, shouldFadeTree, coversMomo, getTreeOpacity } from '../src/canvas/treeOcclusion';
+import { GardenSchedule } from '../src/canvas/gardenSchedule';
+import { FocusWeather, createPuddles } from '../src/canvas/focusWeather';
+import { MomoLeisure } from '../src/canvas/momoLeisure';
 import {
   drawMomoSeasonLayer,
   getMomoFrameAnchor,
 } from '../src/canvas/momoSeasonAccessories';
-import type { PomodoroConfig, PlanPhase, IslandSeason } from '../src/types';
-import { ISLAND_DIMENSIONS, getIslandDimension } from '../src/main';
+import { TREE_SPECIES, type PomodoroConfig, type PlanPhase, type IslandSeason } from '../src/types';
+import { TREE_RENDERERS } from '../src/canvas/treeSprites';
+import { ISLAND_DIMENSIONS, getIslandDimension, shouldCenterAfterTransition, shouldRememberFloatingPosition } from '../src/main';
+
+const DEFAULT_POMODORO_CONFIG = { ...FIXED_DEFAULT_CONFIG, focusTargetMin: undefined };
+
+function lyricRequestMetadata(url: string | URL | Request) {
+  const query = new URL(url.toString()).searchParams;
+  return { trackName: query.get('track_name'), artistName: query.get('artist_name'),
+    albumName: query.get('album_name'), duration: Number(query.get('duration')) };
+}
 
 // Sediakan mock minimal jika window / localStorage belum ada di lingkungan node
 if (typeof globalThis.window === 'undefined') {
@@ -103,6 +138,7 @@ function createMockCanvas(): HTMLCanvasElement {
     strokeRect: () => {},
     moveTo: () => {},
     lineTo: () => {},
+    closePath: () => {},
   } as unknown as CanvasRenderingContext2D;
 
   return {
@@ -131,6 +167,7 @@ function runTest(name: string, fn: () => void | Promise<void>) {
 }
 
 async function runTestAsync(name: string, fn: () => Promise<void>) {
+  resetLyricsCooldownForTests();
   try {
     await fn();
     console.log(`[LULUS] ${name}`);
@@ -146,14 +183,14 @@ console.log('=== MEMULAI RANGKAIAN PENGUJIAN LOGIKA MOSS ISLAND (MODUL ASLI) ===
 // ----------------------------------------------------------------------------
 // 1. Perencanaan Pembagian Waktu Pomodoro
 // ----------------------------------------------------------------------------
-runTest('Uji 1: Total 180m (25/5) menghasilkan 150m fokus + 30m istirahat', () => {
+runTest('Uji 1: Total 180m (25/5) menghasilkan 145m fokus + 35m istirahat', () => {
   const plan = buildPomodoroPlan(180, 25, 5);
   assert.strictEqual(plan.totalDurationMin, 180);
-  assert.strictEqual(plan.totalFocusMin, 150);
-  assert.strictEqual(plan.totalBreakMin, 30);
+  assert.strictEqual(plan.totalFocusMin, 145);
+  assert.strictEqual(plan.totalBreakMin, 35);
   assert.strictEqual(plan.focusSessionCount, 6);
-  assert.strictEqual(plan.phases.length, 12);
-  assert.strictEqual(plan.phases[plan.phases.length - 1].isShortened, false);
+  assert.strictEqual(plan.phases.length, 11);
+  assert.strictEqual(plan.phases[plan.phases.length - 1].isShortened, true);
 });
 
 runTest('Uji 2: Total 240m (30/10) menghasilkan 180m fokus + 60m istirahat', () => {
@@ -401,7 +438,7 @@ runTest('Uji 12: Fungsi isYesterday mendeteksi tanggal kemarin secara tepat', ()
 // ----------------------------------------------------------------------------
 // 11. Layanan Lirik Musik: Stabilitas Timer Perputaran Lirik
 // ----------------------------------------------------------------------------
-runTest('Uji 13: Pembaruan berkala loadLyrics dengan lagu yang sama mempertahankan timer putaran lirik', () => {
+runTest('Uji 13: Pembaruan lirik biasa tidak membuat timer sinkronisasi palsu', () => {
   const service = new LyricsService();
   (service as unknown as { cache: Map<string, string[]> }).cache.set('lagu-uji:::artis-uji', [
     'Baris lirik pertama',
@@ -433,7 +470,7 @@ runTest('Uji 13: Pembaruan berkala loadLyrics dengan lagu yang sama mempertahank
       void service.loadLyrics('Lagu-Uji', 'Artis-Uji', 'Album-Uji', true);
     }
 
-    assert.strictEqual(timerCreatedCount, 1, 'Timer hanya boleh dimulai 1 kali untuk 11 kali pembaruan berturut-turut');
+    assert.strictEqual(timerCreatedCount, 0, 'Lirik tanpa timestamp tidak boleh bergerak otomatis');
     assert.strictEqual(timerClearedCount, 0, 'Timer tidak boleh dibatalkan jika lagu yang diputar tidak berganti');
   } finally {
     service.clear();
@@ -489,16 +526,16 @@ await runTestAsync('Uji 14: Respons artwork lagu lama tidak menimpa cover lagu b
 
   try {
     void service.loadLyrics('SongA', 'ArtistA', 'AlbumA', true);
-    await new Promise((r) => setTimeout(r, 10));
+    await new Promise((r) => { setTimeout(r, 10); });
 
     void service.loadLyrics('SongB', 'ArtistB', 'AlbumB', true);
-    await new Promise((r) => setTimeout(r, 10));
+    await new Promise((r) => { setTimeout(r, 10); });
 
     resolveSongB(null);
-    await new Promise((r) => setTimeout(r, 20));
+    await new Promise((r) => { setTimeout(r, 20); });
 
     resolveSongA(null);
-    await new Promise((r) => setTimeout(r, 20));
+    await new Promise((r) => { setTimeout(r, 20); });
 
     assert.strictEqual(receivedArtworks[receivedArtworks.length - 1], 'SongB');
     assert.strictEqual(receivedArtworks.includes('SongA'), false, 'SongA tidak boleh dipancarkan karena sudah bukan lagu aktif');
@@ -515,12 +552,16 @@ await runTestAsync('Uji 15: Timer lirik tidak berjalan jika lagu dijeda sebelum 
   const origFetch = globalThis.fetch;
   globalThis.fetch = (async (url: string | URL | Request) => {
     const urlStr = url.toString();
+    if (urlStr.includes('lrclib.net/api/search')) {
+      return { ok: true, json: async () => [] } as unknown as Response;
+    }
     if (urlStr.includes('lrclib.net')) {
       return new Promise((resolve) => {
         resolveLyrics = () => {
           resolve({
             ok: true,
             json: async () => ({
+              ...lyricRequestMetadata(url),
               plainLyrics: "Baris satu\nBaris dua\nBaris tiga"
             })
           } as unknown as Response);
@@ -540,14 +581,14 @@ await runTestAsync('Uji 15: Timer lirik tidak berjalan jika lagu dijeda sebelum 
 
   try {
     const lyricsPromise = service.loadLyrics('SongSlow', 'ArtistSlow', 'AlbumSlow', true);
-    await new Promise((r) => setTimeout(r, 10));
+    await new Promise((r) => { setTimeout(r, 10); });
 
     void service.loadLyrics('SongSlow', 'ArtistSlow', 'AlbumSlow', false);
-    await new Promise((r) => setTimeout(r, 10));
+    await new Promise((r) => { setTimeout(r, 10); });
 
     resolveLyrics(null);
     await lyricsPromise;
-    await new Promise((r) => setTimeout(r, 20));
+    await new Promise((r) => { setTimeout(r, 20); });
 
     assert.strictEqual(timerStarted, false, 'Timer lirik tidak boleh dimulai ketika lagu dalam kondisi dijeda');
   } finally {
@@ -653,7 +694,7 @@ await runTestAsync('Uji 19: Transisi status island menjalankan alur bertahap dan
   transitionLog.push('fade-out-start');
   assert.strictEqual(classList.contains('is-fading-out'), true);
 
-  await new Promise((r) => setTimeout(r, 10));
+  await new Promise((r) => { setTimeout(r, 10); });
 
   // Tahap 2: Ubah bentuk panel (min-height belum aktif)
   classList.remove('is-fading-out', 'expanded-ready');
@@ -662,7 +703,7 @@ await runTestAsync('Uji 19: Transisi status island menjalankan alur bertahap dan
   assert.strictEqual(classList.contains('expanded-ready'), false, 'expanded-ready tidak boleh aktif saat panel sedang berubah bentuk');
   assert.strictEqual(classList.contains('is-morphing'), true);
 
-  await new Promise((r) => setTimeout(r, 10));
+  await new Promise((r) => { setTimeout(r, 10); });
 
   // Tahap 3: Pembesaran selesai, tampilkan konten baru dan aktifkan expanded-ready
   classList.remove('state-compact', 'is-morphing');
@@ -735,6 +776,7 @@ await runTestAsync('Uji 22: syncPosition memilih baris lirik sesuai detik pemuta
       return {
         ok: true,
         json: async () => ({
+          ...lyricRequestMetadata(url),
           syncedLyrics: "[00:10.00] Baris 1 (detik 10)\n[00:20.00]\n[00:30.00] Baris 2 (detik 30)\n[00:50.00] Baris 3 (detik 50)",
           plainLyrics: "Baris 1\nBaris 2\nBaris 3"
         })
@@ -801,6 +843,7 @@ await runTestAsync('Uji 23: Fallback plainLyrics menampilkan keterangan sinkroni
         ok: true,
         json: async () => ({
           syncedLyrics: null,
+          ...lyricRequestMetadata(url),
           plainLyrics: "Kutipan lirik pertama\nKutipan lirik kedua\nKutipan lirik ketiga"
         })
       } as unknown as Response;
@@ -813,29 +856,25 @@ await runTestAsync('Uji 23: Fallback plainLyrics menampilkan keterangan sinkroni
     const latest = updates[updates.length - 1];
     assert.strictEqual(latest.isSynced, false);
     assert.strictEqual(latest.line1, 'Lirik biasa (sinkronisasi tidak tersedia)');
-    assert.strictEqual(latest.highlight, 'Kutipan lirik pertama');
+    assert.strictEqual(latest.highlight, 'Kutipan lirik pertama\nKutipan lirik kedua\nKutipan lirik ketiga');
   } finally {
     globalThis.fetch = origFetch;
     service.clear();
   }
 });
 
-runTest('Uji 24: Format waktu menghitung menit dan detik secara tepat tanpa kesalahan nilai desimal atau negatif', () => {
-  function formatTime(seconds: number): string {
-    if (!seconds || isNaN(seconds) || seconds < 0) return '00:00';
-    const totalSecs = Math.floor(seconds);
-    const m = Math.floor(totalSecs / 60);
-    const s = totalSecs % 60;
-    return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
-  }
-
-  assert.strictEqual(formatTime(0), '00:00');
-  assert.strictEqual(formatTime(-15), '00:00');
-  assert.strictEqual(formatTime(9.8), '00:09');
-  assert.strictEqual(formatTime(65), '01:05');
-  assert.strictEqual(formatTime(102.4), '01:42');
-  assert.strictEqual(formatTime(248), '04:08');
-  assert.strictEqual(formatTime(3600), '60:00');
+runTest('Uji 24: Formatter asli memakai jam, menit, detik dan menolak waktu tidak valid', () => {
+  assert.strictEqual(formatPlaybackTime(0), '00:00:00');
+  assert.strictEqual(formatPlaybackTime(-15), '00:00:00');
+  assert.strictEqual(formatPlaybackTime(NaN), '00:00:00');
+  assert.strictEqual(formatPlaybackTime(Infinity), '00:00:00');
+  assert.strictEqual(formatPlaybackTime(9.8), '00:00:09');
+  assert.strictEqual(formatPlaybackTime(65), '00:01:05');
+  assert.strictEqual(formatPlaybackTime(102.4), '00:01:42');
+  assert.strictEqual(formatPlaybackTime(248), '00:04:08');
+  assert.strictEqual(formatPlaybackTime(3600), '01:00:00');
+  assert.strictEqual(formatPlaybackTime(3723), '01:02:03');
+  assert.strictEqual(formatPlaybackTime(360000), '100:00:00');
 });
 
 // ----------------------------------------------------------------------------
@@ -1177,7 +1216,7 @@ runTest('Uji 34: prefers-reduced-motion meredam getaran kepala saat snow shake d
   win.matchMedia = () => ({ matches: false });
 });
 
-runTest('Uji 35: Spesifikasi dimensi panel musik sesuai desain acuan Figma (960 × 248 px, background #17231F, border #35483E, radius bawah 18 px, padding 16 px, gap 12 px, isi 156 px)', () => {
+runTest('Uji 35: Panel musik tetap 960 × 228 px dengan isi 156 px dan jarak antarkolom 6 px', () => {
   const css = fs.readFileSync('src/styles.css', 'utf8');
 
   // 1. Dimensi dan styling .island-widget.state-expanded.tab-music sesuai Figma
@@ -1187,23 +1226,23 @@ runTest('Uji 35: Spesifikasi dimensi panel musik sesuai desain acuan Figma (960 
     'Panel musik harus memiliki lebar 960 px'
   );
   assert.strictEqual(
-    css.includes('.island-widget.state-expanded.tab-music {\n  box-sizing: border-box;\n  width: 960px;\n  max-width: 100vw;\n  height: 248px;\n  max-height: 248px;\n  background: #17231F;\n  border: 1px solid #35483E;\n  border-top: none;\n  border-top-left-radius: 0;\n  border-top-right-radius: 0;\n  border-bottom-left-radius: 18px;\n  border-bottom-right-radius: 18px;\n}'),
+    css.includes('.island-widget.state-expanded.tab-music {\n  box-sizing: border-box;\n  width: 960px;\n  max-width: 100vw;\n  height: 228px;\n  max-height: 228px;\n  background: #17231F;\n  border: 1px solid #35483E;\n  border-top: none;\n  border-top-left-radius: 0;\n  border-top-right-radius: 0;\n  border-bottom-left-radius: 18px;\n  border-bottom-right-radius: 18px;\n}'),
     true,
-    'Panel musik harus berukuran 960 × 248 px, background #17231F, border #35483E, border-top none, dan sudut bawah 18 px'
+    'Panel musik harus berukuran 960 × 228 px, background #17231F, border #35483E, border-top none, dan sudut bawah 18 px'
   );
 
-  // 2. Min-height panel musik disetel 248 px
+  // 2. Min-height panel musik disetel 228 px
   assert.strictEqual(
-    css.includes('.island-widget.state-expanded.expanded-ready.tab-music {\n  min-height: 248px;\n  max-height: 248px;\n}'),
+    css.includes('.island-widget.state-expanded.expanded-ready.tab-music {\n  min-height: 228px;\n  max-height: 228px;\n}'),
     true,
-    'Min-height panel musik harus disetel ke 248 px'
+    'Min-height panel musik harus disetel ke 228 px'
   );
 
-  // 3. .view-expanded tab musik berukuran 960 × 248 px dengan padding 16 px dan gap 12 px
+  // 3. .view-expanded tab musik berukuran 960 × 228 px dengan padding 8 px dan gap 8 px
   assert.strictEqual(
-    css.includes('.island-widget.state-expanded.tab-music .view-expanded {\n  box-sizing: border-box;\n  display: flex;\n  flex-direction: column;\n  align-items: flex-start;\n  padding: 16px;\n  gap: 12px;\n  width: 100%;\n  height: 248px;\n  max-height: 248px;\n}'),
+    css.includes('.island-widget.state-expanded.tab-music .view-expanded {\n  box-sizing: border-box;\n  display: flex;\n  flex-direction: column;\n  align-items: flex-start;\n  padding: 8px;\n  gap: 8px;\n  width: 100%;\n  height: 228px;\n  max-height: 228px;\n}'),
     true,
-    '.view-expanded musik harus memakai padding 16 px, gap 12 px, flex column, dan align-items flex-start'
+    '.view-expanded musik harus memakai padding 8 px, gap 8 px, flex column, dan align-items flex-start'
   );
 
   // 4. Panel fokus dan minum tetap mempertahankan tinggi penuh 308 px
@@ -1213,11 +1252,11 @@ runTest('Uji 35: Spesifikasi dimensi panel musik sesuai desain acuan Figma (960 
     'Panel fokus dan minum tetap harus memakai tinggi 308 px'
   );
 
-  // 5. Penataan #panel-music memiliki tinggi tetap 156 px, gap 12 px, dan align-items center
+  // Gap antarkolom dipadatkan menjadi 6 px; gap header dan tinggi native tetap.
   assert.strictEqual(
-    css.includes('#panel-music {\n  width: 100%;\n  height: 156px;\n  min-height: 156px;\n  max-height: 156px;\n  flex: 0 0 156px;\n  margin-top: 0;\n  margin-bottom: 0;\n  gap: 12px;\n  align-items: center;\n  box-sizing: border-box;\n}'),
+    css.includes('#panel-music {\n  width: 100%;\n  height: 156px;\n  min-height: 156px;\n  max-height: 156px;\n  flex: 0 0 156px;\n  margin-top: 0;\n  margin-bottom: 0;\n  gap: 6px;\n  align-items: center;\n  box-sizing: border-box;\n}'),
     true,
-    'Isi panel musik harus memiliki tinggi tetap 156 px (16+48+12+156+16=248 px) dan gap 12 px'
+    'Isi panel musik harus memiliki tinggi tetap 156 px (8+48+8+156+8=228 px) dan gap antarkolom 6 px'
   );
 
   // 6. Cover album memiliki flex-shrink: 0 dan teks judul terpotong rapi dengan ellipsis
@@ -1257,6 +1296,7 @@ runTest('Uji 36: Ekstrapolasi posisi lagu mandiri dan pencegahan salah label ses
   }
 
   assert.strictEqual(localPlaybackPos, 11.0, 'Posisi lagu tidak boleh kembali mundur ke 10.0 jika sistem mengirim nilai statis');
+  assert.strictEqual(lastReportedSystemPos, 10.0, 'Posisi sistem terakhir tetap sama pada polling statis');
 
   // 2. Verifikasi aturan deteksi Spotify di media.rs tidak melabeli peramban umum secara otomatis
   const mediaRs = fs.readFileSync('src-tauri/src/media.rs', 'utf8');
@@ -1287,7 +1327,7 @@ await runTestAsync('Uji 37: Respons polling lama yang tertunda tidak boleh menim
   const req1Promise = new Promise<string>((res) => { resolveReq1 = res; });
 
   // Permintaan 2 dikirim kemudian saat lagu berganti ke "Lagu-Baru"
-  const req2Seq = ++pollSequence;
+  const req2Seq = pollSequence + 1;
   let resolveReq2: (val: string) => void = () => {};
   const req2Promise = new Promise<string>((res) => { resolveReq2 = res; });
 
@@ -1315,6 +1355,7 @@ await runTestAsync('Uji 37: Respons polling lama yang tertunda tidak boleh menim
     'Lagu-Baru',
     'Respons lama (Lagu-Lama) yang tertunda tidak boleh menimpa status lagu terbaru (Lagu-Baru)'
   );
+  assert.strictEqual(latestAppliedSequence, req2Seq, 'Nomor respons terbaru tetap dipertahankan');
 });
 
 runTest('Uji 38: Gagal seek mempertahankan posisi lagu semula dan tidak menampilkan posisi palsu', () => {
@@ -1352,6 +1393,7 @@ await runTestAsync('Uji 39: Pencocokan versi lirik di LyricsService membedakan v
         return {
           ok: true,
           json: async () => ({
+            ...lyricRequestMetadata(url),
             syncedLyrics: '[00:15.00] Lirik pembuka versi Live\n[00:40.00] Lirik kedua versi Live',
           }),
         } as unknown as Response;
@@ -1360,6 +1402,7 @@ await runTestAsync('Uji 39: Pencocokan versi lirik di LyricsService membedakan v
         return {
           ok: true,
           json: async () => ({
+            ...lyricRequestMetadata(url),
             syncedLyrics: '[00:10.00] Lirik pembuka versi Studio\n[00:30.00] Lirik kedua versi Studio',
           }),
         } as unknown as Response;
@@ -1400,17 +1443,17 @@ runTest('Uji 40: Perhitungan posisi di media.rs menggunakan LastUpdatedTime sesu
     'media.rs harus menghitung durasi detik yang berlalu sejak LastUpdatedTime'
   );
   assert.strictEqual(
-    mediaRs.includes('let calculated = raw_pos + elapsed_secs;'),
+    mediaRs.includes('let calculated = raw_pos + elapsed_secs * playback_rate;'),
     true,
-    'media.rs harus menambahkan elapsed time ke snapshot Position saat is_playing aktif'
+    'media.rs harus menambahkan elapsed time sesuai playback rate ke snapshot Position saat is_playing aktif'
   );
 });
 
 runTest('Uji 41: Konfigurasi ISLAND_DIMENSIONS dan fungsi getIslandDimension sebagai satu sumber acuan (Single Source of Truth)', () => {
   // 1. Hidden notch
   assert.deepStrictEqual(ISLAND_DIMENSIONS.hidden, {
-    width: 130,
-    height: 28,
+    width: 76,
+    height: 92,
     minWidth: null,
     minHeight: null,
     resizable: false,
@@ -1443,15 +1486,15 @@ runTest('Uji 41: Konfigurasi ISLAND_DIMENSIONS dan fungsi getIslandDimension seb
   assert.strictEqual(ISLAND_DIMENSIONS.expanded.hydration.height, 308);
   assert.strictEqual(ISLAND_DIMENSIONS.expanded.hydration.minHeight, 308);
 
-  // 5. Expanded music (248 px persis sesuai Figma)
+  // 5. Expanded music (228 px persis sesuai Figma)
   assert.strictEqual(ISLAND_DIMENSIONS.expanded.music.width, 960);
-  assert.strictEqual(ISLAND_DIMENSIONS.expanded.music.height, 248);
-  assert.strictEqual(ISLAND_DIMENSIONS.expanded.music.minHeight, 248);
+  assert.strictEqual(ISLAND_DIMENSIONS.expanded.music.height, 228);
+  assert.strictEqual(ISLAND_DIMENSIONS.expanded.music.minHeight, 228);
   assert.strictEqual(ISLAND_DIMENSIONS.expanded.music.resizable, true);
   assert.deepStrictEqual(getIslandDimension('expanded', 'music', false), ISLAND_DIMENSIONS.expanded.music);
 });
 
-runTest('Uji 42: Alur perubahan ukuran jendela konsisten: Fokus (308) -> Musik (248) -> Minum (308) -> Musik (248) -> Compact (42) -> Musik (248) -> Modal (560) -> Tutup Modal (248)', () => {
+runTest('Uji 42: Alur ukuran panel, bilah minimize (42), dan modal tetap konsisten', () => {
   // Simulasi alur navigasi tab dan status
   let currentState: 'hidden' | 'compact' | 'expanded' = 'expanded';
   let currentActiveTab: 'focus' | 'hydration' | 'music' = 'focus';
@@ -1464,7 +1507,7 @@ runTest('Uji 42: Alur perubahan ukuran jendela konsisten: Fokus (308) -> Musik (
   // 2. Berpindah ke tab Musik
   currentActiveTab = 'music';
   dim = getIslandDimension(currentState, currentActiveTab, isModalOpen);
-  assert.strictEqual(dim.height, 248, 'Tab Musik harus tepat 248 px');
+  assert.strictEqual(dim.height, 228, 'Tab Musik harus tepat 228 px');
   assert.strictEqual(dim.width, 960);
 
   // 3. Berpindah ke tab Minum (Hydration)
@@ -1475,18 +1518,18 @@ runTest('Uji 42: Alur perubahan ukuran jendela konsisten: Fokus (308) -> Musik (
   // 4. Kembali ke tab Musik
   currentActiveTab = 'music';
   dim = getIslandDimension(currentState, currentActiveTab, isModalOpen);
-  assert.strictEqual(dim.height, 248, 'Kembali ke Musik harus 248 px');
+  assert.strictEqual(dim.height, 228, 'Kembali ke Musik harus 228 px');
 
   // 5. Mengecilkan ke Compact
   currentState = 'compact';
   dim = getIslandDimension(currentState, currentActiveTab, isModalOpen);
-  assert.strictEqual(dim.height, 42, 'Mode Compact harus 42 px');
+  assert.strictEqual(dim.height, 42, 'Minimize tetap berupa bilah informasi');
   assert.strictEqual(dim.width, 460);
 
   // 6. Mengembangkan kembali ke Expanded (aktif tab Musik)
   currentState = 'expanded';
   dim = getIslandDimension(currentState, currentActiveTab, isModalOpen);
-  assert.strictEqual(dim.height, 248, 'Expanded kembali ke tab Musik harus 248 px');
+  assert.strictEqual(dim.height, 228, 'Expanded kembali ke tab Musik harus 228 px');
 
   // 7. Membuka modal pengaturan dari tab Musik
   isModalOpen = true;
@@ -1497,7 +1540,7 @@ runTest('Uji 42: Alur perubahan ukuran jendela konsisten: Fokus (308) -> Musik (
   // 8. Menutup modal pengaturan
   isModalOpen = false;
   dim = getIslandDimension(currentState, currentActiveTab, isModalOpen);
-  assert.strictEqual(dim.height, 248, 'Menutup modal dari tab Musik harus mengembalikan ukuran ke 248 px');
+  assert.strictEqual(dim.height, 228, 'Menutup modal dari tab Musik harus mengembalikan ukuran ke 228 px');
 });
 
 // ----------------------------------------------------------------------------
@@ -1519,6 +1562,7 @@ await runTestAsync('Uji 43: Gaya lirik 3 baris aktif di tengah, transisi berurut
         ok: true,
         json: async () => ({
           syncedLyrics: [
+
             '[00:05.00] Baris Pertama (05s)',
             '[00:10.00] Baris Kedua (10s)',
             '[00:15.00] Baris Ketiga (15s)',
@@ -1526,6 +1570,7 @@ await runTestAsync('Uji 43: Gaya lirik 3 baris aktif di tengah, transisi berurut
             '[00:30.00] Baris Keempat Setelah Jeda (30s)',
             '[00:55.00] Baris Kelima Gap Panjang (55s)'
           ].join('\n'),
+          ...lyricRequestMetadata(url),
         }),
       } as unknown as Response;
     }
@@ -1559,6 +1604,17 @@ await runTestAsync('Uji 43: Gaya lirik 3 baris aktif di tengah, transisi berurut
     assert.strictEqual(u.line2, 'Baris Ketiga (15s)');
     assert.strictEqual(u.transitionType, 'step', 'Pergantian berurutan ke baris berikutnya harus berupa step');
 
+    const updatesAfterStep = updates.length;
+    await service.loadLyrics('SongA', 'ArtistA', 'AlbumA', true, 11, 120);
+    service.syncPosition(11.25, true);
+    assert.strictEqual(updates.length, updatesAfterStep, 'Polling dan ticker pada baris sama tidak boleh membatalkan animasi step');
+
+    service.syncPosition(11.25, false);
+    assert.strictEqual(updates.length, updatesAfterStep + 1, 'Pause tetap harus diteruskan meskipun teks sama');
+    assert.strictEqual(updates[updates.length - 1].isPlaying, false);
+    service.syncPosition(11.25, true);
+    assert.strictEqual(updates.length, updatesAfterStep + 2, 'Resume tetap harus diteruskan');
+
     // 4. Seek langsung ke Baris 4 (32s): melompati Baris 3 dan jeda instrumental
     service.syncPosition(32, true);
     u = updates[updates.length - 1];
@@ -1575,10 +1631,14 @@ await runTestAsync('Uji 43: Gaya lirik 3 baris aktif di tengah, transisi berurut
     // 6. Jeda Instrumental Gap Panjang (42s): antara detik 30 dan 55 (gap 25 detik)
     service.syncPosition(42, true);
     u = updates[updates.length - 1];
-    assert.strictEqual(u.isInstrumental, true, 'Saat jeda instrumental panjang, status harus instrumental');
-    assert.strictEqual(u.highlight, '♪ ♪ ♪');
-    assert.strictEqual(u.line1, 'Baris Keempat Setelah Jeda (30s)');
+    assert.strictEqual(u.isInstrumental, false, 'Jarak waktu panjang bukan bukti instrumental');
+    assert.strictEqual(u.highlight, 'Baris Keempat Setelah Jeda (30s)');
     assert.strictEqual(u.line2, 'Baris Kelima Gap Panjang (55s)');
+
+    service.syncPosition(54, true);
+    assert.strictEqual(updates[updates.length - 1].isInstrumental, false, 'Vokal bertahan sampai timestamp berikutnya');
+    service.syncPosition(55, true);
+    assert.strictEqual(updates[updates.length - 1].highlight, 'Baris Kelima Gap Panjang (55s)');
 
     // 7. Ganti Lagu ke SongB (jump langsung dan reset state)
     await service.loadLyrics('SongB', 'ArtistB', 'AlbumB', true, 10, 150);
@@ -1595,9 +1655,6 @@ await runTestAsync('Uji 43: Gaya lirik 3 baris aktif di tengah, transisi berurut
 
     // 9. Verifikasi CSS di src/styles.css
     const css = fs.readFileSync('src/styles.css', 'utf8');
-    assert.strictEqual(css.includes('.lyrics-track.is-sliding-up'), true, 'styles.css harus memiliki kelas .lyrics-track.is-sliding-up');
-    assert.strictEqual(css.includes('transform: translateY(-26px);'), true, 'Animasi pergeseran ke atas bergeser tepat -26px');
-    assert.strictEqual(css.includes('transition: transform 200ms cubic-bezier(0.22, 1, 0.36, 1);'), true, 'Durasi pergeseran berada di rentang 180-250 ms (200 ms)');
     assert.strictEqual(css.includes('color: #A8F0C6;'), true, 'Warna baris aktif adalah mint terang #A8F0C6');
     assert.strictEqual(css.includes('color: #859F92;'), true, 'Warna baris lainnya adalah redup #859F92');
     assert.strictEqual(css.includes('@keyframes pixel-dot-gentle'), true, 'styles.css harus memiliki keyframe pixel-dot-gentle');
@@ -2066,10 +2123,10 @@ await runTestAsync('Uji 57: Play/pause, next, prev, dan seek mengirim identitas 
   }
 });
 
-await runTestAsync('Uji 58: Jeda manual di tengah lagu tidak dianggap lagu selesai; jeda di ujung durasi memicu event selesai', async () => {
+await runTestAsync('Uji 58: Jeda manual bukan akhir lagu; stopped di ujung rekaman yang sama memicu selesai', async () => {
   let finishedCount = 0;
   const baseTrack = {
-    title: 'Lagu Ujian', artist: 'Artis', album: 'Album', is_playing: true,
+    title: 'Lagu Ujian', artist: 'Artis', album: 'Album', is_playing: true, playback_status: 'playing' as SystemMediaTrack['playback_status'],
     source_app: 'opera.exe', source_display_name: 'Opera', service_kind: 'web_media',
     is_spotify: false, has_session: true, session_key: 'media-session-9', record_key: 'lagu-ujian|artis|album|1|200',
     has_thumbnail: false, position_secs: 30, duration_secs: 200,
@@ -2099,7 +2156,7 @@ await runTestAsync('Uji 58: Jeda manual di tengah lagu tidak dianggap lagu seles
     assert.strictEqual(finishedCount, 0);
 
     // Transisi nyata akhir lagu: memutar -> berhenti tepat di ujung durasi
-    currentPayload = { ...baseTrack, is_playing: false, position_secs: 199.6 };
+    currentPayload = { ...baseTrack, is_playing: false, playback_status: 'stopped', position_secs: 199.6 };
     await bridge.pollNow();
     assert.strictEqual(finishedCount, 1, 'Pemutaran yang berhenti di ujung durasi memicu lagu selesai');
   } finally {
@@ -2166,7 +2223,7 @@ await runTestAsync('Uji 60: Lirik mencoba ulang dengan penundaan setelah kegagal
     }
     return {
       ok: true,
-      json: async () => ({ syncedLyrics: '[00:05.00] Lirik Retry Berhasil' }),
+      json: async () => ({ ...lyricRequestMetadata(url), syncedLyrics: '[00:05.00] Lirik Retry Berhasil' }),
     } as unknown as Response;
   }) as typeof fetch;
 
@@ -2182,7 +2239,7 @@ await runTestAsync('Uji 60: Lirik mencoba ulang dengan penundaan setelah kegagal
     const callsBeforeRetry = fetchCallCount;
 
     // Setelah masa tunggu berlalu: percobaan ulang berjalan dan berhasil
-    await new Promise((r) => setTimeout(r, 250));
+    await new Promise((r) => { setTimeout(r, 250); });
     await service.loadLyrics('Lagu Retry', 'Artis Retry', 'Album Retry', true, 2, 120);
     assert.ok(fetchCallCount > callsBeforeRetry, 'Percobaan ulang harus membuat permintaan baru');
     assert.strictEqual(received.includes('Lirik Retry Berhasil'), true, 'Lirik harus diterima setelah percobaan ulang berhasil');
@@ -2256,6 +2313,1980 @@ await runTestAsync('Uji 62: Snapshot timer berjalan dengan deadline terlewat mel
 // ----------------------------------------------------------------------------
 // Rekapitulasi Akhir
 // ----------------------------------------------------------------------------
+runTest('Uji 63: Jitter waktu browser tidak memundurkan lirik; seek dan pause tetap akurat', () => {
+  let position = 10.02;
+  for (let i = 0; i < 100; i++) {
+    const reported = position - 0.3;
+    const reconciled = reconcilePlayback(position, reported, true);
+    assert.strictEqual(reconciled.position, position);
+    const advanced = advancePlayback(position, 0.05, reconciled.correction);
+    assert.ok(advanced.position > position, 'Koreksi negatif hanya memperlambat jam, bukan memundurkan baris');
+    position = advanced.position;
+  }
+  assert.strictEqual(reconcilePlayback(30, 5, true).position, 5, 'Seek mundur langsung diterapkan');
+  assert.strictEqual(reconcilePlayback(30, 29.7, false).position, 29.7, 'Pause mengikuti posisi sistem');
+});
+
+runTest('Uji 64: Katalog musik lokal memiliki kredit, sumber berbeda dan ilustrasi yang tersedia', () => {
+  const credits = fs.readFileSync('public/audio/CREDITS.md', 'utf8');
+  assert.strictEqual(new Set(STUDY_TRACKS.map(track => track.file)).size, 4);
+  for (const track of STUDY_TRACKS) {
+    assert.ok(credits.includes(track.source));
+    assert.ok(credits.includes(track.license));
+    assert.match(track.file, /^\/audio\/[A-Za-z0-9_-]+\.webm$/);
+    const cover = STUDY_COVERS[track.id];
+    assert.ok(fs.statSync('public' + cover.file).size > 0);
+  }
+});
+
+runTest('Uji 65: Playlist bawaan menampilkan informasi lokal tanpa timestamp lirik buatan', () => {
+  const service = new LyricsService();
+  const updates: import('../src/audio/lyricsService').LyricsLinesUpdate[] = [];
+  service.subscribe((update) => updates.push(update));
+  for (const track of STUDY_TRACKS) {
+    service.setAmbientTrack(track.id, true);
+    assert.strictEqual(updates[updates.length - 1]?.highlight, track.title);
+    const count = updates.length;
+    service.syncPosition(20, true);
+    assert.strictEqual(updates.length, count);
+  }
+  service.clear();
+});
+
+await runTestAsync('Uji 66: Rekaman melanjutkan posisi jeda, mengganti sumber, serta menolak hasil play usang', async () => {
+  const original = globalThis.Audio;
+  const instances: FakeAudio[] = [];
+  let fail = false;
+  class FakeAudio {
+    currentTime = 0;
+    readyState = 1;
+    duration = 180;
+    paused = true;
+    loop = false;
+    volume = 1;
+    preload = '';
+    constructor(public src: string) { instances.push(this); }
+    async play() { if (fail) throw new Error('media error'); this.paused = false; }
+    pause() { this.paused = true; }
+    removeAttribute() { this.src = ''; }
+    addEventListener() {}
+    load() { this.currentTime = 0; }
+  }
+  globalThis.Audio = FakeAudio as unknown as typeof Audio;
+  try {
+    const player = new AmbientSynth();
+    let started = player.play('jazz-noir');
+    assert.ok(await started);
+    assert.equal(instances[0]!.loop, true);
+    instances[0]!.currentTime = 12;
+    player.stop();
+    started = player.play('jazz-noir');
+    assert.ok(await started);
+    assert.strictEqual(instances[instances.length - 1]!.currentTime, 12);
+    player.setVolume(0.2);
+    assert.equal(instances[instances.length - 1]!.volume, 0.2);
+    player.resetPlayback();
+    assert.ok(await player.play('jazz-noir'));
+    assert.strictEqual(instances[instances.length - 1]!.currentTime, 0);
+    started = player.play('wave-to-earth');
+    player.stop();
+    assert.strictEqual(await started, false);
+    assert.strictEqual(player.getTrack(), 'off');
+    assert.ok(instances[instances.length - 1]!.paused);
+    fail = true;
+    assert.strictEqual(await player.play('laufey'), false);
+  } finally {
+    globalThis.Audio = original;
+  }
+});
+
+runTest('Uji 67: Lirik menolak artis, judul, versi dan durasi yang berbeda', () => {
+  const service = new LyricsService() as any;
+  const correct = { trackName: 'Song', artistName: 'Artist', albumName: 'Album', duration: 200, plainLyrics: 'benar' };
+  const wrong = { trackName: 'Other', artistName: 'Other Artist', albumName: 'Other', duration: 320, syncedLyrics: '[00:00]salah' };
+  const match = (items: any[]) => service.selectBestRecordMatch(items, 'Album', 200, 'Song', 'Artist');
+  assert.strictEqual(match([wrong, correct]), correct);
+  assert.strictEqual(match([{ ...wrong, trackName: 'Song', duration: 200 }]), null);
+  assert.strictEqual(match([{ ...correct, trackName: 'Song (Live)' }]), null);
+  assert.strictEqual(match([{ ...correct, duration: 204 }]), null);
+  assert.strictEqual(match([{ ...correct, duration: undefined }]), null);
+  assert.strictEqual(match([{ ...correct, artistName: undefined }]), null);
+  assert.ok(match([{ ...correct, trackName: 'SONG!', duration: 202 }]));
+  service.clear();
+});
+
+await runTestAsync('Uji 68: Semua jalur API lirik menolak respons identitas yang keliru', async () => {
+  const service = new LyricsService() as any;
+  const original = globalThis.fetch;
+  let calls = 0;
+  globalThis.fetch = (async () => {
+    calls++;
+    const wrong = { trackName: 'Song', artistName: 'Impostor', duration: 200, syncedLyrics: '[00:01]salah' };
+    return { ok: true, json: async () => calls === 1 ? wrong : [wrong] } as unknown as Response;
+  }) as typeof fetch;
+  try {
+    assert.strictEqual(await service.fetchVersionMatchedLyrics('Song', 'Artist', 'Album', 200), null);
+    assert.strictEqual(calls, 3);
+  } finally { globalThis.fetch = original; service.clear(); }
+});
+
+runTest('Uji 69: Vokal panjang bertahan, instrumental hanya mengikuti marker kosong', () => {
+  const service = new LyricsService();
+  (service as any).activeLyrics = { isSynced: true, plainLines: [],
+    syncedLines: parseSyncedLyrics('[00:00]Nada panjang\n[00:20]\n[00:25]Berikutnya') };
+  const updates: any[] = [];
+  service.subscribe(u => updates.push(u));
+  service.syncPosition(19, true);
+  assert.strictEqual(updates[updates.length - 1].highlight, 'Nada panjang');
+  assert.strictEqual(updates[updates.length - 1].isInstrumental, false);
+  service.syncPosition(21, true);
+  assert.strictEqual(updates[updates.length - 1].isInstrumental, true);
+  service.syncPosition(25, true);
+  assert.strictEqual(updates[updates.length - 1].highlight, 'Berikutnya');
+  service.clear();
+});
+
+await runTestAsync('Uji 70: Sesi luar yang dijeda membatalkan audio lokal yang masih dimuat', async () => {
+  const original = globalThis.Audio;
+  let finish: () => void = () => {};
+  const pending = new Promise<void>((resolve) => { finish = resolve; });
+  let fake: FakeAudio | null = null;
+  class FakeAudio {
+    currentTime = 0;
+    paused = true;
+    constructor() { fake = this; } // eslint-disable-line @typescript-eslint/no-this-alias -- Tes perlu mengamati instance Audio yang dibuat AmbientSynth.
+    async play() { await pending; this.paused = false; }
+    pause() { this.paused = true; }
+    removeAttribute() {}
+    addEventListener() {}
+    load() {}
+  }
+  globalThis.Audio = FakeAudio as unknown as typeof Audio;
+  try {
+    const audio = new AmbientSynth();
+    let request = 1;
+    let paused = 0;
+    const loading = audio.play('jazz-noir');
+    await Promise.resolve();
+    takeOverLocalPlayback(audio, () => paused++, () => request++);
+    finish();
+    assert.strictEqual(await loading, false);
+    assert.strictEqual(audio.getTrack(), 'off');
+    assert.equal((fake as FakeAudio | null)?.paused, true, 'Play yang selesai terlambat dihentikan');
+    assert.strictEqual(request, 2);
+    assert.strictEqual(paused, 1);
+  } finally { globalThis.Audio = original; }
+});
+
+await runTestAsync('Uji 71: Volume perangkat diperbarui setelah perubahan eksternal dan gagal baca bisa pulih', async () => {
+  const sync = new DeviceVolumeSync();
+  let device = 0.4;
+  let shown = 0;
+  let failed = false;
+  const refresh = (now: number) => sync.refresh(async () => device, v => shown = v, () => failed = true, now);
+  await refresh(0);
+  assert.strictEqual(shown, 0.4);
+  device = 0.7;
+  await refresh(500);
+  assert.strictEqual(shown, 0.4);
+  await refresh(1100);
+  assert.strictEqual(shown, 0.7);
+  await sync.refresh(async () => { throw new Error('disconnected'); }, () => {}, () => failed = true, 2200);
+  assert.ok(failed);
+  device = 0.2;
+  await refresh(3300);
+  assert.strictEqual(shown, 0.2);
+});
+
+await runTestAsync('Uji 72: Baca volume terlambat tidak menimpa edit atau sumber baru', async () => {
+  const sync = new DeviceVolumeSync();
+  let finish: (v: number) => void = () => {};
+  let shown = 0.5;
+  const loading = sync.refresh(() => new Promise(resolve => { finish = resolve; }), v => shown = v, () => {}, 0);
+  sync.beginWrite();
+  finish(0.1);
+  await loading;
+  assert.strictEqual(shown, 0.5);
+  let reads = 0;
+  await sync.refresh(async () => { reads++; return 0.2; }, v => shown = v, () => {}, 1200);
+  assert.strictEqual(reads, 0);
+  sync.endWrite();
+  const old = sync.refresh(() => new Promise(resolve => { finish = resolve; }), v => shown = v, () => {}, 2300);
+  sync.invalidate();
+  await sync.refresh(async () => 0.8, v => shown = v, () => {}, 2400, true);
+  finish(0.3);
+  await old;
+  assert.strictEqual(shown, 0.8);
+});
+
+runTest('Uji 73: Sesi menunggu dipulihkan setelah disimpan tanpa memulai atau memberi hadiah ulang', () => {
+  const config = { ...DEFAULT_POMODORO_CONFIG, totalDurationMin: 3, focusDurationMin: 1, breakDurationMin: 1,
+    autostartBreak: false, autostartNextFocus: false };
+  let completed = 0;
+  const first = new PomodoroEngine(config, { onPhaseComplete: () => completed++ });
+  const restored = new PomodoroEngine(config, { onPhaseComplete: () => completed++ });
+  try {
+    first.start();
+    (first as any).targetEndTime = Date.now() - 1;
+    first.pause();
+    assert.strictEqual(first.getStatus(), 'waiting_next');
+    const snapshot = sanitizeTimerSnapshot(JSON.parse(JSON.stringify(first.getSnapshot())));
+    assert.ok(snapshot);
+    assert.strictEqual(snapshot.status, 'waiting_next');
+    assert.ok(restored.restoreFromSnapshot(snapshot));
+    assert.strictEqual(restored.getStatus(), 'waiting_next');
+    assert.strictEqual(restored.getCurrentPhaseIndex(), 1);
+    assert.strictEqual(restored.getPhaseRemainingSeconds(), 60);
+    assert.strictEqual(completed, 1);
+    restored.start();
+    assert.strictEqual(restored.getStatus(), 'running');
+    assert.strictEqual(restored.getCurrentPhaseIndex(), 1);
+  } finally { first.pause(); restored.pause(); }
+});
+
+runTest('Uji 74: Jeda pada deadline menghentikan fase autostart berikutnya', () => {
+  let completed = 0;
+  const engine = new PomodoroEngine({ ...DEFAULT_POMODORO_CONFIG,
+    totalDurationMin: 3, focusDurationMin: 1, breakDurationMin: 1,
+    autostartBreak: true, autostartNextFocus: true }, { onPhaseComplete: () => completed++ });
+  try {
+    engine.start();
+    (engine as any).targetEndTime = Date.now() - 1;
+    engine.pause();
+    assert.strictEqual(engine.getStatus(), 'paused');
+    assert.strictEqual(engine.getCurrentPhase()?.type, 'break');
+    assert.strictEqual(engine.getPhaseRemainingSeconds(), 60);
+    assert.strictEqual((engine as any).intervalId, null);
+    assert.strictEqual(completed, 1);
+    engine.pause();
+    assert.strictEqual(completed, 1);
+    assert.strictEqual(engine.getSnapshot()?.status, 'paused');
+  } finally { engine.pause(); }
+});
+
+runTest('Uji 75: Rencana 1440 fase memulihkan fase di atas 200 dan menolak indeks di luar rencana', () => {
+  const config = { ...DEFAULT_POMODORO_CONFIG, totalDurationMin: 1440, focusDurationMin: 1, breakDurationMin: 1 };
+  const engine = new PomodoroEngine(config);
+  const lastIndex = engine.getPlan().phases.length - 1;
+  for (const phaseIndex of [201, lastIndex]) {
+    const snapshot = sanitizeTimerSnapshot({ scheduleVersion: 2, phaseIndex, status: 'paused', phaseRemainingSeconds: 60,
+      targetEndTime: null, savedAt: Date.now(), totalDurationMin: 1440, focusDurationMin: 1, breakDurationMin: 1 });
+    assert.ok(snapshot);
+    assert.ok(engine.restoreFromSnapshot(snapshot));
+    assert.strictEqual(engine.getCurrentPhaseIndex(), phaseIndex);
+    assert.strictEqual(engine.getStatus(), 'paused');
+  }
+  const invalid = { ...engine.getSnapshot()!, phaseIndex: 1440 };
+  assert.strictEqual(sanitizeTimerSnapshot(invalid), null);
+  assert.strictEqual(engine.restoreFromSnapshot(invalid), false);
+  assert.strictEqual(engine.getCurrentPhaseIndex(), lastIndex);
+});
+
+runTest('Uji 76: Pratinjau memakai durasi fase nyata saat total lebih pendek dari pengaturan fokus', () => {
+  assert.strictEqual(getFirstPhasePreview(buildPomodoroPlan(15, 25, 5)), 'Putaran 1 · Fokus 15 menit · Menit 0–15');
+  assert.strictEqual(getFirstPhasePreview(buildPomodoroPlan(60, 25, 5)), 'Putaran 1 · Fokus 25 menit · Menit 0–25');
+});
+
+runTest('Uji 77: Panel fokus menjelaskan fase berikutnya sesuai rencana dan preferensi autostart', () => {
+  const short = buildPomodoroPlan(15, 25, 5);
+  assert.strictEqual(getNextPhaseLabel(short, 0, DEFAULT_POMODORO_CONFIG), 'Sesi terakhir · Rencana selesai setelah fase ini.');
+  const plan = buildPomodoroPlan(60, 25, 5);
+  assert.strictEqual(getNextPhaseLabel(plan, 0, DEFAULT_POMODORO_CONFIG), 'Berikutnya: Istirahat 5 menit · otomatis');
+  assert.strictEqual(getNextPhaseLabel(plan, 1, { ...DEFAULT_POMODORO_CONFIG, autostartNextFocus: false }),
+    'Berikutnya: Fokus 25 menit · mulai manual');
+});
+
+runTest('Uji 78: Penyelesaian berantai tanpa render tetap menanam pada petak berbeda', () => {
+  const renderer = new IslandRenderer(createMockCanvas()) as any;
+  renderer.startFocusPlanting();
+  const first = renderer.completeFocusSession();
+  const second = renderer.completeFocusSession();
+  assert.notDeepEqual([first.gridR, first.gridC], [second.gridR, second.gridC]);
+  assert.strictEqual(renderer.hasActiveSprout(), false);
+  assert.strictEqual(renderer.bloomingTrees.size, 0, 'Renderer tersembunyi tidak mengantre mekar lama');
+  assert.strictEqual(renderer.getPlantedTrees().length, 2);
+});
+
+runTest('Uji 79: Satu pohon mekar digambar sekali, lalu mencapai ukuran penuh', () => {
+  const canvas = createMockCanvas();
+  const ctx = canvas.getContext('2d')!;
+  const scales: number[] = [];
+  ctx.scale = (x: number) => { scales.push(x); };
+  const renderer = new IslandRenderer(canvas) as any;
+  renderer.isRunning = true;
+  renderer.startFocusPlanting();
+  const tree = renderer.completeFocusSession();
+  renderer.drawMomo = () => {};
+  scales.length = 0;
+  renderer.drawDepthSortedEntities();
+  assert.deepEqual(scales, [0.5]);
+  for (let i = 0; i < 48; i++) renderer.update();
+  scales.length = 0;
+  renderer.drawDepthSortedEntities();
+  assert.deepEqual(scales, [1]);
+  assert.strictEqual(renderer.bloomingTrees.has(tree.id), false);
+});
+
+runTest('Uji 80: Status musik dan ambient tidak menggerakkan Momo ketika fokus dijeda', () => {
+  const renderer = new IslandRenderer(createMockCanvas()) as any;
+  renderer.startFocusPlanting();
+  renderer.setTimerPaused(true);
+  const position = { ...renderer.currentPos };
+  for (const music of [true, false]) {
+    renderer.setMusicPlaying(music);
+    renderer.setAmbientMode(null);
+    renderer.setMood('idle');
+    for (let i = 0; i < 50; i++) renderer.update();
+    assert.deepEqual(renderer.currentPos, position);
+    assert.strictEqual(renderer.isWalking, false);
+  }
+  renderer.setTimerPaused(false);
+  renderer.update();
+  assert.notDeepEqual(renderer.currentPos, position);
+});
+
+runTest('Uji 81: Reduced motion menonaktifkan skala mekar, goyangan dan perpindahan', () => {
+  const original = window.matchMedia;
+  window.matchMedia = (() => ({ matches: true })) as unknown as typeof window.matchMedia;
+  try {
+    const canvas = createMockCanvas();
+    const scales: number[] = [];
+    canvas.getContext('2d')!.scale = (x: number) => { scales.push(x); };
+    const renderer = new IslandRenderer(canvas) as any;
+    renderer.isRunning = true;
+    renderer.startFocusPlanting();
+    renderer.completeFocusSession();
+    renderer.frameCount = 290;
+    renderer.drawMomo = () => {};
+    scales.length = 0;
+    renderer.drawDepthSortedEntities();
+    assert.deepEqual(scales, [1]);
+    const position = { ...renderer.currentPos };
+    renderer.setMusicPlaying(true);
+    renderer.update();
+    assert.deepEqual(renderer.currentPos, position);
+    assert.strictEqual(renderer.musicNotes.length, 0);
+  } finally { window.matchMedia = original; }
+});
+
+runTest('Uji 82: Kecepatan simulasi sama pada 10 dan 60 FPS, lonjakan panjang dibatasi', () => {
+  const original = globalThis.requestAnimationFrame;
+  globalThis.requestAnimationFrame = () => 1;
+  try {
+    const simulate = (fps: number) => {
+      const renderer = new IslandRenderer(createMockCanvas()) as any;
+      renderer.isRunning = true;
+      renderer.lastFrameTime = 0;
+      renderer.draw = () => {};
+      renderer.startFocusPlanting();
+      renderer.celebrationTimer = 48;
+      for (let frame = 1; frame <= fps; frame++) renderer.loop(frame * 1000 / fps);
+      return renderer;
+    };
+    const low = simulate(10);
+    const high = simulate(60);
+    assert.strictEqual(low.frameCount, 24);
+    assert.strictEqual(high.frameCount, 24);
+    assert.strictEqual(low.celebrationTimer, high.celebrationTimer);
+    assert.deepEqual(low.currentPos, high.currentPos);
+    low.loop(61000);
+    assert.ok(low.frameCount <= 30, 'Tidak mengejar ribuan langkah setelah jeda panjang');
+  } finally { globalThis.requestAnimationFrame = original; }
+});
+
+runTest('Uji 83: Transparansi hanya untuk pohon depan yang benar-benar menutupi pohon belakang', () => {
+  const rear = { x: 180, y: 60, treeType: 'mango' as const, scale: 1 };
+  assert.ok(coversRearTree({ ...rear, y: 80 }, rear));
+  assert.strictEqual(coversRearTree({ ...rear, y: 40 }, rear), false);
+  assert.strictEqual(coversRearTree({ ...rear, x: 230, y: 80 }, rear), false);
+  assert.strictEqual(coversRearTree({ ...rear, y: 120 }, rear), false);
+  assert.strictEqual(coversRearTree(rear, rear), false);
+});
+
+runTest('Uji 84: Tumpukan pohon tidak membuat lapisan belakang ikut transparan', () => {
+  const trees = [60, 80, 100].map(y => ({ x: 180, y, treeType: 'mango' as const, scale: 1 }));
+  assert.deepEqual(trees.map(tree => shouldFadeTree(tree, trees)), [false, false, true]);
+  const pair = trees.slice(0, 2);
+  assert.deepEqual(pair.map(tree => shouldFadeTree(tree, pair)), [false, true]);
+});
+
+runTest('Uji 85: Pohon memudar hanya ketika berada di depan dan menutupi Momo', () => {
+  const tree = { x: 180, y: 80, treeType: 'mango' as const, scale: 1 };
+  assert.ok(coversMomo(tree, { x: 180, y: 65 }));
+  assert.strictEqual(coversMomo(tree, { x: 180, y: 90 }), false);
+  assert.strictEqual(coversMomo(tree, { x: 230, y: 65 }), false);
+  assert.strictEqual(coversMomo(tree, { x: 180, y: 20 }), false);
+});
+
+runTest('Uji 86: Momo mengelilingi semua pohon untuk menyiram dan memupuk tanpa mengubah progres', () => {
+  const trees = PLANTING_SLOTS.slice(0, 13).map((slot, i) => ({
+    id: 'garden-' + i, gridR: slot.r, gridC: slot.c, treeType: slot.type, plantedAtTimestamp: 1,
+  }));
+  const renderer = new IslandRenderer(createMockCanvas()) as any;
+  renderer.setPlantedTrees(trees);
+  const visited = new Set<string>();
+  for (let tick = 0; tick < 100000 && visited.size < trees.length * 2; tick++) {
+    renderer.update();
+    const task = renderer.gardeningActivity;
+    if (task) visited.add(task.targetR + ':' + task.targetC + ':' + task.action);
+  }
+  for (const tree of trees) {
+    assert.ok(visited.has(tree.gridR + ':' + tree.gridC + ':water'));
+    assert.ok(visited.has(tree.gridR + ':' + tree.gridC + ':fertilize'));
+  }
+  assert.deepEqual(renderer.getPlantedTrees(), trees);
+  const position = { ...renderer.currentPos };
+  const wait = renderer.waitCounter;
+  renderer.setTimerPaused(true);
+  renderer.setMusicPlaying(true);
+  for (let tick = 0; tick < 100; tick++) renderer.update();
+  assert.deepEqual(renderer.currentPos, position);
+  assert.strictEqual(renderer.waitCounter, wait);
+  assert.strictEqual(renderer.gardeningActivity, null);
+  renderer.setTimerPaused(false);
+  renderer.setBreakMode(true);
+  renderer.setMusicPlaying(true);
+  for (let tick = 0; tick < 100; tick++) renderer.update();
+  assert.deepEqual(renderer.currentPos, position);
+  assert.strictEqual(renderer.gardeningActivity, null);
+});
+
+runTest('Uji 87: Hujan muncul sesekali, genangan terbentuk lalu mengering', () => {
+  const weather = new FocusWeather(() => 0);
+  let starts = 0;
+  for (let tick = 0; tick < 250; tick++) if (weather.step(0.1, true, true)) starts++;
+  assert.strictEqual(starts, 1);
+  assert.ok(weather.intensity > 0);
+  assert.ok(weather.wetness > 0);
+  const paused = [weather.intensity, weather.wetness];
+  for (let tick = 0; tick < 100; tick++) weather.step(0.1, false, true);
+  assert.deepEqual([weather.intensity, weather.wetness], paused);
+  for (let tick = 0; tick < 180; tick++) if (weather.step(0.1, true, true)) starts++;
+  assert.strictEqual(weather.intensity, 0);
+  assert.ok(weather.wetness > 0.5);
+  for (let tick = 0; tick < 600; tick++) if (weather.step(0.1, true, true)) starts++;
+  assert.strictEqual(starts, 1, 'Tidak hujan lagi sebelum jeda minimum');
+  assert.strictEqual(weather.wetness, 0);
+  for (let tick = 0; tick < 1000; tick++) assert.strictEqual(weather.step(0.1, true, false), false);
+  assert.strictEqual(weather.intensity, 0, 'Musim dingin tetap memakai salju');
+});
+
+runTest('Uji 88: Momo mendapat semua kegiatan santai, bergantian dengan rutinitas berkebun', () => {
+  const leisure = new MomoLeisure(() => 0);
+  const actions: string[] = [];
+  let previous: string | null = null;
+  let gardenTicks = 0;
+  for (let tick = 0; tick < 1200 && actions.length < 5; tick++) {
+    leisure.step(0.25, true);
+    if (!leisure.action) gardenTicks++;
+    if (leisure.action && leisure.action !== previous) actions.push(leisure.action);
+    previous = leisure.action;
+  }
+  assert.deepEqual([...actions].sort(), ['dance', 'relax', 'run', 'sing', 'sleep']);
+  assert.ok(gardenTicks > 100, 'Ada waktu berkebun di antara kegiatan santai');
+  const before = leisure.action;
+  for (let tick = 0; tick < 1000; tick++) leisure.step(0.25, false);
+  assert.strictEqual(leisure.action, before, 'Jeda tidak menghabiskan kegiatan yang sedang berlangsung');
+});
+
+runTest('Uji 89: Awal hujan memicu reaksi senang tanpa memindahkan Momo atau mengubah pohon', () => {
+  const renderer = new IslandRenderer(createMockCanvas()) as any;
+  renderer.weather = new FocusWeather(() => 0);
+  renderer.weather.untilRain = 0;
+  const position = { ...renderer.currentPos };
+  renderer.update();
+  assert.ok(renderer.rainJoyTimer > 0);
+  assert.ok(renderer.celebrationTimer > 0);
+  assert.deepEqual(renderer.currentPos, position);
+  assert.strictEqual(renderer.gardeningActivity, null);
+  assert.strictEqual(renderer.getPlantedTrees().length, 0);
+  renderer.setTimerPaused(true);
+  const wetness = renderer.weather.wetness;
+  for (let tick = 0; tick < 100; tick++) renderer.update();
+  assert.strictEqual(renderer.weather.wetness, wetness);
+  assert.deepEqual(renderer.currentPos, position);
+});
+
+runTest('Uji 90: Genangan bervariasi dan tetap di petak kosong di dalam pulau', () => {
+  const occupied = [{ r: 2, c: 2 }, { r: 3, c: 3 }];
+  const first = createPuddles(occupied, () => 0.2);
+  const second = createPuddles(occupied, () => 0.8);
+  assert.notDeepEqual(first, second);
+  for (const puddles of [first, second]) {
+    assert.ok(puddles.length >= 2 && puddles.length <= 4);
+    const tiles = puddles.map(p => Math.round(p.r) + ':' + Math.round(p.c));
+    assert.strictEqual(new Set(tiles).size, tiles.length);
+    for (const puddle of puddles) {
+      assert.ok(puddle.r > 0 && puddle.r < 5 && puddle.c > 0 && puddle.c < 5);
+      assert.ok(!occupied.some(tile => tile.r === Math.round(puddle.r) && tile.c === Math.round(puddle.c)));
+      assert.ok(puddle.radius >= 6 && puddle.radius <= 11);
+    }
+  }
+});
+
+runTest('Uji 91: Pohon menjadi solid saat dirawat dan kembali memudar setelah selesai', () => {
+  const tree = { x: 180, y: 80, treeType: 'mango' as const, scale: 1 };
+  const rear = { ...tree, y: 60 };
+  const momo = { x: 180, y: 65 };
+  assert.strictEqual(getTreeOpacity(tree, [tree, rear], momo, false), 0.55);
+  assert.strictEqual(getTreeOpacity(tree, [tree, rear], momo, true), 1);
+  assert.strictEqual(getTreeOpacity(tree, [tree, rear], momo, false), 0.55);
+});
+
+runTest('Uji 92: Jeda antar kunjungan berkebun berada di 60 sampai 180 detik', () => {
+  for (const random of [() => 0, () => 0.5, () => 1]) {
+    const schedule = new GardenSchedule(random);
+    let elapsed = 0;
+    while (!schedule.active && elapsed <= 180) {
+      schedule.step(0.25, true);
+      elapsed += 0.25;
+    }
+    assert.ok(elapsed >= 60 && elapsed <= 180);
+    assert.strictEqual(schedule.active, true);
+    schedule.finish();
+    for (let tick = 0; tick < 1000; tick++) schedule.step(0.25, false);
+    assert.strictEqual(schedule.active, false, 'Timer jeda tidak boleh menghabiskan jeda kunjungan');
+    for (let tick = 0; tick < 239; tick++) schedule.step(0.25, true);
+    assert.strictEqual(schedule.active, false, 'Tidak berkebun lagi sebelum satu menit');
+  }
+});
+
+runTest('Uji 93: Tunas baru ditanam, disiram, dan dipupuk berurutan dalam satu kunjungan', () => {
+  const renderer = new IslandRenderer(createMockCanvas()) as any;
+  const slot = renderer.startFocusPlanting();
+  const actions = new Set<string>();
+  for (let tick = 0; tick < 2000 && renderer.gardenSchedule.active; tick++) {
+    renderer.update();
+    const task = renderer.gardeningActivity;
+    if (task) {
+      assert.strictEqual(task.targetR, slot.r);
+      assert.strictEqual(task.targetC, slot.c);
+      actions.add(task.action);
+    }
+  }
+  assert.deepEqual([...actions], ['plant', 'water', 'fertilize']);
+  assert.strictEqual(renderer.gardenSchedule.active, false);
+  assert.strictEqual(renderer.waypoints.some((wp: any) => wp.action === 'plant'), false);
+  assert.strictEqual(renderer.getPlantedTrees().length, 0);
+});
+
+runTest('Uji 94: Pertumbuhan tunas memicu perawatan sekali tiap tahap dan berhenti saat dijeda', () => {
+  const renderer = new IslandRenderer(createMockCanvas()) as any;
+  renderer.startFocusPlanting();
+  for (let tick = 0; tick < 2000 && renderer.gardenSchedule.active; tick++) renderer.update();
+  for (const growth of [0.4, 0.8]) {
+    renderer.updateFocusProgress(growth);
+    assert.strictEqual(renderer.gardenSchedule.active, true);
+    renderer.setTimerPaused(true);
+    const pos = { ...renderer.currentPos };
+    for (let tick = 0; tick < 100; tick++) renderer.update();
+    assert.deepEqual(renderer.currentPos, pos);
+    renderer.setTimerPaused(false);
+    const actions = new Set<string>();
+    for (let tick = 0; tick < 2000 && renderer.gardenSchedule.active; tick++) {
+      renderer.update();
+      if (renderer.gardeningActivity) actions.add(renderer.gardeningActivity.action);
+    }
+    assert.deepEqual([...actions], ['water', 'fertilize']);
+    assert.strictEqual(renderer.gardenSchedule.active, false);
+    renderer.updateFocusProgress(growth + 0.01);
+    assert.strictEqual(renderer.gardenSchedule.active, false);
+  }
+  assert.strictEqual(renderer.getPlantedTrees().length, 0);
+});
+
+runTest('Uji 95: Migrasi pohon lama mempertahankan jumlah, posisi, dan identitas pohon', () => {
+  const key = 'moss_island_state_v2';
+  const original = localStorage.getItem(key);
+  try {
+    const state = loadAppState();
+    const trees = ['oak', 'pine', ...TREE_SPECIES].map((treeType, i) => ({
+      id: 'migration-' + i, treeType, gridR: i % 6, gridC: Math.floor(i / 6), plantedAtTimestamp: 1000 + i,
+    }));
+    localStorage.setItem(key, JSON.stringify({ ...state, progress: { ...state.progress, trees } }));
+    const migrated = loadAppState().progress.trees;
+    assert.strictEqual(migrated.length, trees.length);
+    migrated.forEach((tree, i) => {
+      assert.strictEqual(tree.id, trees[i].id);
+      assert.strictEqual(tree.gridR, trees[i].gridR);
+      assert.strictEqual(tree.gridC, trees[i].gridC);
+      assert.strictEqual(tree.plantedAtTimestamp, trees[i].plantedAtTimestamp);
+      assert.ok(TREE_SPECIES.includes(tree.treeType));
+    });
+    assert.strictEqual(migrated[0].treeType, 'banana');
+    assert.strictEqual(migrated[1].treeType, 'mango');
+    assert.deepEqual(loadAppState().progress.trees, migrated);
+  } finally {
+    if (original === null) localStorage.removeItem(key);
+    else localStorage.setItem(key, original);
+  }
+});
+
+runTest('Uji 96: Lima jenis pohon tersedia dalam penanaman dan memiliki gambar yang berbeda', () => {
+  assert.deepEqual([...new Set(PLANTING_SLOTS.map(slot => slot.type))].sort(), [...TREE_SPECIES].sort());
+  const signatures = new Set<string>();
+  for (const species of TREE_SPECIES) {
+    const canvas = createMockCanvas();
+    const ctx = canvas.getContext('2d')!;
+    const marks: string[] = [];
+    ctx.fillRect = (x, y, w, h) => marks.push([ctx.fillStyle, x, y, w, h].join(':'));
+    for (const season of ['spring', 'summer', 'autumn', 'winter'] as const) {
+      TREE_RENDERERS[species](ctx, 0, 0, 1, 0, season);
+    }
+    assert.ok(marks.length > 20);
+    signatures.add(marks.join('|'));
+  }
+  assert.strictEqual(signatures.size, 5);
+});
+
+runTest('Uji 97: Setiap empat sesi memakai rehat panjang 15 menit, lalu kembali ke rehat pendek', () => {
+  const plan = buildPomodoroPlan(260, 25, 5);
+  const breaks = plan.phases.filter(p => p.type === 'break');
+  assert.deepEqual(breaks.map(p => p.durationMin), [5, 5, 5, 15, 5, 5, 5, 15]);
+  assert.deepEqual(breaks.filter(p => p.breakKind === 'long').map(p => p.id), [8, 16]);
+  assert.equal(getNextPhaseLabel(plan, 6, DEFAULT_POMODORO_CONFIG), 'Berikutnya: Istirahat panjang 15 menit · otomatis');
+  assert.equal(plan.totalFocusMin + plan.totalBreakMin, 260);
+  const clippedPhases = buildPomodoroPlan(120, 25, 5).phases;
+  const clipped = clippedPhases[clippedPhases.length - 1];
+  assert.equal(clipped.breakKind, 'long');
+  assert.equal(clipped.durationMin, 5);
+  assert.equal(clipped.isShortened, true);
+});
+
+runTest('Uji 98: Rehat panjang dapat menunggu, dipulihkan, dan dilanjutkan ke fokus berikutnya', () => {
+  const config = { ...DEFAULT_POMODORO_CONFIG, totalDurationMin: 260, focusDurationMin: 25, breakDurationMin: 5, autostartBreak: false };
+  const engine = new PomodoroEngine(config);
+  const snapshot = { scheduleVersion: 2, phaseIndex: 7, status: 'waiting_next' as const,
+    phaseRemainingSeconds: 900, targetEndTime: null, savedAt: Date.now(),
+    totalDurationMin: 260, focusDurationMin: 25, breakDurationMin: 5 };
+  assert.ok(engine.restoreFromSnapshot(sanitizeTimerSnapshot(snapshot)!));
+  assert.equal(engine.getCurrentPhase()?.breakKind, 'long');
+  assert.equal(engine.getSnapshot()?.phaseRemainingSeconds, 900);
+  engine.skipCurrentPhase();
+  assert.equal(engine.getCurrentPhase()?.type, 'focus');
+  engine.reset();
+  assert.equal(engine.restoreFromSnapshot({ ...snapshot, scheduleVersion: undefined }), false);
+  assert.equal(sanitizeTimerSnapshot({ ...snapshot, scheduleVersion: undefined }), null);
+});
+
+runTest('Uji 99: Sentuhan di bawah 30 persen tidak membuat pohon transparan', () => {
+  const rear = { x: 0, y: 60, treeType: 'banana' as const, scale: 1 };
+  // Half the height overlaps: 58% of width gives 29% of the rear bounds.
+  assert.equal(coversRearTree({ ...rear, x: 48 * 0.42, y: 83 }, rear), false);
+  assert.equal(coversRearTree({ ...rear, x: 48 * 0.38, y: 83 }, rear), true);
+  const tree = { ...rear, y: 80 };
+  assert.equal(coversMomo(tree, { x: 31 - 14 * 0.29, y: 65 }), false);
+  assert.equal(coversMomo(tree, { x: 31 - 14 * 0.31, y: 65 }), true);
+  assert.equal(getTreeOpacity(tree, [tree], { x: 31 - 14 * 0.29, y: 65 }, false), 1);
+  assert.equal(getTreeOpacity(tree, [tree], { x: 0, y: 65 }, true), 1);
+});
+
+runTest('Uji 100: Pengaturan menolak kosong, nol, pecahan dan durasi di luar batas tanpa mengganti nilai', () => {
+  const base = { hours: '1', minutes: '7', focus: '25', rest: '5' };
+  assert.deepEqual(parseSettingsDuration(base), { valid: true, total: 67, focus: 25, rest: 5 });
+  for (const hours of ['', ' ', '-1', '1.5', '25', 'abc', 'Infinity']) {
+    assert.equal(parseSettingsDuration({ ...base, hours }).valid, false, hours);
+  }
+  for (const patch of [{ minutes: '60' }, { hours: '24', minutes: '1' }, { hours: '0', minutes: '0' }, { hours: '1.5' }]) {
+    assert.equal(parseSettingsDuration({ ...base, ...patch }).valid, false);
+  }
+  assert.equal(parseSettingsDuration({ ...base, hours: '24', minutes: '0' }).valid, true);
+});
+
+runTest('Uji 101: Preferensi musim, suara dan autostart mempertahankan fase serta sisa timer', () => {
+  const config = { ...DEFAULT_POMODORO_CONFIG, totalDurationMin: 130 };
+  for (const status of ['paused', 'waiting_next', 'running'] as const) {
+    const engine = new PomodoroEngine(config);
+    const snapshot = { scheduleVersion: 2, phaseIndex: 3, status, phaseRemainingSeconds: 123,
+      targetEndTime: status === 'running' ? Date.now() + 123000 : null, savedAt: Date.now(),
+      totalDurationMin: 130, focusDurationMin: config.focusDurationMin, breakDurationMin: config.breakDurationMin };
+    assert.ok(engine.restoreFromSnapshot(snapshot));
+    const before = engine.getSnapshot();
+    const next = { ...config, seasonMode: 'manual' as const, soundEnabled: false, autostartNextFocus: false };
+    assert.equal(hasScheduleChanged(config, next), false);
+    engine.updateConfig(next);
+    assert.equal(engine.getStatus(), status);
+    assert.equal(engine.getCurrentPhaseIndex(), 3);
+    assert.equal(engine.getSnapshot()?.targetEndTime, before?.targetEndTime);
+    assert.equal(engine.getSnapshot()?.phaseRemainingSeconds, before?.phaseRemainingSeconds);
+    engine.reset();
+  }
+  for (const patch of [{ totalDurationMin: 60 }, { focusDurationMin: 20 }, { breakDurationMin: 10 }]) {
+    assert.equal(hasScheduleChanged(config, { ...config, ...patch }), true);
+  }
+});
+
+runTest('Uji 102: Pengaturan preferensi tidak menghidupkan kembali rencana yang sudah selesai', () => {
+  const config = { ...DEFAULT_POMODORO_CONFIG, totalDurationMin: 1 };
+  const engine = new PomodoroEngine(config);
+  engine.skipCurrentPhase();
+  assert.equal(engine.getStatus(), 'completed');
+  engine.updateConfig({ ...config, seasonMode: 'manual' });
+  assert.equal(engine.getStatus(), 'completed');
+});
+
+runTest('Uji 103: Penyimpanan melaporkan kegagalan dan mempertahankan data terakhir yang berhasil', () => {
+  const state = getDefaultAppState();
+  state.config.dailyWaterTargetMl = 1700;
+  state.config.hydrationReminderIntervalMin = 33;
+  state.config.soundEnabled = false;
+  assert.equal(saveAppState(state), true);
+  const storage = globalThis.localStorage;
+  const original = storage.setItem;
+  try {
+    storage.setItem = () => { throw new Error('storage full'); };
+    assert.equal(saveAppState({ ...state, config: { ...state.config, dailyWaterTargetMl: 3000 } }), false);
+  } finally { storage.setItem = original; }
+  const loaded = loadAppState();
+  assert.equal(loaded.config.dailyWaterTargetMl, 1700);
+  assert.equal(loaded.config.hydrationReminderIntervalMin, 33);
+  assert.equal(loaded.config.soundEnabled, false);
+});
+
+await runTestAsync('Uji 104: Startup yang tidak tersedia dibedakan dari status nonaktif', async () => {
+  assert.equal(await isAutostartEnabled(), null);
+});
+
+runTest('Uji 105: Target fokus menambahkan rehat utuh di luar target dengan pola tetap 25/5/15', () => {
+  for (const target of [1, 15, 25, 60, 100, 120, 200, 1440]) {
+    const plan = buildFocusTargetPlan(target);
+    assert.equal(plan.totalFocusMin, target);
+    assert.equal(plan.totalDurationMin, target + plan.totalBreakMin);
+    const focus = plan.phases.filter(p => p.type === 'focus');
+    assert.ok(focus.slice(0, -1).every(p => p.durationMin === 25));
+    let count = 0;
+    for (const phase of plan.phases) {
+      if (phase.type === 'focus') count++;
+      else {
+        assert.equal(phase.durationMin, count % 4 === 0 ? 15 : 5);
+        assert.equal(phase.isShortened, false);
+      }
+    }
+  }
+  assert.equal(buildFocusTargetPlan(60).totalDurationMin, 70);
+  assert.equal(buildFocusTargetPlan(100).totalDurationMin, 130);
+  assert.equal(buildFocusTargetPlan(200).totalDurationMin, 260);
+  assert.deepEqual(parseSettingsDuration({ hours: '1', minutes: '0' }), { valid: true, total: 60, focus: 25, rest: 5 });
+});
+
+runTest('Uji 106: Pengaturan lama beralih ke pola tetap dan rencana baru dapat dipulihkan', () => {
+  const legacy = { ...DEFAULT_POMODORO_CONFIG, totalDurationMin: 60, focusDurationMin: 20, breakDurationMin: 10 };
+  const config = sanitizePomodoroConfig(legacy);
+  assert.equal(config.focusDurationMin, 25);
+  assert.equal(config.breakDurationMin, 5);
+  assert.equal(config.focusTargetMin, buildPomodoroPlan(60, 20, 10).totalFocusMin);
+  const fixed = sanitizePomodoroConfig({ ...config, focusTargetMin: 1440 });
+  const plan = buildFocusTargetPlan(1440);
+  assert.equal(fixed.totalDurationMin, plan.totalDurationMin);
+  const engine = new PomodoroEngine(fixed);
+  const snapshot = { scheduleVersion: 3, focusTargetMin: 1440, phaseIndex: 7,
+    status: 'paused' as const, phaseRemainingSeconds: 900, targetEndTime: null, savedAt: Date.now(),
+    totalDurationMin: plan.totalDurationMin, focusDurationMin: 25, breakDurationMin: 5 };
+  assert.ok(engine.restoreFromSnapshot(sanitizeTimerSnapshot(snapshot)!));
+  assert.equal(engine.getCurrentPhase()?.breakKind, 'long');
+  assert.equal(engine.getSnapshot()?.focusTargetMin, 1440);
+  assert.equal(engine.restoreFromSnapshot({ ...snapshot, focusTargetMin: 100 }), false);
+});
+
+runTest('Uji 107: Sampul terlambat dicoba ulang tanpa permintaan paralel dan berhenti setelah berhasil', () => {
+  let now = 0;
+  const retry = new ArtworkRetry(() => now);
+  assert.equal(retry.begin('spotify#a', false), true);
+  assert.equal(retry.begin('spotify#a', false), false);
+  retry.finish('spotify#a', false);
+  assert.equal(retry.begin('spotify#a', false), false);
+  now = 1000;
+  assert.equal(retry.begin('spotify#a', false), true);
+  retry.finish('spotify#a', false);
+  now = 1500;
+  assert.equal(retry.begin('spotify#a', true), true, 'Thumbnail baru melewati jeda retry');
+  retry.finish('spotify#a', true);
+  now = 100_000;
+  assert.equal(retry.begin('spotify#a', true), false);
+});
+
+runTest('Uji 108: Pergantian sesi menolak hasil retry lama dan disconnect mengizinkan pemulihan', () => {
+  const retry = new ArtworkRetry(() => 0);
+  assert.equal(retry.begin('spotify#a', true), true);
+  assert.equal(retry.begin('spotify#b', true), true);
+  retry.finish('spotify#a', true);
+  assert.equal(retry.begin('spotify#b', true), false, 'Permintaan B masih berjalan');
+  retry.finish('spotify#b', true);
+  retry.reset();
+  assert.equal(retry.begin('spotify#b', true), true);
+});
+
+await runTestAsync('Uji 109: Fallback kosong tidak di-cache permanen dan dapat pulih setelah cooldown', async () => {
+  const service = new LyricsService();
+  const fetchBefore = globalThis.fetch;
+  const dateBefore = Date.now;
+  let now = 1000;
+  let requests = 0;
+  let available = false;
+  const updates: TrackArtworkInfo[] = [];
+  service.subscribeArtwork(info => updates.push(info));
+  const meta = { identityKey: 'spotify#retry', title: 'Test Song', artist: 'Test Artist', album: 'Test Album', durationSecs: 180 };
+  try {
+    Date.now = () => now;
+    globalThis.fetch = (async () => {
+      requests++;
+      return { ok: true, json: async () => ({ data: available ? [{ title: meta.title,
+        artist: { name: meta.artist }, album: { title: meta.album, cover_medium: 'https://example.com/cover.jpg' }, duration: 180 }] : [], results: [] }) } as Response;
+    }) as typeof fetch;
+    service.onSystemRecordChanged(meta.identityKey, meta, false);
+    await service.requestSearchArtworkFallback(meta);
+    assert.equal(requests, 2);
+    available = true;
+    await service.requestSearchArtworkFallback(meta);
+    assert.equal(requests, 2, 'Cooldown mencegah request setiap polling');
+    now += 30_000;
+    await service.requestSearchArtworkFallback(meta);
+    assert.equal(requests, 3);
+    assert.equal(updates[updates.length - 1]?.source, 'search');
+    assert.equal(updates[updates.length - 1]?.albumArtUrl, 'https://example.com/cover.jpg');
+  } finally {
+    Date.now = dateBefore;
+    globalThis.fetch = fetchBefore;
+    service.clear();
+  }
+});
+
+await runTestAsync('Uji 110: Fallback yang lambat tidak menimpa thumbnail sesi yang sudah pulih', async () => {
+  const service = new LyricsService();
+  const fetchBefore = globalThis.fetch;
+  const updates: TrackArtworkInfo[] = [];
+  service.subscribeArtwork(info => updates.push(info));
+  const meta = { identityKey: 'spotify#race', title: 'Test Song', artist: 'Test Artist', durationSecs: 180 };
+  let resolveFetch!: (response: Response) => void;
+  try {
+    globalThis.fetch = (() => new Promise<Response>(resolve => { resolveFetch = resolve; })) as typeof fetch;
+    service.onSystemRecordChanged(meta.identityKey, meta, false);
+    const pending = service.requestSearchArtworkFallback(meta);
+    assert.equal(service.applySessionArtworkData(meta.identityKey, PNG_1X1_BASE64, 'image/png', meta), true);
+    resolveFetch({ ok: true, json: async () => ({ data: [{ title: meta.title, artist: { name: meta.artist },
+      album: { cover_medium: 'https://example.com/fallback.jpg' }, duration: 180 }] }) } as Response);
+    await pending;
+    assert.equal(updates[updates.length - 1]?.source, 'session');
+    assert.ok(updates[updates.length - 1]?.albumArtUrl?.startsWith('blob:'));
+  } finally {
+    globalThis.fetch = fetchBefore;
+    service.clear();
+  }
+});
+
+runTest('Uji 111: Jeda retry sampul dibatasi 30 detik meskipun sumber terus gagal', () => {
+  let now = 0;
+  const retry = new ArtworkRetry(() => now);
+  for (let attempt = 0; attempt < 12; attempt++) {
+    assert.equal(retry.begin('spotify#missing', false), true);
+    retry.finish('spotify#missing', false);
+    const delay = Math.min(30_000, 1000 * 2 ** Math.min(attempt, 5));
+    now += delay - 1;
+    assert.equal(retry.begin('spotify#missing', false), false);
+    now++;
+  }
+});
+
+await runTestAsync('Uji 112: Hasil fallback dari lagu lama tidak mengisi sampul lagu baru', async () => {
+  const service = new LyricsService();
+  const fetchBefore = globalThis.fetch;
+  const updates: TrackArtworkInfo[] = [];
+  service.subscribeArtwork(info => updates.push(info));
+  const meta = { identityKey: 'spotify#old', title: 'Old Song', artist: 'Test Artist', durationSecs: 180 };
+  let resolveFetch!: (response: Response) => void;
+  try {
+    globalThis.fetch = (() => new Promise<Response>(resolve => { resolveFetch = resolve; })) as typeof fetch;
+    service.onSystemRecordChanged(meta.identityKey, meta, false);
+    const pending = service.requestSearchArtworkFallback(meta);
+    service.onSystemRecordChanged('spotify#new', { title: 'New Song', artist: meta.artist }, false);
+    resolveFetch({ ok: true, json: async () => ({ data: [{ title: meta.title, artist: { name: meta.artist },
+      album: { cover_medium: 'https://example.com/old.jpg' }, duration: 180 }] }) } as Response);
+    await pending;
+    assert.equal(updates[updates.length - 1]?.artworkKey, 'spotify#new');
+    assert.equal(updates[updates.length - 1]?.albumArtUrl, null);
+  } finally {
+    globalThis.fetch = fetchBefore;
+    service.clear();
+  }
+});
+
+await runTestAsync('Uji 113: Layanan lirik HTTP 503 menampilkan error dan pulih melalui retry', async () => {
+  const service = new LyricsService();
+  const originalFetch = globalThis.fetch;
+  const originalNow = Date.now;
+  const updates: import('../src/audio/lyricsService').LyricsLinesUpdate[] = [];
+  service.subscribe(update => updates.push(update));
+  let now = 1000;
+  let requests = 0;
+  let available = false;
+  const meta = { title: 'New Song', artist: 'Test Artist', album: 'New Album', durationSecs: 180 };
+  try {
+    Date.now = () => now;
+    service.onSystemRecordChanged('spotify#http', meta, false);
+    globalThis.fetch = (async url => {
+      requests++;
+      return available
+        ? { ok: true, json: async () => ({ ...lyricRequestMetadata(url), syncedLyrics: '[00:00]Lirik pulih' }) } as Response
+        : { ok: false, status: 503 } as Response;
+    }) as typeof fetch;
+    await service.loadLyrics(meta.title, meta.artist, meta.album, true, 1, meta.durationSecs);
+    assert.equal(updates[0]?.loadStatus, 'loading');
+    assert.equal(updates[updates.length - 1]?.loadStatus, 'error');
+    assert.equal(requests, 1);
+    available = true;
+    await service.loadLyrics(meta.title, meta.artist, meta.album, true, 2, meta.durationSecs);
+    assert.equal(requests, 1);
+    now += 6000;
+    await service.loadLyrics(meta.title, meta.artist, meta.album, true, 3, meta.durationSecs);
+    assert.equal(requests, 2);
+    assert.equal(updates[updates.length - 1]?.highlight, 'Lirik pulih');
+    assert.equal(updates[updates.length - 1]?.isSynced, true);
+  } finally {
+    Date.now = originalNow;
+    globalThis.fetch = originalFetch;
+    service.clear();
+  }
+});
+
+await runTestAsync('Uji 114: Lagu baru tanpa lirik menampilkan alasan, bukan panel kosong', async () => {
+  const service = new LyricsService();
+  const originalFetch = globalThis.fetch;
+  const updates: import('../src/audio/lyricsService').LyricsLinesUpdate[] = [];
+  service.subscribe(update => updates.push(update));
+  const meta = { title: 'Missing Song', artist: 'Test Artist' };
+  let requests = 0;
+  try {
+    service.onSystemRecordChanged('spotify#missing-lyrics', meta, false);
+    globalThis.fetch = (async url => {
+      requests++;
+      return String(url).includes('/api/get?') ? { ok: false, status: 404 } as Response
+        : { ok: true, json: async () => [] } as unknown as Response;
+    }) as typeof fetch;
+    await service.loadLyrics(meta.title, meta.artist, '', true, 0, 180);
+    const last = updates[updates.length - 1];
+    assert.equal(last.loadStatus, 'not_found');
+    assert.equal(last.highlight, 'Lirik belum tersedia');
+    await service.loadLyrics(meta.title, meta.artist, '', true, 1, 180);
+    assert.equal(requests, 3, 'Tidak mengulang pencarian kosong pada setiap polling');
+  } finally {
+    globalThis.fetch = originalFetch;
+    service.clear();
+  }
+});
+
+await runTestAsync('Uji 115: Ganti A ke B lalu A saat download tertunda tidak menggandakan request atau menampilkan B', async () => {
+  const service = new LyricsService();
+  const originalFetch = globalThis.fetch;
+  const updates: import('../src/audio/lyricsService').LyricsLinesUpdate[] = [];
+  service.subscribe(update => updates.push(update));
+  const pending: { title: string | null; finish: (response: Response) => void; url: string }[] = [];
+  try {
+    service.onSystemRecordChanged('spotify#a', { title: 'Song A', artist: 'Artist' }, false);
+    globalThis.fetch = (url => new Promise<Response>(finish => {
+      pending.push({ title: lyricRequestMetadata(url).trackName, finish, url: String(url) });
+    })) as typeof fetch;
+    const a = service.loadLyrics('Song A', 'Artist', 'Album', true, 0, 180);
+    const b = service.loadLyrics('Song B', 'Artist', 'Album', true, 0, 180);
+    await service.loadLyrics('Song A', 'Artist', 'Album', true, 5, 180);
+    assert.equal(pending.length, 2, 'Request A yang masih berjalan dipakai kembali');
+    const bRequest = pending.find(request => request.title === 'Song B')!;
+    bRequest.finish({ ok: true, json: async () => ({ ...lyricRequestMetadata(bRequest.url), syncedLyrics: '[00:00]Lirik B' }) } as Response);
+    await b;
+    assert.equal(updates[updates.length - 1]?.loadStatus, 'loading');
+    assert.ok(!updates.some(update => update.highlight === 'Lirik B'));
+    const aRequest = pending.find(request => request.title === 'Song A')!;
+    aRequest.finish({ ok: true, json: async () => ({ ...lyricRequestMetadata(aRequest.url), syncedLyrics: '[00:00]Awal A\n[00:04]Lirik A saat ini' }) } as Response);
+    await a;
+    assert.equal(updates[updates.length - 1]?.highlight, 'Lirik A saat ini');
+  } finally {
+    globalThis.fetch = originalFetch;
+    service.clear();
+  }
+});
+
+runTest('Uji 116: Clock musik mengikuti playback rate, termasuk pause rate nol', () => {
+  assert.equal(advancePlayback(10, 2, 0, 1.5).position, 13);
+  assert.equal(advancePlayback(10, 2, 0, 0).position, 10);
+});
+
+runTest('Uji 117: Hover opsional memakai jeda dan tidak menutup saat kontrol dipakai', () => {
+  const hover = new HoverIntent();
+  assert.equal(hover.update(true, false, false, 'compact', 0), null);
+  assert.equal(hover.update(true, true, false, 'compact', 100), null);
+  assert.equal(hover.update(true, true, false, 'compact', 249), null);
+  assert.equal(hover.update(true, true, false, 'compact', 250), 'expand');
+  assert.equal(hover.update(false, true, false, 'expanded', 300), null);
+  assert.equal(hover.update(false, true, true, 'expanded', 800), null);
+  assert.equal(hover.update(false, true, false, 'expanded', 900), null);
+  assert.equal(hover.update(false, true, false, 'expanded', 1300), 'collapse');
+  assert.equal(hover.update(true, true, false, 'hidden', 2000), null);
+});
+
+runTest('Uji 118: Offset lirik disimpan per rekaman, dibatasi, dan gagal simpan tidak diterapkan', () => {
+  localStorage.removeItem('moss_lyrics_offsets_v1');
+  const timing = new LyricsTiming();
+  assert.equal(timing.set('record-a', 0.5), true);
+  assert.equal(timing.set('record-b', -99), true);
+  assert.equal(new LyricsTiming().get('record-a'), 0.5);
+  assert.equal(timing.get('record-b'), -10);
+  assert.equal(timing.set('record-a', NaN), false);
+  const originalSet = localStorage.setItem;
+  try {
+    localStorage.setItem = () => { throw new Error('disk full'); };
+    assert.equal(timing.set('record-a', 4), false);
+    assert.equal(timing.get('record-a'), 0.5);
+  } finally {
+    localStorage.setItem = originalSet;
+    localStorage.removeItem('moss_lyrics_offsets_v1');
+  }
+});
+
+await runTestAsync('Uji 119: Koreksi lirik menggeser baris tanpa menggeser posisi pemutar', async () => {
+  const service = new LyricsService();
+  const originalFetch = globalThis.fetch;
+  const updates: import('../src/audio/lyricsService').LyricsLinesUpdate[] = [];
+  service.subscribe(update => updates.push(update));
+  try {
+    service.onSystemRecordChanged('spotify#timing', { title: 'Timing', artist: 'Artist' }, false);
+    globalThis.fetch = (async url => ({ ok: true, json: async () => ({ ...lyricRequestMetadata(url),
+      syncedLyrics: '[00:00]Satu\n[00:01]Dua' }) } as Response)) as typeof fetch;
+    await service.loadLyrics('Timing', 'Artist', 'Album', true, 0.5, 180);
+    assert.equal(updates[updates.length - 1]?.highlight, 'Satu');
+    assert.equal(service.adjustTiming(0.5), true);
+    assert.equal(updates[updates.length - 1]?.highlight, 'Dua');
+    assert.equal((service as any).currentPositionSecs, 0.5);
+    assert.equal(service.adjustTiming(0, true), true);
+    assert.equal(updates[updates.length - 1]?.highlight, 'Satu');
+  } finally {
+    globalThis.fetch = originalFetch;
+    service.clear();
+    localStorage.removeItem('moss_lyrics_offsets_v1');
+  }
+});
+
+await runTestAsync('Uji 120: Desktop meminta lirik melalui command terbatas, bukan fetch WebView', async () => {
+  const originalFetch = globalThis.fetch;
+  const calls = installMockTauriInternals(cmd => cmd === 'fetch_lyrics' ? { status: 429, body: null } : null);
+  try {
+    globalThis.fetch = (() => { throw new Error('WebView fetch tidak boleh dipakai'); }) as typeof fetch;
+    await assert.rejects(requestLyrics('search', new URLSearchParams({ track_name: 'Song & Title', artist_name: 'Artist' })),
+      error => error instanceof LyricsCooldownError && error.status === 429);
+    // Polling bridge dari tes lama bisa menyela log; kontraknya adalah satu fetch_lyrics yang tepat.
+    const lyricCalls = calls.filter(call => call.cmd === 'fetch_lyrics');
+    assert.equal(lyricCalls.length, 1);
+    assert.deepEqual(lyricCalls[0].args.params, [['track_name', 'Song & Title'], ['artist_name', 'Artist']]);
+  } finally { globalThis.fetch = originalFetch; removeMockTauriInternals(); }
+});
+
+runTest('Uji 121: Pencocokan artis menerima separator kolaborasi, bukan artis yang hilang atau versi live', () => {
+  const service = new LyricsService() as any;
+  const item = { trackName: "Don't Stop", artistName: 'Artist A feat. Artist B', duration: 180, plainLyrics: 'lirik' };
+  assert.equal(service.selectBestRecordMatch([item], '', 180, 'Don’t Stop', 'Artist B, Artist A'), item);
+  assert.equal(service.selectBestRecordMatch([item], '', 180, 'Don’t Stop', 'Artist A'), null);
+  assert.equal(service.selectBestRecordMatch([{ ...item, trackName: "Don't Stop (Live)" }], '', 180, 'Don’t Stop', 'Artist B, Artist A'), null);
+  service.clear();
+});
+
+await runTestAsync('Uji 122: Pilihan sesi mengikat polling dan repeat, tanpa mengubah status repeat saat ditolak', async () => {
+  const track: SystemMediaTrack = { title: 'Chosen Song', artist: 'Artist', album: 'Album', is_playing: true,
+    source_app: 'Spotify.exe', source_display_name: 'Spotify', service_kind: 'spotify_desktop', is_spotify: true,
+    has_session: true, session_key: 'chosen-session', record_key: 'chosen-record', has_thumbnail: false,
+    position_secs: 5, duration_secs: 180, repeat_mode: 'off',
+    capabilities: { toggle: true, next: true, previous: false, seek: true, repeat: true } };
+  const calls = installMockTauriInternals(cmd => cmd === 'get_system_media_track' ? track
+    : cmd === 'get_system_media_sessions' ? [track] : false);
+  const bridge = new SystemMediaBridge();
+  try {
+    await bridge.selectSession('chosen-session');
+    assert.equal(bridge.getCurrentTrack()?.session_key, 'chosen-session');
+    assert.ok(calls.some(c => c.cmd === 'get_system_media_track' && c.args.sessionKey === 'chosen-session'));
+    assert.equal((await bridge.listSessions()).length, 1);
+    assert.equal(await bridge.setRepeat('all'), false);
+    assert.equal(bridge.getCurrentTrack()?.repeat_mode, 'off');
+    const repeatCall = calls.find(c => c.cmd === 'system_media_repeat');
+    assert.equal(repeatCall?.args.sessionKey, 'chosen-session');
+    assert.equal(repeatCall?.args.mode, 'all');
+    await bridge.selectSession('local');
+    assert.equal(bridge.getCurrentTrack(), null);
+    assert.equal(await bridge.setRepeat('one'), false);
+  } finally { removeMockTauriInternals(); }
+});
+
+await runTestAsync('Uji 123: Lirik dimuat ulang otomatis setelah pencarian kosong tanpa tombol manual', async () => {
+  const service = new LyricsService();
+  const originalFetch = globalThis.fetch;
+  const originalNow = Date.now;
+  let now = 1000;
+  const updates: import('../src/audio/lyricsService').LyricsLinesUpdate[] = [];
+  service.subscribe(update => updates.push(update));
+  let available = false;
+  try {
+    Date.now = () => now;
+    service.onSystemRecordChanged('spotify#manual-retry', { title: 'Retry Song', artist: 'Artist' }, false);
+    globalThis.fetch = (async url => available
+      ? { ok: true, json: async () => ({ ...lyricRequestMetadata(url), syncedLyrics: '[00:00]Tersedia sekarang' }) } as Response
+      : String(url).includes('/api/get?') ? { ok: false, status: 404 } as Response
+      : { ok: true, json: async () => [] } as unknown as Response) as typeof fetch;
+    await service.loadLyrics('Retry Song', 'Artist', 'Album', true, 5, 180);
+    assert.equal(updates[updates.length - 1]?.loadStatus, 'not_found');
+    available = true;
+    now += 60_000;
+    await service.loadLyrics('Retry Song', 'Artist', 'Album', true, 6, 180);
+    assert.equal(updates[updates.length - 1]?.highlight, 'Tersedia sekarang');
+  } finally { Date.now = originalNow; globalThis.fetch = originalFetch; service.clear(); }
+});
+
+await runTestAsync('Uji 124: Album pemutar yang berbeda tidak menghalangi lookup presisi judul, artis dan durasi', async () => {
+  const service = new LyricsService();
+  const originalFetch = globalThis.fetch;
+  const queries: URL[] = [];
+  const updates: import('../src/audio/lyricsService').LyricsLinesUpdate[] = [];
+  service.subscribe(update => updates.push(update));
+  try {
+    service.onSystemRecordChanged('spotify#album-label', { title: 'Oceans & Engines', artist: 'NIKI' }, false);
+    globalThis.fetch = (async url => {
+      const query = new URL(String(url));
+      queries.push(query);
+      if (query.searchParams.has('album_name')) return { ok: false, status: 404 } as Response;
+      return { ok: true, status: 200, json: async () => ({ ...lyricRequestMetadata(url), albumName: 'Nicole',
+        syncedLyrics: '[00:00]TEST · kecocokan presisi' }) } as Response;
+    }) as typeof fetch;
+    await service.loadLyrics('Oceans & Engines', 'NIKI', 'Label album pemutar', true, 1, 336);
+    assert.equal(queries.length, 2);
+    assert.equal(queries[1].pathname, '/api/get');
+    assert.equal(queries[1].searchParams.get('duration'), '336');
+    assert.equal(queries[1].searchParams.has('album_name'), false);
+    assert.equal(updates[updates.length - 1]?.highlight, 'TEST · kecocokan presisi');
+  } finally { globalThis.fetch = originalFetch; service.clear(); }
+});
+
+await runTestAsync('Uji 125: Heaven Classic tetap menampilkan teks ketika pencarian timestamp gagal HTTP 503', async () => {
+  const service = new LyricsService();
+  const originalFetch = globalThis.fetch;
+  const updates: import('../src/audio/lyricsService').LyricsLinesUpdate[] = [];
+  service.subscribe(update => updates.push(update));
+  const meta = { title: 'Heaven (Classic Version)', artist: 'Bryan Adams', album: 'Classic', durationSecs: 263 };
+  let requests = 0;
+  try {
+    service.onSystemRecordChanged('spotify#heaven-classic', meta, false);
+    globalThis.fetch = (async url => {
+      requests++;
+      return String(url).includes('/api/get?')
+        ? { ok: true, status: 200, json: async () => ({ ...lyricRequestMetadata(url), syncedLyrics: null, plainLyrics: 'TEST · teks tanpa timestamp' }) } as Response
+        : { ok: false, status: 503 } as Response;
+    }) as typeof fetch;
+    await service.loadLyrics(meta.title, meta.artist, meta.album, true, 10, meta.durationSecs);
+    assert.equal(requests, 2);
+    const last = updates[updates.length - 1];
+    assert.equal(last.isSynced, false);
+    assert.equal(last.highlight, 'TEST · teks tanpa timestamp');
+    assert.equal(last.loadStatus, undefined);
+    assert.equal(last.isLoading, false);
+    assert.ok(updates.some(update => update.highlight === 'TEST · teks tanpa timestamp' && update.isLoading));
+    assert.equal(updates.some(update => update.loadStatus === 'error'), false);
+    service.syncPosition(120, true);
+    assert.equal(updates[updates.length - 1]?.highlight, 'TEST · teks tanpa timestamp');
+  } finally { globalThis.fetch = originalFetch; service.clear(); }
+});
+
+await runTestAsync('Uji 126: GET lirik biasa dapat ditingkatkan ke sinkron hanya untuk rekaman yang cocok', async () => {
+  const service = new LyricsService();
+  const originalFetch = globalThis.fetch;
+  const updates: import('../src/audio/lyricsService').LyricsLinesUpdate[] = [];
+  service.subscribe(update => updates.push(update));
+  const meta = { title: 'Heaven (Classic Version)', artist: 'Bryan Adams', album: 'Classic', durationSecs: 263 };
+  try {
+    service.onSystemRecordChanged('spotify#same-version', meta, false);
+    globalThis.fetch = (async url => {
+      const record = { trackName: meta.title, artistName: meta.artist, albumName: meta.album, duration: meta.durationSecs,
+        plainLyrics: 'TEST · teks biasa', syncedLyrics: String(url).includes('/api/search?') ? '[00:00]TEST · awal\n[00:10]TEST · timestamp cocok' : null };
+      return { ok: true, status: 200, json: async () => String(url).includes('/api/get?') ? record : [record] } as Response;
+    }) as typeof fetch;
+    await service.loadLyrics(meta.title, meta.artist, meta.album, true, 11, meta.durationSecs);
+    assert.ok(updates.some(update => update.highlight === 'TEST · teks biasa'));
+    assert.equal(updates[updates.length - 1]?.isSynced, true);
+    assert.equal(updates[updates.length - 1]?.highlight, 'TEST · timestamp cocok');
+  } finally { globalThis.fetch = originalFetch; service.clear(); }
+});
+
+await runTestAsync('Uji 127: Timestamp Heaven versi lain tidak dipaksakan ke Classic walaupun durasinya sama', async () => {
+  const service = new LyricsService();
+  const originalFetch = globalThis.fetch;
+  const updates: import('../src/audio/lyricsService').LyricsLinesUpdate[] = [];
+  service.subscribe(update => updates.push(update));
+  const meta = { title: 'Heaven (Classic Version)', artist: 'Bryan Adams', album: 'Classic', durationSecs: 263 };
+  try {
+    service.onSystemRecordChanged('spotify#wrong-version', meta, false);
+    globalThis.fetch = (async url => ({ ok: true, status: 200, json: async () => String(url).includes('/api/get?')
+      ? { ...lyricRequestMetadata(url), plainLyrics: 'TEST · teks Classic', syncedLyrics: null }
+      : [ { trackName: 'Heaven', artistName: meta.artist, albumName: 'Classic CD1', duration: 263, syncedLyrics: '[00:00]SALAH' },
+          { trackName: 'Heaven (Live)', artistName: meta.artist, albumName: meta.album, duration: 263, syncedLyrics: '[00:00]SALAH LIVE' } ] }) as Response) as typeof fetch;
+    await service.loadLyrics(meta.title, meta.artist, meta.album, true, 11, meta.durationSecs);
+    assert.equal(updates[updates.length - 1]?.highlight, 'TEST · teks Classic');
+    assert.equal(updates[updates.length - 1]?.isSynced, false);
+    assert.equal(updates.some(update => update.highlight.includes('SALAH')), false);
+  } finally { globalThis.fetch = originalFetch; service.clear(); }
+});
+
+await runTestAsync('Uji 128: Timestamp pulih otomatis dengan backoff tanpa menghilangkan lirik biasa', async () => {
+  const service = new LyricsService();
+  const originalFetch = globalThis.fetch;
+  const originalNow = Date.now;
+  const updates: import('../src/audio/lyricsService').LyricsLinesUpdate[] = [];
+  service.subscribe(update => updates.push(update));
+  const meta = { title: 'Heaven (Classic Version)', artist: 'Bryan Adams', album: 'Classic', durationSecs: 263 };
+  let now = 1000;
+  let mode: 'plain' | 'offline' | 'synced' = 'plain';
+  let requests = 0;
+  try {
+    Date.now = () => now;
+    service.onSystemRecordChanged('spotify#auto-timed', meta, false);
+    globalThis.fetch = (async url => {
+      requests++;
+      if (mode === 'offline') throw new Error('TEST · offline');
+      if (String(url).includes('/api/get?')) return { ok: true, status: 200, json: async () => ({
+        ...lyricRequestMetadata(url), plainLyrics: 'TEST · teks dipertahankan',
+        syncedLyrics: mode === 'synced' ? '[00:00]TEST · sinkron otomatis' : null,
+      }) } as Response;
+      return { ok: false, status: 503 } as Response;
+    }) as typeof fetch;
+    await service.loadLyrics(meta.title, meta.artist, meta.album, true, 10, meta.durationSecs);
+    const initialRequests = requests;
+    now += 29_999;
+    await service.loadLyrics(meta.title, meta.artist, meta.album, true, 11, meta.durationSecs);
+    assert.equal(requests, initialRequests);
+    mode = 'offline';
+    now++;
+    await service.loadLyrics(meta.title, meta.artist, meta.album, true, 12, meta.durationSecs);
+    assert.equal(requests, initialRequests + 3);
+    assert.equal(updates[updates.length - 1]?.highlight, 'TEST · teks dipertahankan');
+    assert.equal(updates.some(update => update.loadStatus === 'error'), false);
+    assert.equal(updates.filter(update => update.loadStatus === 'loading').length, 1);
+    mode = 'synced';
+    now += 60_000;
+    await service.loadLyrics(meta.title, meta.artist, meta.album, true, 13, meta.durationSecs);
+    assert.equal(updates[updates.length - 1]?.highlight, 'TEST · sinkron otomatis');
+    assert.equal(updates[updates.length - 1]?.isSynced, true);
+    const recoveredRequests = requests;
+    now += 300_000;
+    await service.loadLyrics(meta.title, meta.artist, meta.album, true, 14, meta.durationSecs);
+    assert.equal(requests, recoveredRequests, 'Sumber sinkron yang berhasil tidak dicari ulang setiap polling');
+  } finally { Date.now = originalNow; globalThis.fetch = originalFetch; service.clear(); }
+});
+
+runTest('Uji 129: Antarmuka tidak membebankan pencarian lirik kepada tombol manual', () => {
+  const html = fs.readFileSync('index.html', 'utf8');
+  const main = fs.readFileSync('src/main.ts', 'utf8');
+  assert.equal(html.includes('id="btn-lyrics-retry"'), false);
+  assert.equal(main.includes('retryCurrentLyrics'), false);
+  assert.equal(main.includes('Cari sinkron'), false);
+});
+
+runTest('Uji 130: Empat kontrol musik berada di blok lagu, bukan kolom Momo', () => {
+  const html = fs.readFileSync('index.html', 'utf8');
+  const start = html.indexOf('id="music-track-block"');
+  const lyrics = html.indexOf('id="music-lyrics-card"', start);
+  const momo = html.indexOf('id="music-momo-stage"', lyrics);
+  assert.ok(start >= 0 && lyrics > start && momo > lyrics);
+  const controls = ['btn-music-prev', 'btn-music-toggle', 'btn-music-next', 'btn-music-repeat'];
+  for (const id of controls) {
+    const occurrence = html.indexOf(`id="${id}"`);
+    assert.ok(occurrence > start && occurrence < lyrics, `${id} harus berada sebelum blok lirik`);
+    assert.equal(html.split(`id="${id}"`).length - 1, 1, `${id} tidak boleh diduplikasi`);
+    assert.equal(html.slice(momo).includes(`id="${id}"`), false);
+  }
+  assert.ok(html.includes('aria-label="Kontrol pemutaran musik"'));
+});
+
+runTest('Uji 131: Pembaruan status musik mempertahankan ikon dan label aksesibel', () => {
+  const main = fs.readFileSync('src/main.ts', 'utf8');
+  const html = fs.readFileSync('index.html', 'utf8');
+  const music = main.slice(main.indexOf('function bindMusicControls()'), main.indexOf('function bindWindowAndNotchControls()'));
+  assert.equal(music.includes('btnToggle.innerText'), false, 'Status putar tidak boleh menghapus SVG');
+  assert.equal(music.includes('repeatButton.innerText'), false, 'Status repeat tidak boleh menghapus ikon loop');
+  assert.ok(music.includes('btnToggle.dataset.playing = String(playing)'));
+  assert.ok(music.includes("repeatButton.setAttribute('aria-label', label)"));
+  assert.ok(html.includes('class="transport-icon icon-play"'));
+  assert.ok(html.includes('class="transport-icon icon-pause"'));
+  assert.ok(html.includes('class="repeat-one-mark"'));
+});
+
+runTest('Uji 132: Kolom Momo tidak menyisakan baris kontrol sehingga karakternya center vertikal', () => {
+  const css = fs.readFileSync('src/styles.css', 'utf8');
+  const start = css.indexOf('#panel-music .col-right {');
+  const rule = css.slice(start, css.indexOf('}', start) + 1);
+  assert.ok(rule.length > 0, 'Aturan kolom kanan harus ada');
+  assert.equal(rule.includes('grid-template-rows'), false, 'Kolom kanan tidak boleh menyisakan baris kontrol 44 px');
+  assert.ok(rule.includes('display: flex'));
+  assert.ok(rule.includes('align-items: center'));
+  assert.ok(rule.includes('justify-content: center'));
+  assert.ok(css.includes('#panel-music .music-momo-stage {\n  height: 100%;\n  width: 100%;\n}'));
+});
+
+runTest('Uji 133: Kolom lirik mengisi lebar kolom tanpa margin samping', () => {
+  const css = fs.readFileSync('src/styles.css', 'utf8');
+  const start = css.indexOf('#panel-music .col-center {');
+  const rule = css.slice(start, css.indexOf('}', start) + 1);
+  assert.ok(rule.length > 0);
+  assert.ok(rule.includes('grid-template-columns: minmax(0, 1fr)'), 'Kolom lirik harus punya track 1fr eksplisit');
+  assert.ok(rule.includes('align-items: stretch'));
+  assert.equal(css.includes('#panel-music .lyrics-card {\n  width: 100%;\n  max-width: none;'), true, 'Kartu lirik harus mengisi lebar kolom');
+});
+
+await runTestAsync('Uji 134: Transisi tab berurutan dan hanya menerapkan tujuan terakhir saat klik cepat', async () => {
+  const applied: string[] = [];
+  let release: () => void = () => {};
+  const first = new Promise<void>((resolve) => { release = resolve; });
+  let active = 0;
+  let maxActive = 0;
+  const tabs = new TabTransition<'focus' | 'music' | 'hydration'>('focus', async (target) => {
+    active++;
+    maxActive = Math.max(maxActive, active);
+    applied.push(target);
+    if (target === 'music') await first;
+    active--;
+  });
+  const pending = tabs.request('music');
+  tabs.request('hydration');
+  tabs.request('focus');
+  assert.deepEqual(applied, ['music']);
+  release();
+  await pending;
+  assert.deepEqual(applied, ['music', 'focus']);
+  assert.equal(maxActive, 1);
+  await tabs.request('focus');
+  assert.deepEqual(applied, ['music', 'focus'], 'Klik tab aktif tidak memulai animasi baru');
+});
+
+await runTestAsync('Uji 135: Tab tetap dapat dipindah setelah no-op dan kegagalan transisi', async () => {
+  const applied: string[] = [];
+  let fail = true;
+  const tabs = new TabTransition<'focus' | 'music' | 'hydration'>('focus', async (target) => {
+    if (fail) throw new Error('resize failed');
+    applied.push(target);
+  });
+  const noop = tabs.request('focus');
+  const failure = tabs.request('music');
+  await noop;
+  await assert.rejects(failure, /resize failed/);
+  fail = false;
+  await tabs.request('hydration');
+  assert.deepEqual(applied, ['hydration']);
+});
+
+runTest('Uji 136: Scrollbar tidak ditampilkan dan transisi menghormati reduced motion', () => {
+  const css = fs.readFileSync('src/styles.css', 'utf8');
+  assert.ok(css.includes('body * {\n  scrollbar-width: none;'));
+  assert.ok(css.includes('body *::-webkit-scrollbar'));
+  assert.equal(css.includes('scrollbar-width: thin'), false);
+  assert.ok(css.includes('.island-widget.is-switching-tab .tab-panel'));
+  assert.ok(css.includes('@media (prefers-reduced-motion: reduce)'));
+  assert.ok(css.includes('transition: none !important'));
+  assert.ok(css.includes('#panel-music .transport-btn { width: 44px; height: 44px;'));
+});
+
+class MomoTestClock implements MomoClock {
+  now = 0;
+  next = 0;
+  tasks = new Map<number, { at: number; callback: () => void }>();
+  later(callback: () => void, delay: number): number {
+    const id = ++this.next;
+    this.tasks.set(id, { at: this.now + delay, callback });
+    return id;
+  }
+  cancel(id: number) { this.tasks.delete(id); }
+  tick(ms: number) {
+    const until = this.now + ms;
+    while (true) {
+      const next = [...this.tasks.entries()].sort((a, b) => a[1].at - b[1].at)[0];
+      if (!next || next[1].at > until) break;
+      this.now = next[1].at;
+      this.tasks.delete(next[0]);
+      next[1].callback();
+    }
+    this.now = until;
+  }
+}
+
+function momoHarness() {
+  const clock = new MomoTestClock();
+  const frames: Readonly<MomoFrame>[] = [];
+  const momo = new MusicMomo((frame) => frames.push(frame), clock, () => 0);
+  momo.configure(true, false, 'expressive');
+  return { clock, frames, momo, latest: () => frames[frames.length - 1]! };
+}
+
+runTest('Uji 137: Momo membatalkan callback lama saat lagu dan sesi berganti cepat', () => {
+  const h = momoHarness();
+  h.momo.setPlayback('playing', 'session-a#record-a');
+  const stale = [...h.clock.tasks.values()].map(task => task.callback);
+  h.momo.setPlayback('playing', 'session-a#record-b');
+  assert.equal(h.latest().pose, 'change');
+  h.momo.setPlayback('playing', 'session-b#record-c');
+  h.momo.setPlayback('paused', 'session-b#record-c');
+  const count = h.frames.length;
+  stale.forEach(callback => callback());
+  assert.equal(h.frames.length, count);
+  assert.equal(h.latest().pose, 'settle');
+  h.clock.tick(260);
+  assert.equal(h.latest().pose, 'rest');
+  h.momo.dispose();
+});
+
+runTest('Uji 138: Pause saat lompatan menyelesaikan settle, tetap bernapas dan berkedip tanpa adegan selesai', () => {
+  const h = momoHarness();
+  h.momo.setPlayback('playing', 'record');
+  assert.equal(h.latest().pose, 'start');
+  h.clock.tick(400);
+  h.momo.setPlayback('paused', 'record');
+  assert.equal(h.latest().pose, 'settle');
+  h.clock.tick(270);
+  assert.equal(h.latest().pose, 'rest');
+  h.clock.tick(3000);
+  assert.ok(h.frames.some(frame => frame.playback === 'paused' && frame.eyes === 'closed'));
+  assert.equal(h.frames.some(frame => frame.pose === 'finish'), false);
+  h.momo.dispose();
+});
+
+runTest('Uji 139: Aksi lucu Momo memiliki jeda dan klik kembali ke aktivitas, selesai tidak dipotong klik', () => {
+  const h = momoHarness();
+  h.momo.setPlayback('playing', 'record');
+  h.clock.tick(4500);
+  assert.equal(h.latest().pose, 'stumble');
+  h.clock.tick(1600);
+  assert.equal(h.latest().pose, 'rest');
+  h.momo.interact();
+  assert.equal(h.latest().pose, 'wave');
+  h.clock.tick(1300);
+  assert.equal(h.latest().pose, 'nod');
+  h.momo.setPlayback('ended', 'record');
+  h.momo.interact();
+  assert.equal(h.latest().pose, 'finish');
+  h.clock.tick(2600);
+  assert.equal(h.latest().pose, 'rest');
+  assert.equal(h.latest().smile, true);
+  h.momo.dispose();
+});
+
+runTest('Uji 140: Panel Momo tersembunyi tidak menyisakan timer; dispose menolak reaksi baru', () => {
+  const h = momoHarness();
+  h.momo.setPlayback('playing', 'record');
+  h.momo.configure(false, false, 'expressive');
+  assert.equal(h.clock.tasks.size, 0);
+  const count = h.frames.length;
+  h.clock.tick(60000);
+  h.momo.interact();
+  assert.equal(h.frames.length, count);
+  h.momo.configure(true, false, 'calm');
+  assert.ok(h.clock.tasks.size > 0);
+  h.momo.dispose();
+  assert.equal(h.clock.tasks.size, 0);
+  const disposed = h.frames.length;
+  h.momo.setPlayback('playing', 'new');
+  h.momo.interact();
+  assert.equal(h.frames.length, disposed);
+});
+
+runTest('Uji 141: Loading audio terpisah dari lirik; reduced motion hanya melanjutkan ekspresi kecil', () => {
+  const h = momoHarness();
+  h.momo.setPlayback('loading', 'record');
+  assert.equal(h.latest().pose, 'listen');
+  h.momo.setPlayback('playing', 'record');
+  h.momo.configure(true, true, 'expressive');
+  h.clock.tick(60000);
+  assert.equal(h.frames.some(frame => frame.reduced && ['stumble', 'step', 'sway'].includes(frame.pose)), false);
+  const css = fs.readFileSync('src/audio/musicMomo.css', 'utf8');
+  assert.ok(css.includes('[data-reduced="true"] .momo-rig *'));
+  assert.ok(css.includes('animation: none !important'));
+  h.momo.dispose();
+});
+
+runTest('Uji 142: Intensitas Momo tervalidasi tanpa mengubah jadwal timer', () => {
+  const calm = sanitizePomodoroConfig({ ...FIXED_DEFAULT_CONFIG, momoIntensity: 'calm' });
+  const expressive = sanitizePomodoroConfig({ ...calm, momoIntensity: 'expressive' });
+  assert.equal(calm.momoIntensity, 'calm');
+  assert.equal(expressive.momoIntensity, 'expressive');
+  assert.equal(sanitizePomodoroConfig({ momoIntensity: 'invalid' }).momoIntensity, 'expressive');
+  assert.equal(hasScheduleChanged(calm, expressive), false);
+});
+
+await runTestAsync('Uji 143: Sesi putus, error polling dan pause dekat akhir bukan lagu selesai', async () => {
+  const base: SystemMediaTrack = { title: 'Same title', artist: 'Artist', album: 'Album', is_playing: true,
+    playback_status: 'playing', source_app: 'Player', source_display_name: 'Player', service_kind: 'native_app',
+    is_spotify: false, has_session: true, session_key: 'session-a', record_key: 'record-a', has_thumbnail: false,
+    position_secs: 199, duration_secs: 200 };
+  let payload: SystemMediaTrack | null = base;
+  let error = false;
+  installMockTauriInternals((cmd) => {
+    if (cmd === 'get_system_media_track') { if (error) throw Error('offline'); return payload; }
+    return null;
+  });
+  const bridge = new SystemMediaBridge();
+  let ended = 0;
+  bridge.onSongFinished(() => ended++);
+  try {
+    await bridge.pollNow();
+    payload = { ...base, is_playing: false, playback_status: 'paused', position_secs: 199.99 };
+    await bridge.pollNow();
+    assert.equal(ended, 0);
+    payload = base; await bridge.pollNow();
+    payload = null; await bridge.pollNow();
+    assert.equal(ended, 0);
+    payload = base; await bridge.pollNow();
+    error = true; await bridge.pollNow();
+    assert.equal(ended, 0);
+    error = false; payload = base; await bridge.pollNow();
+    payload = { ...base, record_key: 'record-b', is_playing: false, playback_status: 'stopped' };
+    await bridge.pollNow();
+    assert.equal(ended, 0);
+  } finally { removeMockTauriInternals(); }
+});
+
+runTest('Uji 144: Mulai sumber lokal bereaksi senang; pergantian saat loading tetap menoleh ke lagu baru', () => {
+  const h = momoHarness();
+  h.momo.setPlayback('playing', 'system');
+  h.momo.setPlayback('idle', 'local-a');
+  h.momo.setPlayback('loading', 'local-a');
+  h.momo.setPlayback('playing', 'local-a');
+  assert.equal(h.latest().pose, 'start');
+  h.momo.setPlayback('loading', 'local-b');
+  assert.equal(h.latest().pose, 'listen');
+  h.momo.setPlayback('playing', 'local-b');
+  assert.equal(h.latest().pose, 'change');
+  h.momo.dispose();
+});
+
+runTest('Uji 145: Intensitas Tenang tidak memilih langkah besar atau kehilangan keseimbangan', () => {
+  const h = momoHarness();
+  h.momo.configure(true, false, 'calm');
+  h.momo.setPlayback('playing', 'record');
+  h.clock.tick(120000);
+  assert.equal(h.frames.some(frame => frame.intensity === 'calm' && ['step', 'stumble', 'shoulder'].includes(frame.pose)), false);
+  h.momo.dispose();
+});
+
+runTest('Uji 146: Diagnosis audio membedakan penolakan izin, kegagalan jaringan dan decoder', () => {
+  const permission = describeAudioFailure(new DOMException('Permission denied', 'NotAllowedError'), '/audio/test.webm');
+  assert.equal(permission.name, 'NotAllowedError');
+  assert.ok(permission.message.includes('izin'));
+  const decode = describeAudioFailure({ message: 'Decode error' }, '/audio/test.webm', 3);
+  assert.equal(decode.mediaCode, 3);
+  assert.ok(decode.message.includes('mendekode'));
+  assert.ok(decode.message.includes('media 3'));
+  assert.equal(decode.detail, 'Decode error');
+  assert.ok(describeAudioFailure(null, '/audio/test.webm', 2).message.includes('dimuat'));
+  assert.ok(describeAudioFailure(null, '/audio/test.webm', 4).message.includes('berkas atau format'));
+});
+
+await runTestAsync('Uji 147: Audio tidak menulis posisi nol sebelum metadata dan resume menunggu loadedmetadata', async () => {
+  const original = globalThis.Audio;
+  const instances: FakeAudio[] = [];
+  class FakeAudio extends EventTarget {
+    private position = 0;
+    readyState = 0;
+    duration = 200;
+    writes: number[] = [];
+    constructor() { super(); instances.push(this); }
+    get currentTime() { return this.position; }
+    set currentTime(value: number) {
+      if (this.readyState === 0) throw new DOMException('Metadata belum siap', 'InvalidStateError');
+      this.position = value;
+      this.writes.push(value);
+    }
+    async play() { this.readyState = 1; this.dispatchEvent(new Event('loadedmetadata')); }
+    pause() {}
+    removeAttribute() {}
+    load() { this.readyState = 0; this.position = 0; }
+  }
+  globalThis.Audio = FakeAudio as unknown as typeof Audio;
+  try {
+    const player = new AmbientSynth();
+    assert.equal(await player.play('jazz-noir'), true);
+    assert.deepEqual(instances[0]!.writes, [], 'Posisi awal tidak perlu ditulis ke media yang belum siap');
+    instances[0]!.currentTime = 12;
+    player.stop();
+    assert.equal(await player.play('jazz-noir'), true);
+    assert.deepEqual(instances[1]!.writes, [12]);
+    assert.equal(player.getPlaybackFailure(), null);
+    player.stop();
+  } finally { globalThis.Audio = original; }
+});
+
+await runTestAsync('Uji 148: MediaError dicatat sebelum load menghapusnya dan error media lama ditolak', async () => {
+  const original = globalThis.Audio;
+  const instances: FakeAudio[] = [];
+  class FakeAudio extends EventTarget {
+    currentTime = 0;
+    error: { code: number; message: string } | null = null;
+    constructor() { super(); instances.push(this); }
+    async play() {}
+    pause() {}
+    removeAttribute() {}
+    load() { this.error = null; }
+  }
+  globalThis.Audio = FakeAudio as unknown as typeof Audio;
+  try {
+    const player = new AmbientSynth();
+    const states: string[] = [];
+    player.onPlaybackState = state => states.push(state);
+    assert.equal(await player.play('jazz-noir'), true);
+    instances[0]!.error = { code: 3, message: 'decoder failed' };
+    instances[0]!.dispatchEvent(new Event('error'));
+    assert.equal(player.getPlaybackFailure()?.mediaCode, 3);
+    assert.equal(player.getPlaybackFailure()?.detail, 'decoder failed');
+    assert.equal(player.getTrack(), 'off');
+    assert.equal(states[states.length - 1], 'error');
+    assert.equal(await player.play('wave-to-earth'), true);
+    const count = states.length;
+    instances[0]!.error = { code: 4, message: 'stale' };
+    instances[0]!.dispatchEvent(new Event('error'));
+    assert.equal(states.length, count);
+    assert.equal(player.getPlaybackFailure(), null);
+    assert.equal(player.getTrack(), 'wave-to-earth');
+    player.stop();
+  } finally { globalThis.Audio = original; }
+});
+
+runTest('Uji 149: Sesi WebView ambigu ditahan hanya ketika musik lokal memiliki pemutaran otomatis', () => {
+  assert.equal(shouldIgnoreAmbiguousWebViewSession('msedgewebview2.exe', null, true), true);
+  assert.equal(shouldIgnoreAmbiguousWebViewSession('C:\\Edge\\MSEDGEWEBVIEW2.EXE', null, true), true);
+  assert.equal(shouldIgnoreAmbiguousWebViewSession('msedgewebview2.exe', 'chosen', true), false);
+  assert.equal(shouldIgnoreAmbiguousWebViewSession('msedgewebview2.exe', null, false), false);
+  assert.equal(shouldIgnoreAmbiguousWebViewSession('Spotify.exe', null, true), false);
+});
+
+await runTestAsync('Uji 150: Kontrol tanpa identitas sesi tidak memanggil backend', async () => {
+  const calls = installMockTauriInternals(() => true);
+  const bridge = new SystemMediaBridge();
+  try {
+    assert.equal(await bridge.togglePlay(), false);
+    assert.equal(await bridge.nextTrack(), false);
+    assert.equal(await bridge.prevTrack(), false);
+    assert.equal(await bridge.seekTo(5), false);
+    assert.equal(calls.length, 0);
+  } finally { removeMockTauriInternals(); }
+});
+
+runTest('Uji 151: Retry-After menghitung detik dan tanggal tanpa memendekkan batas provider', () => {
+  const now = Date.parse('2026-11-02T00:00:00Z');
+  assert.equal(retryAfterMilliseconds('120', now), 120000);
+  assert.equal(retryAfterMilliseconds('Mon, 02 Nov 2026 00:03:00 GMT', now), 180000);
+  assert.equal(retryAfterMilliseconds('invalid', now), 0);
+});
+
+await runTestAsync('Uji 152: 429 menghentikan fallback dan cooldown berlaku lintas rekaman', async () => {
+  const originalFetch = globalThis.fetch;
+  const originalNow = Date.now;
+  const originalRandom = Math.random;
+  let now = 100000;
+  let calls = 0;
+  try {
+    Date.now = () => now;
+    Math.random = () => 0;
+    globalThis.fetch = (async () => {
+      calls++;
+      return { ok: false, status: 429, headers: new Headers({ 'Retry-After': '120' }) } as Response;
+    }) as typeof fetch;
+    const first = new LyricsService();
+    const second = new LyricsService();
+    first.onSystemRecordChanged('test#one', { title: 'One', artist: 'Artist' }, false);
+    second.onSystemRecordChanged('test#two', { title: 'Two', artist: 'Artist' }, false);
+    await first.loadLyrics('One', 'Artist', '', true, 0, 180);
+    await second.loadLyrics('Two', 'Artist', '', true, 0, 180);
+    assert.equal(calls, 1);
+    now += 119999;
+    await second.loadLyrics('Two', 'Artist', '', true, 0, 180);
+    assert.equal(calls, 1);
+    now++;
+    await first.loadLyrics('One', 'Artist', '', true, 0, 180);
+    assert.equal(calls, 2);
+    first.clear(); second.clear();
+  } finally { Date.now = originalNow; Math.random = originalRandom; globalThis.fetch = originalFetch; resetLyricsCooldownForTests(); }
+});
+
+await runTestAsync('Uji 153: Seek A yang selesai terlambat tidak membatalkan polling sesi B', async () => {
+  const a: SystemMediaTrack = { title: 'A', artist: 'Artist', album: '', is_playing: true,
+    source_app: 'Player', source_display_name: 'Player', service_kind: 'native_app', is_spotify: false,
+    has_session: true, session_key: 'a', record_key: 'record-a', has_thumbnail: false,
+    position_secs: 10, duration_secs: 180 };
+  const b: SystemMediaTrack = { ...a, title: 'B', session_key: 'b', record_key: 'record-b' };
+  let resolveSeek: (value: boolean) => void = () => {};
+  let resolvePoll: (value: SystemMediaTrack) => void = () => {};
+  const seekPending = new Promise<boolean>(resolve => { resolveSeek = resolve; });
+  const pollPending = new Promise<SystemMediaTrack>(resolve => { resolvePoll = resolve; });
+  let delayed = false;
+  const calls = installMockTauriInternals((cmd) => {
+    if (cmd === 'system_media_seek') return seekPending;
+    if (cmd === 'get_system_media_track') return delayed ? pollPending : a;
+    return true;
+  });
+  const bridge = new SystemMediaBridge();
+  try {
+    await bridge.pollNow();
+    const seek = bridge.seekTo(50);
+    for (let i = 0; i < 1000 && !calls.some(call => call.cmd === 'system_media_seek'); i++) {
+      await new Promise<void>(resolve => { setImmediate(resolve); });
+    }
+    assert.ok(calls.some(call => call.cmd === 'system_media_seek'));
+    delayed = true;
+    const poll = bridge.pollNow();
+    for (let i = 0; i < 1000 && calls.filter(call => call.cmd === 'get_system_media_track').length < 2; i++) {
+      await new Promise<void>(resolve => { setImmediate(resolve); });
+    }
+    assert.ok(calls.filter(call => call.cmd === 'get_system_media_track').length >= 2);
+    resolveSeek(true);
+    assert.equal(await seek, true);
+    resolvePoll(b);
+    assert.equal(await poll, b);
+    assert.equal(bridge.getCurrentTrack()?.record_key, 'record-b');
+  } finally { resolveSeek(false); resolvePoll(b); removeMockTauriInternals(); }
+});
+
+runTest('Uji 154: Detektor onset merespons pulsa, menolak hening dan membatasi ketukan beruntun', () => {
+  const detector = new BeatDetector();
+  const silent = new Uint8Array(8);
+  const pulse = new Uint8Array(8).fill(200);
+  assert.equal(detector.update(silent, 0), false);
+  assert.equal(detector.update(pulse, 500), true);
+  detector.update(silent, 550);
+  assert.equal(detector.update(pulse, 600), false);
+  detector.update(silent, 800);
+  assert.equal(detector.update(pulse, 1000), true);
+  detector.reset();
+  assert.equal(detector.update(silent, 1500), false);
+});
+
+await runTestAsync('Uji 155: Speaker mencoba ulang start dan berhenti saat panel ditutup', async () => {
+  let starts = 0;
+  let stops = 0;
+  const statuses: string[] = [];
+  const speaker = new SpeakerBeat(() => {}, text => statuses.push(text), {
+    available: () => true, retryMs: 10,
+    invoke: async <T>(command: string): Promise<T> => {
+      if (command === 'start_speaker_beat' && ++starts === 1) throw new Error('device unavailable');
+      if (command === 'stop_speaker_beat') stops++;
+      return (command === 'speaker_beat_count' ? 0 : undefined) as T;
+    },
+  });
+  try {
+    speaker.setActive(true);
+    for (let i = 0; i < 100 && !statuses.some(s => s.includes('output aktif')); i++) {
+      await new Promise(resolve => { setTimeout(resolve, 5); });
+    }
+    assert.equal(starts, 2);
+    assert.ok(statuses.some(s => s.includes('output aktif')));
+    speaker.setActive(false);
+    await new Promise(resolve => { setTimeout(resolve, 30); });
+    assert.equal(stops, 1);
+    assert.equal(starts, 2);
+  } finally { speaker.setActive(false); }
+});
+
+await runTestAsync('Uji 156: Speaker pulih dari worker terputus dan membatalkan retry saat tersembunyi', async () => {
+  let starts = 0;
+  let reads = 0;
+  const statuses: string[] = [];
+  const speaker = new SpeakerBeat(() => {}, text => statuses.push(text), {
+    available: () => true, retryMs: 10,
+    invoke: async <T>(command: string): Promise<T> => {
+      if (command === 'start_speaker_beat') starts++;
+      if (command === 'speaker_beat_count' && ++reads === 2) throw new Error('worker stopped');
+      return (command === 'speaker_beat_count' ? 0 : undefined) as T;
+    },
+  });
+  try {
+    speaker.setActive(true);
+    for (let i = 0; i < 100 && starts < 2; i++) await new Promise(resolve => { setTimeout(resolve, 5); });
+    assert.equal(starts, 2);
+    assert.ok(statuses.some(s => s.includes('terputus')));
+  } finally { speaker.setActive(false); }
+  await new Promise(resolve => { setTimeout(resolve, 30); });
+  assert.equal(starts, 2);
+});
+
+runTest('Uji 157: Gerak beat bergantian kaki dan kepala tanpa menggerakkan rig', () => {
+  const calls: { part: string; frames: Keyframe[]; cancelled: boolean }[] = [];
+  const active: boolean[] = [];
+  const target = (part: string) => ({ animate: (frames: Keyframe[]) => {
+    const call = { part, frames, cancelled: false };
+    calls.push(call);
+    return { cancel: () => { call.cancelled = true; } };
+  } }) as unknown as SVGGElement;
+  const motion = createMomoBeatMotion(target('head'), target('foot'), value => active.push(value));
+  motion.beat('expressive');
+  motion.beat('calm');
+  motion.beat('expressive');
+  assert.deepEqual(calls.map(call => call.part), ['foot', 'head', 'foot']);
+  assert.match(String(calls[0].frames[1].transform), /rotate\(-8deg\)/);
+  assert.match(String(calls[1].frames[1].transform), /rotate\(3deg\)/);
+  assert.equal(calls[0].cancelled, true);
+  motion.cancel();
+  assert.equal(calls[2].cancelled, true);
+  assert.deepEqual(active, [true, true, true, false]);
+});
+
+runTest('Uji 158: Gerak beat hanya saat istirahat tanpa transisi atau gerakan lain', () => {
+  const frame: MomoFrame = { playback: 'playing', pose: 'rest', eyes: 'open', smile: false,
+    active: true, reduced: false, intensity: 'expressive' };
+  assert.equal(canAnimateMomoBeat(frame, false, []), true);
+  for (const pose of ['nod', 'tap', 'sway', 'shoulder', 'step', 'start', 'settle', 'wave', 'change'] as const) {
+    assert.equal(canAnimateMomoBeat({ ...frame, pose }, true, []), false, pose);
+  }
+  assert.equal(canAnimateMomoBeat(frame, true, [{ playState: 'running', pending: false }]), false);
+  assert.equal(canAnimateMomoBeat(frame, true, [{ playState: 'paused', pending: true }]), false);
+  assert.equal(canAnimateMomoBeat(frame, true, [{ playState: 'finished', pending: false }]), true);
+  assert.equal(canAnimateMomoBeat({ ...frame, eyes: 'closed' }, true, []), false);
+  assert.equal(canAnimateMomoBeat({ ...frame, playback: 'ended' }, true, []), false);
+  assert.equal(canAnimateMomoBeat({ ...frame, reduced: true }, true, []), false);
+  assert.equal(canAnimateMomoBeat({ ...frame, active: false }, true, []), false);
+});
+
+runTest('Uji 159: Posisi compact dan minimal dipertahankan saat transisi', () => {
+  assert.equal(shouldRememberFloatingPosition('compact', 'expanded'), true);
+  assert.equal(shouldRememberFloatingPosition('compact', 'hidden'), true);
+  assert.equal(shouldRememberFloatingPosition('hidden', 'expanded'), true);
+  assert.equal(shouldRememberFloatingPosition('expanded', 'compact'), false);
+  assert.equal(shouldRememberFloatingPosition('expanded', 'compact', 'floating'), true);
+  assert.equal(shouldRememberFloatingPosition('expanded', 'hidden', 'floating'), true);
+  assert.equal(shouldRememberFloatingPosition('expanded', 'expanded', 'floating'), false);
+  assert.equal(shouldRememberFloatingPosition('expanded', 'compact', 'left'), false);
+  assert.equal(shouldRememberFloatingPosition('compact', 'compact'), false);
+  assert.equal(shouldCenterAfterTransition(true), false);
+  assert.equal(shouldCenterAfterTransition(false), true);
+});
+
+runTest('Uji 160: Tepi terdekat memakai area kerja, termasuk monitor negatif', () => {
+  const area = { x: -1920, y: 40, width: 1920, height: 1000 };
+  assert.equal(nearestDockEdge(-960, 45, area), 'top');
+  assert.equal(nearestDockEdge(-960, 1035, area), 'bottom');
+  assert.equal(nearestDockEdge(-1915, 500, area), 'left');
+  assert.equal(nearestDockEdge(-5, 500, area), 'right');
+  assert.equal(isVerticalDock('left'), true);
+  assert.equal(isVerticalDock('right'), true);
+  assert.equal(isVerticalDock('top'), false);
+  assert.equal(isVerticalDock('bottom'), false);
+});
+
+runTest('Uji 161: Snap hanya di ambang 10%, termasuk batas, sudut dan monitor negatif', () => {
+  const area = { x: -1920, y: 40, width: 1920, height: 1000 };
+  assert.equal(dockWithinThreshold(-960, 540, area), 'floating');
+  assert.equal(dockWithinThreshold(-1728, 540, area), 'left');
+  assert.equal(dockWithinThreshold(-1727, 540, area), 'floating');
+  assert.equal(dockWithinThreshold(-192, 540, area), 'right');
+  assert.equal(dockWithinThreshold(-193, 540, area), 'floating');
+  assert.equal(dockWithinThreshold(-960, 140, area), 'top');
+  assert.equal(dockWithinThreshold(-960, 141, area), 'floating');
+  assert.equal(dockWithinThreshold(-960, 940, area), 'bottom');
+  assert.equal(dockWithinThreshold(-960, 939, area), 'floating');
+  assert.equal(dockWithinThreshold(-1900, 60, area), 'left', 'Sudut memilih jarak relatif terdekat');
+  assert.equal(dockWithinThreshold(NaN, 60, area), 'floating');
+  assert.equal(isVerticalDock('floating'), false);
+  assert.equal(dockWithinThreshold(-1440, 540, area, { width: 960, height: 308 }), 'left', 'Panel menyentuh tepi dinilai dari batas jendela');
+  assert.equal(dockWithinThreshold(-960, 540, area, { width: 960, height: 308 }), 'floating');
+});
+
+const petContext: PetContext = { x: 600, y: 450, cursorX: 580, cursorY: 450,
+  width: 76, height: 92, scale: 1, pressed: false, visible: true,
+  area: { x: 0, y: 0, width: 1920, height: 1032 } };
+
+runTest('Uji 162: Pet menjauh perlahan tanpa membaca kecepatan atau niat kursor', () => {
+  let motion = restingPet();
+  let context = { ...petContext };
+  for (let i = 0; i < 20; i++) {
+    const next = stepDesktopPet(context, motion, 0.05, i * 50);
+    assert.ok(next.x >= context.x);
+    assert.ok(Math.hypot(next.x - context.x, next.y - context.y) <= 1.101);
+    context = { ...context, x: next.x, y: next.y }; motion = next.motion;
+  }
+  assert.ok(context.x > 610 && context.x < 623);
+  assert.equal(motion.walking, true);
+  assert.equal(stepDesktopPet({ ...context, pressed: true }, motion, 0.05, 1000).motion.walking, false);
+  assert.equal(stepDesktopPet({ ...context, visible: false }, motion, 0.05, 1000).x, context.x);
+});
+
+runTest('Uji 163: Pet tidak keluar work area dan dapat minggir di sudut', () => {
+  for (const scale of [1, 1.5, 2]) {
+    const context = { ...petContext, scale, width: 76 * scale, height: 92 * scale,
+      x: 38 * scale, y: 46 * scale, cursorX: 38 * scale + 5, cursorY: 46 * scale + 5 };
+    const next = stepDesktopPet(context, restingPet(), 4, 1000);
+    assert.ok(next.x >= context.width / 2 && next.y >= context.height / 2);
+    assert.ok(next.x <= context.area.width - context.width / 2);
+    assert.ok(next.y <= context.area.height - context.height / 2);
+    assert.ok(Math.hypot(next.x - context.x, next.y - context.y) <= 22 * scale * 0.08);
+    assert.equal(next.motion.walking, true);
+  }
+});
+
+runTest('Uji 164: Pet berjalan sesekali, diam dan melambat saat ruang sudah bebas', () => {
+  const context = { ...petContext, cursorX: 100, cursorY: 100 };
+  assert.equal(stepDesktopPet(context, restingPet(), 0.05, 1000).motion.walking, false);
+  const walk = stepDesktopPet(context, restingPet(), 0.05, 10000);
+  assert.equal(walk.motion.walking, true);
+  assert.ok(walk.motion.vx > 0 && walk.motion.vx < 9);
+  const stop = stepDesktopPet(context, walk.motion, 0.05, 13000);
+  assert.ok(stop.motion.vx < walk.motion.vx);
+  const reverse = stepDesktopPet(context, restingPet(), 0.05, 24000);
+  assert.equal(reverse.motion.facing, 'left');
+});
+
+runTest('Uji 165: Gerak pet konsisten di 60 dan 120 frame serta mengikuti arah horizontal', () => {
+  const simulate = (fps: number, cursorX: number) => {
+    let context = { ...petContext, cursorX };
+    let motion = restingPet();
+    for (let i = 0; i < fps; i++) {
+      const next = stepDesktopPet(context, motion, 1 / fps, i * 1000 / fps);
+      assert.ok(Math.hypot(next.x - context.x, next.y - context.y) <= 22 / fps + 0.001);
+      context = { ...context, x: next.x, y: next.y }; motion = next.motion;
+    }
+    return { context, motion };
+  };
+  const right = simulate(60, 580);
+  const right120 = simulate(120, 580);
+  const left = simulate(60, 620);
+  assert.ok(Math.abs(right.context.x - right120.context.x) < 0.2);
+  assert.equal(right.motion.facing, 'right');
+  assert.equal(left.motion.facing, 'left');
+  assert.ok(left.context.x < petContext.x);
+  assert.equal(getIslandDimension('hidden', 'focus', false).height, 92, 'Mode wajah menjadi pet');
+  assert.equal(getIslandDimension('compact', 'focus', false).height, 42, 'Bilah minimize dipertahankan');
+});
+
+runTest('Uji 166: Kaki pet menapak bergantian dan fase mengikuti jarak, bukan lama animasi', () => {
+  const start = petGaitAt(0);
+  const quarter = petGaitAt(3.5);
+  const half = petGaitAt(7);
+  const next = petGaitAt(14);
+  assert.deepEqual(next, start, 'Satu siklus kembali tepat setelah 14 DIP');
+  assert.equal(quarter.left.y, 0, 'Kaki tumpuan tidak terangkat');
+  assert.equal(quarter.right.y, -4, 'Kaki lainnya sedang melangkah');
+  assert.deepEqual(half.left, start.right);
+  assert.deepEqual(half.right, start.left);
+  let previous = petGaitAt(0);
+  for (let distance = 0.1; distance <= 28; distance += 0.1) {
+    const frame = petGaitAt(distance);
+    assert.ok(frame.left.y <= 0 && frame.right.y <= 0);
+    assert.ok(Math.abs(frame.left.x - previous.left.x) < 0.12);
+    assert.ok(Math.abs(frame.right.y - previous.right.y) < 0.19);
+    assert.ok(frame.bob >= -1.2 && frame.bob <= 0);
+    previous = frame;
+  }
+});
+
+runTest('Uji 167: Frame Figma lokal mempertahankan jeda idle dan urutan kedip', () => {
+  assert.equal(FIGMA_IDLE_SOURCES.length, 8);
+  for (const source of FIGMA_IDLE_SOURCES) {
+    assert.equal(source.includes('figma.com'), false);
+    assert.ok(fs.statSync(new URL(source)).size > 0);
+    assert.match(fs.readFileSync(new URL(source), 'utf8'), /width="64" height="64"/);
+  }
+  assert.equal(figmaIdleFrameAt(0), 0);
+  assert.equal(figmaIdleFrameAt(1799), 0);
+  assert.equal(figmaIdleFrameAt(1800), 1);
+  assert.equal(figmaIdleFrameAt(2175), 4);
+  assert.equal(figmaIdleFrameAt(2674), 7);
+  assert.equal(figmaIdleFrameAt(2675), 0);
+});
+
 console.log(`\n=== HASIL: ${passedTests}/${passedTests + failedTests} PENGUJIAN LOLOS DENGAN SUKSES ===`);
 
 if (failedTests > 0) {

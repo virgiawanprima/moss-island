@@ -19,6 +19,7 @@
         "height": 308,
         "center": false,
         "resizable": true,
+        "maximizable": false,
         "minWidth": 100,
         "minHeight": 24,
         "decorations": false,
