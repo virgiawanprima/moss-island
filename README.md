@@ -8,7 +8,7 @@ Proyek memakai **Tauri 2, Rust, TypeScript, HTML/CSS, dan Canvas 2D**. Integrasi
 
 - Membantu pengguna membangun kebiasaan fokus melalui sesi Pomodoro dan jeda yang teratur.
 - Memberi umpan balik visual lewat pertumbuhan pohon, perubahan musim, dan aktivitas Momo.
-- Menyediakan kontrol musik dan pencatatan minum tanpa perlu meninggalkan pekerjaan terlalu lama.
+- Menyediakan kontrol musik dan pengingat minum saat istirahat tanpa perlu meninggalkan pekerjaan terlalu lama.
 - Menjaga akses ke pendamping desktop dalam ukuran kecil, dengan pilihan posisi mengambang atau menempel di tepi layar.
 
 ## Fitur utama
@@ -16,7 +16,7 @@ Proyek memakai **Tauri 2, Rust, TypeScript, HTML/CSS, dan Canvas 2D**. Integrasi
 | Area | Perilaku |
 | --- | --- |
 | Fokus dan pulau | Timer fokus/istirahat, progres sesi, pohon, musim, dan animasi Momo pada pulau. |
-| Hidrasi | Pencatatan jumlah air dan pengingat minum. |
+| Istirahat | Tab Focus berganti menjadi Istirahat dengan lingkaran hitung mundur, pengingat minum, dan ajakan merilekskan tubuh. |
 | Musik | Playlist audio lokal serta metadata, artwork, timeline, dan kontrol sesi media Windows sesuai kemampuan pemutar. |
 | Lirik | Pencarian melalui LRCLIB, lirik bertimestamp bila tersedia, dan koreksi waktu per rekaman. |
 | Mode desktop | Panel penuh, bilah minimize, dan pet utuh yang berjalan menghadap kiri/kanan serta perlahan menjauhi kursor. |

@@ -43,16 +43,13 @@ export function getDefaultAppState(): StoredAppState {
     config: { ...DEFAULT_POMODORO_CONFIG },
     progress: {
       growthStage: 0,
-      hydrationGlasses: 0,
       completedSessionsToday: 0,
       currentStreakDays: 1,
       trees: [],
       currentSeason: 'spring',
       seasonCycleCount: 0,
     },
-    waterMl: 0,
     lastActiveDate: today,
-    nextHydrationReminderTimestamp: Date.now() + 45 * 60 * 1000,
     timerSession: null,
   };
 }
@@ -88,22 +85,6 @@ export function sanitizePomodoroConfig(rawConfig: unknown): PomodoroConfig {
     raw.breakDurationMin <= 60
       ? raw.breakDurationMin
       : base.breakDurationMin;
-
-  const waterTarget =
-    typeof raw.dailyWaterTargetMl === 'number' &&
-    Number.isInteger(raw.dailyWaterTargetMl) &&
-    raw.dailyWaterTargetMl >= 100 &&
-    raw.dailyWaterTargetMl <= 10000
-      ? raw.dailyWaterTargetMl
-      : base.dailyWaterTargetMl;
-
-  const waterInterval =
-    typeof raw.hydrationReminderIntervalMin === 'number' &&
-    Number.isInteger(raw.hydrationReminderIntervalMin) &&
-    raw.hydrationReminderIntervalMin >= 1 &&
-    raw.hydrationReminderIntervalMin <= 360
-      ? raw.hydrationReminderIntervalMin
-      : base.hydrationReminderIntervalMin;
 
   const autostartBreak =
     typeof raw.autostartBreak === 'boolean' ? raw.autostartBreak : base.autostartBreak;
@@ -153,8 +134,6 @@ export function sanitizePomodoroConfig(rawConfig: unknown): PomodoroConfig {
     volume,
     alwaysOnTop,
     targetDailySessions,
-    dailyWaterTargetMl: waterTarget,
-    hydrationReminderIntervalMin: waterInterval,
     seasonMode,
   };
 }
@@ -281,7 +260,6 @@ export function loadAppState(): StoredAppState {
 
     let progress: IslandProgress = {
       growthStage: sanitizeCounter(savedProgress.growthStage, 0, 2),
-      hydrationGlasses: sanitizeCounter(savedProgress.hydrationGlasses, 0, 9999),
       completedSessionsToday: sanitizeCounter(savedProgress.completedSessionsToday, 0, 999),
       currentStreakDays: Math.max(1, sanitizeCounter(savedProgress.currentStreakDays, 1, 9999)),
       trees: savedTrees,
@@ -289,7 +267,6 @@ export function loadAppState(): StoredAppState {
       seasonCycleCount,
     };
 
-    let waterMl = sanitizeCounter(parsed.waterMl, progress.hydrationGlasses * 250, 100000);
     const lastActiveDate = typeof parsed.lastActiveDate === 'string' ? parsed.lastActiveDate : today;
 
     // Snapshot timer aktif: hanya dipakai bila strukturnya sah
@@ -302,41 +279,29 @@ export function loadAppState(): StoredAppState {
       // Hari baru berturutan: lanjutkan streak, reset hitungan harian tetapi pertahankan pohon dan musim
       progress = {
         growthStage: progress.growthStage,
-        hydrationGlasses: 0,
         completedSessionsToday: 0,
         currentStreakDays: progress.currentStreakDays + 1,
         trees: savedTrees,
         currentSeason,
         seasonCycleCount,
       };
-      waterMl = 0;
     } else {
       // Terlewat lebih dari satu hari: reset streak menjadi 1, pertahankan pohon dan musim
       progress = {
         growthStage: 0,
-        hydrationGlasses: 0,
         completedSessionsToday: 0,
         currentStreakDays: 1,
         trees: savedTrees,
         currentSeason,
         seasonCycleCount,
       };
-      waterMl = 0;
     }
-
-    const nextReminder =
-      typeof parsed.nextHydrationReminderTimestamp === 'number' &&
-      parsed.nextHydrationReminderTimestamp > Date.now()
-        ? parsed.nextHydrationReminderTimestamp
-        : Date.now() + (config.hydrationReminderIntervalMin || 45) * 60 * 1000;
 
     const loadedState: StoredAppState = {
       version: 2,
       config,
       progress,
-      waterMl,
       lastActiveDate: today,
-      nextHydrationReminderTimestamp: nextReminder,
       timerSession,
     };
 

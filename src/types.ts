@@ -1,6 +1,6 @@
 export type IslandState = 'hidden' | 'compact' | 'expanded';
 
-export type ActiveTab = 'focus' | 'hydration' | 'music' | 'settings';
+export type ActiveTab = 'focus' | 'music' | 'settings';
 
 export type PhaseType = 'focus' | 'break';
 
@@ -41,8 +41,6 @@ export interface PomodoroConfig {
   volume: number;
   alwaysOnTop: boolean;
   targetDailySessions: number;
-  dailyWaterTargetMl: number;
-  hydrationReminderIntervalMin: number;
   seasonMode: SeasonMode;
 }
 
@@ -71,7 +69,6 @@ export interface PlantedTree {
 
 export interface IslandProgress {
   growthStage: number; // 0: tanah berumput, 1: beberapa pohon, 2: hutan rimbun
-  hydrationGlasses: number;
   completedSessionsToday: number;
   currentStreakDays: number;
   trees: PlantedTree[]; // Koleksi pohon permanen yang diperoleh dari sesi selesai
@@ -83,9 +80,7 @@ export interface StoredAppState {
   version: number;
   config: PomodoroConfig;
   progress: IslandProgress;
-  waterMl: number;
   lastActiveDate: string; // YYYY-MM-DD
-  nextHydrationReminderTimestamp: number;
   // Snapshot timer aktif agar sesi tidak hilang saat aplikasi ditutup/crash
   timerSession?: TimerSnapshot | null;
 }

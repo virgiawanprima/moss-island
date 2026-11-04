@@ -161,8 +161,6 @@ export const DEFAULT_POMODORO_CONFIG: PomodoroConfig = {
   volume: 0.8,
   alwaysOnTop: true,
   targetDailySessions: 6,
-  dailyWaterTargetMl: 2000,
-  hydrationReminderIntervalMin: 45,
   seasonMode: 'cycle',
 };
 

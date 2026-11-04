@@ -1,3 +1,4 @@
+import { getRestPresentation, renderRestPhase } from '../src/timer/restView';
 import { parseSettingsDuration, hasScheduleChanged } from '../src/settings';
 import { isAutostartEnabled } from '../src/autostartService';
 import assert from 'node:assert/strict';
@@ -270,7 +271,7 @@ runTest('Uji 6: Konfigurasi tersimpan yang rusak (focusDurationMin: 0) dipulihka
   assert.strictEqual(cleanConfig.focusDurationMin, DEFAULT_POMODORO_CONFIG.focusDurationMin);
   assert.strictEqual(cleanConfig.breakDurationMin, DEFAULT_POMODORO_CONFIG.breakDurationMin);
   assert.strictEqual(cleanConfig.totalDurationMin, DEFAULT_POMODORO_CONFIG.totalDurationMin);
-  assert.strictEqual(cleanConfig.dailyWaterTargetMl, DEFAULT_POMODORO_CONFIG.dailyWaterTargetMl);
+  assert.equal('dailyWaterTargetMl' in cleanConfig, false, 'Konfigurasi minum lama tidak dipakai lagi');
 
   // Verifikasi bahwa konfigurasi yang dibersihkan dapat langsung dipakai membuat engine tanpa error
   const engine = new PomodoroEngine(cleanConfig);
@@ -907,7 +908,7 @@ runTest('Uji 25: loadAppState mempertahankan currentSeason dan seasonCycleCount 
 
   // Hitungan harian direset
   assert.strictEqual(loaded.progress.completedSessionsToday, 0, 'Sesi harian harus direset saat berganti hari');
-  assert.strictEqual(loaded.waterMl, 0, 'Air minum harian harus direset saat berganti hari');
+  assert.equal('waterMl' in loaded, false, 'Pencatatan air lama tidak dimuat kembali');
 
   // Musim aktif dan hitungan musim harus tetap dipertahankan
   assert.strictEqual(loaded.progress.currentSeason, 'autumn', 'Musim aktif tidak boleh direset saat berganti hari');
@@ -1245,11 +1246,11 @@ runTest('Uji 35: Panel musik tetap 960 × 228 px dengan isi 156 px dan jarak ant
     '.view-expanded musik harus memakai padding 8 px, gap 8 px, flex column, dan align-items flex-start'
   );
 
-  // 4. Panel fokus dan minum tetap mempertahankan tinggi penuh 308 px
+  // 4. Panel fokus tetap mempertahankan tinggi penuh 308 px
   assert.strictEqual(
-    css.includes('.island-widget.state-expanded.tab-focus,\n.island-widget.state-expanded.tab-hydration {\n  height: 308px;\n  max-height: 308px;\n}'),
+    css.includes('.island-widget.state-expanded.tab-focus {\n  height: 308px;\n  max-height: 308px;\n}'),
     true,
-    'Panel fokus dan minum tetap harus memakai tinggi 308 px'
+    'Panel fokus tetap harus memakai tinggi 308 px'
   );
 
   // Gap antarkolom dipadatkan menjadi 6 px; gap header dan tinggi native tetap.
@@ -1480,11 +1481,9 @@ runTest('Uji 41: Konfigurasi ISLAND_DIMENSIONS dan fungsi getIslandDimension seb
   });
   assert.deepStrictEqual(getIslandDimension('expanded', 'music', true), ISLAND_DIMENSIONS.settings);
 
-  // 4. Expanded focus dan hydration (308 px)
+  // 4. Expanded focus (308 px)
   assert.strictEqual(ISLAND_DIMENSIONS.expanded.focus.height, 308);
   assert.strictEqual(ISLAND_DIMENSIONS.expanded.focus.minHeight, 308);
-  assert.strictEqual(ISLAND_DIMENSIONS.expanded.hydration.height, 308);
-  assert.strictEqual(ISLAND_DIMENSIONS.expanded.hydration.minHeight, 308);
 
   // 5. Expanded music (228 px persis sesuai Figma)
   assert.strictEqual(ISLAND_DIMENSIONS.expanded.music.width, 960);
@@ -1497,7 +1496,7 @@ runTest('Uji 41: Konfigurasi ISLAND_DIMENSIONS dan fungsi getIslandDimension seb
 runTest('Uji 42: Alur ukuran panel, bilah minimize (42), dan modal tetap konsisten', () => {
   // Simulasi alur navigasi tab dan status
   let currentState: 'hidden' | 'compact' | 'expanded' = 'expanded';
-  let currentActiveTab: 'focus' | 'hydration' | 'music' = 'focus';
+  let currentActiveTab: 'focus' | 'music' = 'focus';
   let isModalOpen = false;
 
   // 1. Fokus awal
@@ -1510,10 +1509,10 @@ runTest('Uji 42: Alur ukuran panel, bilah minimize (42), dan modal tetap konsist
   assert.strictEqual(dim.height, 228, 'Tab Musik harus tepat 228 px');
   assert.strictEqual(dim.width, 960);
 
-  // 3. Berpindah ke tab Minum (Hydration)
-  currentActiveTab = 'hydration';
+  // 3. Kembali ke panel fokus/istirahat
+  currentActiveTab = 'focus';
   dim = getIslandDimension(currentState, currentActiveTab, isModalOpen);
-  assert.strictEqual(dim.height, 308, 'Tab Minum harus kembali 308 px');
+  assert.strictEqual(dim.height, 308, 'Panel fokus/istirahat harus kembali 308 px');
 
   // 4. Kembali ke tab Musik
   currentActiveTab = 'music';
@@ -1996,7 +1995,7 @@ await runTestAsync('Uji 53: Progres rusak dipulihkan sebagian — pohon tidak va
   assert.strictEqual(loaded.progress.completedSessionsToday, 0, 'Jumlah sesi negatif harus dijepit ke 0');
   assert.strictEqual(loaded.progress.currentStreakDays, 1, 'Streak negatif harus kembali ke 1');
   assert.strictEqual(loaded.progress.seasonCycleCount, 3, 'Hitungan siklus 99 dijepit ke 0..5 (99 % 6)');
-  assert.strictEqual(loaded.waterMl, 0, 'Air minum negatif harus dijepit ke 0');
+  assert.equal('waterMl' in loaded, false, 'Data air lama diabaikan saat migrasi');
 
   // Snapshot timer tidak sah -> null
   assert.strictEqual(loaded.timerSession, null, 'Snapshot timer tidak valid harus ditolak');
@@ -3027,19 +3026,19 @@ runTest('Uji 102: Pengaturan preferensi tidak menghidupkan kembali rencana yang 
 
 runTest('Uji 103: Penyimpanan melaporkan kegagalan dan mempertahankan data terakhir yang berhasil', () => {
   const state = getDefaultAppState();
-  state.config.dailyWaterTargetMl = 1700;
-  state.config.hydrationReminderIntervalMin = 33;
+  state.config.volume = 0.7;
+  state.config.alwaysOnTop = false;
   state.config.soundEnabled = false;
   assert.equal(saveAppState(state), true);
   const storage = globalThis.localStorage;
   const original = storage.setItem;
   try {
     storage.setItem = () => { throw new Error('storage full'); };
-    assert.equal(saveAppState({ ...state, config: { ...state.config, dailyWaterTargetMl: 3000 } }), false);
+    assert.equal(saveAppState({ ...state, config: { ...state.config, volume: 0.3 } }), false);
   } finally { storage.setItem = original; }
   const loaded = loadAppState();
-  assert.equal(loaded.config.dailyWaterTargetMl, 1700);
-  assert.equal(loaded.config.hydrationReminderIntervalMin, 33);
+  assert.equal(loaded.config.volume, 0.7);
+  assert.equal(loaded.config.alwaysOnTop, false);
   assert.equal(loaded.config.soundEnabled, false);
 });
 
@@ -3639,7 +3638,7 @@ await runTestAsync('Uji 134: Transisi tab berurutan dan hanya menerapkan tujuan 
   const first = new Promise<void>((resolve) => { release = resolve; });
   let active = 0;
   let maxActive = 0;
-  const tabs = new TabTransition<'focus' | 'music' | 'hydration'>('focus', async (target) => {
+  const tabs = new TabTransition<'focus' | 'music'>('focus', async (target) => {
     active++;
     maxActive = Math.max(maxActive, active);
     applied.push(target);
@@ -3647,7 +3646,7 @@ await runTestAsync('Uji 134: Transisi tab berurutan dan hanya menerapkan tujuan 
     active--;
   });
   const pending = tabs.request('music');
-  tabs.request('hydration');
+  tabs.request('focus');
   tabs.request('focus');
   assert.deepEqual(applied, ['music']);
   release();
@@ -3661,7 +3660,7 @@ await runTestAsync('Uji 134: Transisi tab berurutan dan hanya menerapkan tujuan 
 await runTestAsync('Uji 135: Tab tetap dapat dipindah setelah no-op dan kegagalan transisi', async () => {
   const applied: string[] = [];
   let fail = true;
-  const tabs = new TabTransition<'focus' | 'music' | 'hydration'>('focus', async (target) => {
+  const tabs = new TabTransition<'focus' | 'music'>('focus', async (target) => {
     if (fail) throw new Error('resize failed');
     applied.push(target);
   });
@@ -3670,8 +3669,8 @@ await runTestAsync('Uji 135: Tab tetap dapat dipindah setelah no-op dan kegagala
   await noop;
   await assert.rejects(failure, /resize failed/);
   fail = false;
-  await tabs.request('hydration');
-  assert.deepEqual(applied, ['hydration']);
+  await tabs.request('music');
+  assert.deepEqual(applied, ['music']);
 });
 
 runTest('Uji 136: Scrollbar tidak ditampilkan dan transisi menghormati reduced motion', () => {
@@ -4285,6 +4284,55 @@ runTest('Uji 167: Frame Figma lokal mempertahankan jeda idle dan urutan kedip', 
   assert.equal(figmaIdleFrameAt(2175), 4);
   assert.equal(figmaIdleFrameAt(2674), 7);
   assert.equal(figmaIdleFrameAt(2675), 0);
+});
+
+runTest('Uji 168: Lingkaran istirahat mengikuti fase, status dan sisa waktu', () => {
+  const rest = { id: 1, type: 'break' as const, durationMin: 5, label: 'Istirahat', isShortened: false };
+  const full = getRestPresentation(rest, 300, 300, 'running');
+  assert.equal(full.active, true);
+  assert.equal(full.fraction, 1);
+  assert.equal(full.time, '05:00');
+  assert.equal(getRestPresentation(rest, 150, 300, 'running').fraction, 0.5);
+  assert.equal(getRestPresentation(rest, 150, 300, 'paused').status, 'Istirahat dijeda');
+  assert.equal(getRestPresentation(rest, 300, 300, 'waiting_next').status, 'Siap mulai istirahat');
+  assert.equal(getRestPresentation(rest, -1, 300, 'running').fraction, 0);
+  assert.equal(getRestPresentation(rest, Number.NaN, 0, 'running').time, '00:00');
+  assert.equal(getRestPresentation(rest, 900, 300, 'running').fraction, 1);
+  assert.equal(getRestPresentation(rest, 0, 300, 'completed').active, false);
+});
+
+runTest('Uji 169: Fokus-istirahat-fokus mengganti tampilan tanpa timer pengingat terpisah', () => {
+  const elements = new Map<string, { hidden: boolean; textContent: string; style: { setProperty: (key: string, value: string) => void } }>();
+  const properties = new Map<string, string>();
+  for (const id of ['rest-countdown', 'rest-reminder', 'tab-btn-focus', 'rest-time', 'rest-status', 'rest-ring-progress']) {
+    elements.set(id, { hidden: true, textContent: '', style: { setProperty: (key, value) => { properties.set(key, value); } } });
+  }
+  let resting = false;
+  const root = {
+    getElementById: (id: string) => elements.get(id),
+    querySelector: () => ({ classList: { toggle: (_name: string, active: boolean) => { resting = active; } } }),
+  } as unknown as Document;
+  const engine = new PomodoroEngine({ ...DEFAULT_POMODORO_CONFIG, totalDurationMin: 65, focusDurationMin: 25, breakDurationMin: 5 });
+  engine.setCallbacks({ onTick: (remaining, total, phase) => renderRestPhase(root, phase, remaining, total, engine.getStatus()) });
+  engine.notifyTick();
+  assert.equal(resting, false);
+  engine.skipCurrentPhase();
+  assert.equal(resting, true);
+  assert.equal(elements.get('rest-reminder')?.hidden, false);
+  assert.equal(elements.get('tab-btn-focus')?.textContent, 'Istirahat');
+  assert.equal(elements.get('rest-time')?.textContent, '05:00');
+  assert.equal(properties.get('stroke-dashoffset'), '0');
+  const snapshot = engine.getSnapshot();
+  assert.ok(snapshot);
+  const restored = new PomodoroEngine({ ...DEFAULT_POMODORO_CONFIG, totalDurationMin: 65, focusDurationMin: 25, breakDurationMin: 5 });
+  assert.equal(restored.restoreFromSnapshot(snapshot), true);
+  assert.equal(restored.getCurrentPhase()?.type, 'break');
+  engine.skipCurrentPhase();
+  assert.equal(resting, false);
+  assert.equal(elements.get('rest-reminder')?.hidden, true);
+  assert.equal(elements.get('tab-btn-focus')?.textContent, 'Focus');
+  engine.reset();
+  assert.equal(resting, false);
 });
 
 console.log(`\n=== HASIL: ${passedTests}/${passedTests + failedTests} PENGUJIAN LOLOS DENGAN SUKSES ===`);

@@ -42,6 +42,7 @@ import { isAutostartEnabled, setAutostartEnabled } from './autostartService';
 import { installMockMediaSession } from './devMediaSimulation';
 import { HoverIntent } from './hoverIntent';
 import { isVerticalDock, dockWithinThreshold, type DockPlacement } from './edgeDock';
+import { renderRestPhase } from './timer/restView';
 import { restingPet, rigDesktopPet, mountPetGait, stepDesktopPet, type PetContext } from './desktopPet';
 
 // Inisialisasi status aplikasi dari penyimpanan persisten
@@ -60,7 +61,6 @@ let isSystemMediaActive: boolean = false;
 let isAlwaysOnTopActive: boolean = appState.config.alwaysOnTop ?? true;
 let isSettingsModalOpen: boolean = false;
 let lastKnownDate: string = getTodayDateString();
-let hasNotifiedHydrationDue: boolean = false;
 
 const ambientTracks = AMBIENT_TRACKS;
 let currentTrackIdx: number = 0;
@@ -177,7 +177,6 @@ if (typeof window !== 'undefined') {
   // 5. Hubungkan Pengendali UI & Navigasi
   bindTabs();
   bindTimerControls();
-  bindHydrationControls();
   bindMusicControls();
   bindWindowAndNotchControls();
   bindSettingsModal();
@@ -195,7 +194,7 @@ if (typeof window !== 'undefined') {
   const urlParams = new URLSearchParams(window.location.search);
   const initialTab = urlParams.get('tab') as ActiveTab;
   const initialState = urlParams.get('state') as IslandState;
-  if (initialTab && ['music', 'focus', 'hydration'].includes(initialTab)) {
+  if (initialTab && ['music', 'focus'].includes(initialTab)) {
     document.querySelector<HTMLButtonElement>(`#tab-btn-${initialTab}`)?.click();
   }
   if (initialState && ['hidden', 'compact', 'expanded'].includes(initialState)) {
@@ -316,13 +315,6 @@ export const ISLAND_DIMENSIONS = {
       minHeight: 308,
       resizable: true,
     },
-    hydration: {
-      width: 960,
-      height: 308,
-      minWidth: 640,
-      minHeight: 308,
-      resizable: true,
-    },
     music: {
       width: 960,
       height: 228,
@@ -349,9 +341,6 @@ export function getIslandDimension(
   }
   if (tab === 'music') {
     return ISLAND_DIMENSIONS.expanded.music;
-  }
-  if (tab === 'hydration') {
-    return ISLAND_DIMENSIONS.expanded.hydration;
   }
   return ISLAND_DIMENSIONS.expanded.focus;
 }
@@ -468,7 +457,7 @@ export async function setIslandState(state: IslandState) {
   widget.classList.remove('is-fading-out', 'expanded-ready');
   widget.classList.add('is-morphing');
   if (state === 'expanded') {
-    widget.classList.remove('tab-focus', 'tab-hydration', 'tab-music');
+    widget.classList.remove('tab-focus', 'tab-music');
     widget.classList.add(`tab-${currentTab}`);
   }
 
@@ -490,7 +479,7 @@ export async function setIslandState(state: IslandState) {
   widget.classList.add(`state-${state}`);
   if (state === 'expanded') {
     widget.classList.add('expanded-ready');
-    widget.classList.remove('tab-focus', 'tab-hydration', 'tab-music');
+    widget.classList.remove('tab-focus', 'tab-music');
     widget.classList.add(`tab-${currentTab}`);
   }
 
@@ -541,7 +530,6 @@ function updateForestGenerationBadge() {
 
 function syncUI() {
   updateSessionMeta();
-  updateHydrationUI();
   updateTimelineUI();
   updateForestGenerationBadge();
   engine.notifyTick();
@@ -707,6 +695,8 @@ function handleTimerTick(
   const s = remainingSeconds % 60;
   const timeStr = `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
 
+  renderRestPhase(document, currentPhase, remainingSeconds, phaseTotalSeconds, engine.getStatus());
+  updateSessionMeta();
   const timerDisplay = document.querySelector<HTMLElement>('#timer-display');
   if (timerDisplay) timerDisplay.innerText = timeStr;
 
@@ -764,7 +754,7 @@ function handleTimerTick(
 
 function handlePhaseComplete(
   completedPhase: PlanPhase,
-  _nextPhase?: PlanPhase | null,
+  nextPhase?: PlanPhase | null,
   isSkipped: boolean = false
 ) {
   // Bunyikan lonceng lembut jika suara aktif dan bukan fase yang di-skip
@@ -808,7 +798,9 @@ function handlePhaseComplete(
     // Kirim notifikasi desktop native saat fokus selesai
     void sendDesktopNotification(
       'Fokus Selesai! 🌿',
-      'Momo berhasil menanam 1 pohon di hutanmu. Waktunya istirahat sejenak.'
+      nextPhase?.type === 'break'
+        ? 'Pohonmu sudah tumbuh. Waktunya istirahat dan minum air dulu.'
+        : 'Pohonmu sudah tumbuh. Rencana fokusmu selesai.'
     );
   } else if (completedPhase.type === 'break' && !isSkipped) {
     // Kirim notifikasi desktop native saat istirahat selesai
@@ -885,7 +877,7 @@ function handleStatusChange(status: TimerStatus) {
     // Timer dijeda: Momo duduk di dekat tunas; pertumbuhan berhenti
     renderer?.setTimerPaused(true);
   } else if (status === 'waiting_next') {
-    btnToggle.innerText = 'Mulai Sesi Berikutnya';
+    btnToggle.innerText = engine.getCurrentPhase()?.type === 'break' ? 'Mulai Istirahat' : 'Mulai Fokus';
     btnToggle.style.backgroundColor = 'var(--color-accent-green)';
     btnToggle.style.color = '#101917';
     renderer?.setMood('idle');
@@ -929,7 +921,7 @@ function bindTabs() {
       });
 
       if (widget) {
-        widget.classList.remove('tab-focus', 'tab-hydration', 'tab-music');
+        widget.classList.remove('tab-focus', 'tab-music');
         widget.classList.add(`tab-${targetTab}`);
       }
 
@@ -938,9 +930,6 @@ function bindTabs() {
       });
       const activePanel = document.querySelector<HTMLElement>(`#panel-${targetTab}`);
       if (activePanel) activePanel.classList.add('active');
-      if (targetTab === 'hydration') {
-        updateHydrationUI();
-      }
 
       // Sinkronkan ukuran jendela native sesuai tab yang dipilih saat expanded
       if (currentIslandState === 'expanded') {
@@ -966,7 +955,7 @@ function bindTabs() {
   tabButtons.forEach((btn) => {
     btn.addEventListener('click', () => {
       const targetTab = btn.getAttribute('data-tab') as ActiveTab;
-      if (!['focus', 'music', 'hydration'].includes(targetTab)) return;
+      if (!['focus', 'music'].includes(targetTab)) return;
       void transition.request(targetTab).catch((error: unknown) => {
         console.error('Perpindahan fitur gagal:', error);
       });
@@ -1020,205 +1009,6 @@ function bindTimerControls() {
     }
     cancelPlan();
   });
-}
-
-// ============================================================================
-// 5. PENGINGAT MINUM AIR INTERAKTIF DENGAN MOMO
-// ============================================================================
-function bindHydrationControls() {
-  const btnDrink = document.querySelector<HTMLButtonElement>('#btn-drink-water');
-  const btnSnooze = document.querySelector<HTMLButtonElement>('#btn-snooze-water');
-  const compactDrop = document.querySelector<HTMLElement>('#compact-water-drop');
-
-  compactDrop?.addEventListener('click', (e) => {
-    e.stopPropagation();
-    setIslandState('expanded');
-    document.querySelector<HTMLButtonElement>('#tab-btn-hydration')?.click();
-  });
-
-  btnDrink?.addEventListener('click', () => {
-    const targetMl = appState.config.dailyWaterTargetMl || 2000;
-    const isTargetJustReached = (appState.waterMl + 250) >= targetMl && appState.waterMl < targetMl;
-
-    // Catatan air HANYA bertambah saat pengguna menekan tombol minum
-    appState.waterMl = Math.min(targetMl + 500, appState.waterMl + 250);
-    appState.progress.hydrationGlasses = Math.floor(appState.waterMl / 250);
-    hasNotifiedHydrationDue = false;
-
-    // Jadwalkan ulang pengingat berikutnya
-    const intervalMin = appState.config.hydrationReminderIntervalMin || 45;
-    appState.nextHydrationReminderTimestamp = Date.now() + intervalMin * 60 * 1000;
-    saveAppState(appState);
-
-    renderer?.setHydrated(true);
-
-    const momoActor = document.querySelector<HTMLElement>('#momo-hydration-actor');
-    const teaCup = document.querySelector<HTMLElement>('#pixel-tea-cup');
-    const scene = document.querySelector<HTMLElement>('#tea-cup-scene');
-
-    // 1. Momo meneguk air dan air di mug surut menjadi kosong
-    if (momoActor) momoActor.className = 'momo-hydrated-sprite momo-pose-sip';
-    if (teaCup) teaCup.classList.add('is-empty');
-    if (scene) scene.classList.remove('is-due');
-    btnDrink.classList.remove('pulse-action');
-
-    updateHydrationStats();
-
-    // Feedback tombol
-    const originalText = btnDrink.innerText;
-    btnDrink.innerText = 'Segar! (+250 ml)';
-    setTimeout(() => {
-      btnDrink.innerText = originalText;
-    }, 1500);
-
-    if (isTargetJustReached) {
-      // 2. Target harian tercapai: Momo mengangkat mug untuk bersulang dengan percikan pixel
-      setTimeout(() => {
-        if (momoActor) momoActor.className = 'momo-hydrated-sprite momo-pose-toast';
-        if (appState.config.soundEnabled) audio.playChime();
-
-        const badge = document.querySelector<HTMLElement>('#hydration-badge');
-        const heading = document.querySelector<HTMLElement>('#hydration-heading');
-        const desc = document.querySelector<HTMLElement>('#hydration-desc');
-
-        if (badge) {
-          badge.innerText = 'TARGET TERCAPAI';
-          badge.className = 'session-badge badge-green';
-        }
-        if (heading) heading.innerText = 'Target Hari Ini Tercapai!';
-        if (desc) desc.innerText = 'Kerja luar biasa menjaga hidrasi dan fokus pikiranmu hari ini.';
-
-        setTimeout(() => {
-          updateHydrationUI();
-        }, 2600);
-      }, 1200);
-    } else {
-      setTimeout(() => {
-        updateHydrationUI();
-      }, 1600);
-    }
-  });
-
-  btnSnooze?.addEventListener('click', () => {
-    // Tunda riil 10 menit
-    appState.nextHydrationReminderTimestamp = Date.now() + 10 * 60 * 1000;
-    hasNotifiedHydrationDue = false;
-    saveAppState(appState);
-
-    const momoActor = document.querySelector<HTMLElement>('#momo-hydration-actor');
-    const teaCup = document.querySelector<HTMLElement>('#pixel-tea-cup');
-    const scene = document.querySelector<HTMLElement>('#tea-cup-scene');
-    const desc = document.querySelector<HTMLElement>('#hydration-desc');
-
-    // Momo meletakkan mug dan duduk menunggu santai
-    if (momoActor) momoActor.className = 'momo-hydrated-sprite momo-pose-relaxed';
-    if (teaCup) teaCup.classList.add('is-empty');
-    if (scene) scene.classList.remove('is-due');
-    btnDrink?.classList.remove('pulse-action');
-
-    const snoozeDate = new Date(appState.nextHydrationReminderTimestamp);
-    const snoozeTimeStr = `${snoozeDate.getHours().toString().padStart(2, '0')}:${snoozeDate.getMinutes().toString().padStart(2, '0')}`;
-    if (desc) desc.innerText = `Pengingat ditunda 10 menit (pukul ${snoozeTimeStr}).`;
-
-    btnSnooze.innerText = 'Ditunda 10 m';
-    setTimeout(() => {
-      btnSnooze.innerText = 'Tunda 10 m';
-    }, 2000);
-
-    const compactDropEl = document.querySelector<HTMLElement>('#compact-water-drop');
-    if (compactDropEl) compactDropEl.classList.remove('active');
-  });
-}
-
-function updateHydrationStats() {
-  const targetMl = appState.config.dailyWaterTargetMl || 2000;
-  const currentMl = appState.waterMl;
-  const totalGlasses = Math.max(1, Math.round(targetMl / 250));
-  const currentGlasses = Math.min(totalGlasses, Math.floor(currentMl / 250));
-
-  const volEl = document.querySelector<HTMLElement>('#hydration-vol');
-  if (volEl) {
-    volEl.innerText = `${currentMl.toLocaleString('id-ID')} / ${targetMl.toLocaleString('id-ID')} ml`;
-  }
-
-  const glassesEl = document.querySelector<HTMLElement>('#hydration-glasses');
-  if (glassesEl) {
-    glassesEl.innerText = `${currentGlasses} / ${totalGlasses} gelas`;
-  }
-
-  const barEl = document.querySelector<HTMLElement>('#segmented-glasses');
-  if (barEl) {
-    barEl.innerHTML = '';
-    for (let i = 0; i < totalGlasses; i++) {
-      const seg = document.createElement('span');
-      seg.className = `glass-seg ${i < currentGlasses ? 'filled' : ''}`;
-      barEl.appendChild(seg);
-    }
-  }
-}
-
-function updateHydrationUI() {
-  updateHydrationStats();
-
-  const isDue = Date.now() >= appState.nextHydrationReminderTimestamp;
-  const momoActor = document.querySelector<HTMLElement>('#momo-hydration-actor');
-  const teaCup = document.querySelector<HTMLElement>('#pixel-tea-cup');
-  const scene = document.querySelector<HTMLElement>('#tea-cup-scene');
-  const btnDrink = document.querySelector<HTMLButtonElement>('#btn-drink-water');
-  const badge = document.querySelector<HTMLElement>('#hydration-badge');
-  const heading = document.querySelector<HTMLElement>('#hydration-heading');
-  const desc = document.querySelector<HTMLElement>('#hydration-desc');
-  const compactDrop = document.querySelector<HTMLElement>('#compact-water-drop');
-
-  if (compactDrop) {
-    compactDrop.classList.toggle('active', isDue);
-  }
-
-  const nextDate = new Date(appState.nextHydrationReminderTimestamp);
-  const nextTimeStr = `${nextDate.getHours().toString().padStart(2, '0')}:${nextDate.getMinutes().toString().padStart(2, '0')}`;
-  const targetMl = appState.config.dailyWaterTargetMl || 2000;
-  const isTargetMet = appState.waterMl >= targetMl;
-
-  if (isDue) {
-    if (!hasNotifiedHydrationDue) {
-      hasNotifiedHydrationDue = true;
-      sendDesktopNotification(
-        'Waktunya Minum Air!',
-        'Beri jeda sejenak untuk dirimu dan teguk segelas air segar.'
-      );
-    }
-
-    // Pengingat tiba: Momo datang membawa mug dan mengangkatnya mengajak minum
-    if (teaCup) teaCup.classList.remove('is-empty');
-    if (scene) scene.classList.add('is-due');
-    if (momoActor && !momoActor.classList.contains('momo-pose-sip') && !momoActor.classList.contains('momo-pose-toast')) {
-      momoActor.className = 'momo-hydrated-sprite momo-pose-offer';
-    }
-    if (btnDrink) btnDrink.classList.add('pulse-action');
-    if (badge) {
-      badge.innerText = 'WAKTUNYA ISI ULANG';
-      badge.className = 'session-badge badge-blue';
-    }
-    if (heading) heading.innerText = 'Seteguk dulu, yuk.';
-    if (desc) desc.innerText = 'Beri jeda untuk dirimu dan segelas air.';
-  } else {
-    hasNotifiedHydrationDue = false;
-    // Belum waktunya minum: Momo duduk santai, mug kosong (penanda visual bahwa sesi minum sudah ditangani)
-    if (teaCup) teaCup.classList.add('is-empty');
-    if (scene) scene.classList.remove('is-due');
-    if (momoActor && !momoActor.classList.contains('momo-pose-sip') && !momoActor.classList.contains('momo-pose-toast')) {
-      momoActor.className = 'momo-hydrated-sprite momo-pose-relaxed';
-    }
-    if (btnDrink) btnDrink.classList.remove('pulse-action');
-    if (badge) {
-      badge.innerText = isTargetMet ? 'TARGET TERCAPAI' : 'HIDRASI TERJAGA';
-      badge.className = isTargetMet ? 'session-badge badge-green' : 'session-badge badge-blue';
-    }
-    if (heading) heading.innerText = isTargetMet ? 'Target Harian Selesai!' : 'Pikiranmu segar kembali.';
-    if (desc) desc.innerText = isTargetMet
-      ? `Hebat! ${appState.waterMl.toLocaleString('id-ID')} ml air terpenuhi hari ini.`
-      : `Pengingat berikutnya pukul ${nextTimeStr}.`;
-  }
 }
 
 // ============================================================================
@@ -2937,26 +2727,6 @@ function bindClockTicker() {
       lastKnownDate = today;
     }
 
-    // Status pengingat minum
-    const isDue = Date.now() >= appState.nextHydrationReminderTimestamp;
-    if (isDue && !hasNotifiedHydrationDue) {
-      updateHydrationUI();
-    }
-    const compactDrop = document.querySelector<HTMLElement>('#compact-water-drop');
-    if (compactDrop) {
-      compactDrop.classList.toggle('active', isDue);
-    }
-
-    const hydrationTab = document.querySelector<HTMLButtonElement>('#tab-btn-hydration');
-    if (hydrationTab) {
-      if (isDue && currentTab !== 'hydration') {
-        hydrationTab.style.boxShadow = '0 0 10px rgba(113, 186, 131, 0.9)';
-        hydrationTab.title = 'Waktunya minum air!';
-      } else {
-        hydrationTab.style.boxShadow = '';
-        hydrationTab.title = '';
-      }
-    }
   };
 
   updateClock();
@@ -2972,11 +2742,7 @@ function handleMidnightRollover(today: string) {
 
   appState.progress.completedSessionsToday = 0;
   appState.progress.growthStage = 0;
-  appState.progress.hydrationGlasses = 0;
-  appState.waterMl = 0;
   appState.lastActiveDate = today;
-  appState.nextHydrationReminderTimestamp =
-    Date.now() + (appState.config.hydrationReminderIntervalMin || 45) * 60 * 1000;
 
   saveAppState(appState);
   syncUI();
