@@ -1,4 +1,17 @@
-# Moss Island
+<p align="center">
+  <img src="src/assets/figma_svg/momo_v2/momo_v2_wave_01.svg" width="96" height="96" alt="Momo, pendamping Moss Island" />
+</p>
+<h1 align="center">Moss Island</h1>
+<p align="center">Pendamping kecil untuk fokus, rehat, dan menumbuhkan pulau.</p>
+<p align="center"><strong>Tauri 2 · TypeScript · Rust · Canvas 2D</strong><br />Desktop Windows · Penyimpanan lokal</p>
+<p align="center">
+  <a href="#fitur-utama">Fitur</a> ·
+  <a href="#arsitektur">Arsitektur</a> ·
+  <a href="#menjalankan-proyek">Mulai</a> ·
+  <a href="#pemeriksaan-kualitas">Pengujian</a>
+</p>
+
+<hr />
 
 Moss Island adalah aplikasi pendamping desktop untuk membantu menjaga ritme fokus, istirahat, dan minum air. Aplikasi tampil sebagai pulau kecil yang selalu terlihat di atas jendela lain, dengan Momo sebagai karakter pendamping. Sesi fokus, perkembangan pulau, musik, dan pengingat disatukan dalam antarmuka yang dapat dibuka penuh, diperkecil menjadi bilah, atau ditampilkan sebagai pet.
 
@@ -16,7 +29,7 @@ Proyek memakai **Tauri 2, Rust, TypeScript, HTML/CSS, dan Canvas 2D**. Integrasi
 | Area | Perilaku |
 | --- | --- |
 | Fokus dan pulau | Durasi pilihan mencakup fokus dan istirahat. Contoh: 3 jam dibagi menjadi 2 jam 25 menit fokus dan 35 menit istirahat. Lingkaran waktu berada di samping kebun. Progres sesi menumbuhkan pohon, dengan musim dan aktivitas berkebun Momo. |
-| Istirahat | Tab Focus berganti menjadi Istirahat dengan lingkaran hitung mundur, pengingat minum, dan ajakan merilekskan tubuh. |
+| Istirahat | Tab Fokus berganti menjadi Istirahat dengan lingkaran hitung mundur, pengingat minum, dan ajakan merilekskan tubuh. |
 | Musik | Playlist audio lokal serta metadata, artwork, timeline, dan kontrol sesi media Windows sesuai kemampuan pemutar. |
 | Lirik | Pencarian melalui LRCLIB, lirik bertimestamp bila tersedia, dan koreksi waktu per rekaman. |
 | Mode desktop | Panel penuh, bilah minimize, dan pet utuh yang berjalan menghadap kiri/kanan serta perlahan menjauhi kursor. Saat musik diputar, Momo sesekali menari, melambai, atau bereaksi lucu. |
@@ -25,6 +38,9 @@ Proyek memakai **Tauri 2, Rust, TypeScript, HTML/CSS, dan Canvas 2D**. Integrasi
 
 Bilah minimize dan mode pet adalah dua tampilan berbeda. Acuan visual Momo mengikuti aset Figma lokal; pose berjalan samping merupakan adaptasi untuk pet desktop.
 
+<details>
+<summary><strong>Perilaku kebun, musim, dan pet</strong></summary>
+
 Cuaca pulau mengikuti musim: gerimis sesekali pada musim semi, hujan lebih jarang dan singkat saat panas, hujan lebih lama saat gugur, serta salju tanpa hujan atau genangan saat dingin. Genangan mengering bertahap; Momo menunda berkebun saat hujan dan melanjutkannya setelah reda. Cuaca ini simulasi visual, bukan laporan cuaca lokasi pengguna.
 
 Tunas baru langsung mendapat antrean tanam, siram, dan pupuk, kemudian dijadwalkan disiram setiap 30 detik aktif. Pohon dewasa mendapat satu kunjungan per 60 detik aktif dengan urutan acak tanpa pengulangan sampai seluruh pohon dikunjungi. Waktu perjalanan dan pekerjaan yang sedang berlangsung dapat menunda kedatangan; jeda, istirahat, dan hujan menahan jadwal tanpa menumpuk pekerjaan. Animasi berkebun dan gerak mendapat prioritas di atas aksi dekoratif.
@@ -32,6 +48,8 @@ Tunas baru langsung mendapat antrean tanam, siram, dan pupuk, kemudian dijadwalk
 Kelima spesies pohon tropis mempertahankan daun pada musim gugur, dengan detail bunga, buah, ujung daun, dan aksen dingin yang berbeda sesuai musim dalam simulasi pulau.
 
 Layar Fokus menampilkan waktu, kebun dan satu tombol utama. Total durasi dan rincian fokus/istirahat terlihat di bawah circle; pembatalan tersedia melalui Rencana; Keluar aplikasi ada di menu titik tiga. Label dan pesan di dalam lingkaran waktu tetap ditampilkan. Saat istirahat hanya satu pengingat pendek muncul bergantian.
+
+</details>
 
 ## Arsitektur
 
@@ -91,7 +109,7 @@ Rekaman playlist tidak disertakan dalam repositori. Aplikasi tetap dapat dibangu
 
 ## Pemeriksaan kualitas
 
-Workflow [CI](.github/workflows/ci.yml) berjalan pada push ke `main`, pull request, atau pemicu manual di Windows.
+Workflow [CI](.github/workflows/ci.yml) mendeteksi perubahan pada push ke `main` dan pull request. Jika seluruh berkas yang berubah adalah Markdown (`.md`), job lint, tes, dan build dilewati; hanya deteksi perubahan yang berjalan singkat. Perubahan kode atau konfigurasi tetap menjalankan seluruh pemeriksaan Windows. Pemicu manual selalu menjalankan pemeriksaan lengkap.
 
 | Pemeriksaan | Yang dijawab | Perintah lokal dari root |
 | --- | --- | --- |
@@ -100,6 +118,9 @@ Workflow [CI](.github/workflows/ci.yml) berjalan pada push ke `main`, pull reque
 | ESLint/Clippy | Adakah pola kode mencurigakan meskipun bisa dibangun? | `npm run lint`, `cargo clippy --locked --all-targets --manifest-path src-tauri/Cargo.toml -- -D warnings` |
 
 Jalankan `npm ci` untuk memasang dependensi frontend. CI memasang Rust **1.99.1** beserta komponen Clippy; gunakan versi compiler yang sama untuk hasil lint Rust yang konsisten. `rustc --version` dan `cargo clippy --version` menampilkan versi lokal.
+
+<details>
+<summary><strong>Aturan lint dan batas pengujian</strong></summary>
 
 ESLint memakai aturan recommended JavaScript/TypeScript serta pemeriksaan bertipe untuk `await` non-Promise dan penyalahgunaan Promise. Pemeriksaan mencakup `src`, `tests`, konfigurasi Vite, serta berkas `.mjs` di root. `--max-warnings 0` membuat peringatan menggagalkan CI. Berkas hasil build dan Rust diabaikan oleh ESLint karena memiliki pemeriksa tersendiri.
 
@@ -110,6 +131,8 @@ Clippy memeriksa seluruh target dan memperlakukan peringatan sebagai error. Comm
 Dependensi lint memakai override terbatas `minimatch@^10.0.0` ke `11.0.4` untuk menghindari [GHSA-g3hv-75wg-m249](https://github.com/advisories/GHSA-g3hv-75wg-m249). Tinjau kembali override setelah dependensi induk mengadopsi versi yang diperbaiki. Jangan menjalankan `npm audit fix --force` karena rekomendasinya dapat menurunkan ESLint ke versi mayor lama.
 
 Tes perangkat/jaringan Rust yang ditandai ignored tetap tidak dijalankan otomatis. Lint dan tes logika tidak menggantikan pemeriksaan UI atau integrasi pemutar media pada desktop nyata.
+
+</details>
 
 ## Audio lokal
 

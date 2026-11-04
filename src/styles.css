@@ -2808,3 +2808,13 @@ html:is([data-dock-edge="left"], [data-dock-edge="right"]) #panel-focus.is-resti
 #panel-focus #tree-plan-summary { grid-column: 1; font-size: .65rem; color: var(--color-text-muted); }
 #panel-focus .stat-meta-group { align-self: stretch; line-height: 1.6; }
 #panel-focus .session-badge { white-space: nowrap; }
+
+#btn-finish-timer, #btn-confirm-cancel-focus {
+  background: #9f3942;
+  border: 1px solid #d46d76;
+  color: #ffffff;
+  font-weight: 700;
+}
+#btn-finish-timer:hover, #btn-confirm-cancel-focus:hover { background: #b5434e; border-color: #eb939b; }
+#btn-finish-timer:active, #btn-confirm-cancel-focus:active { background: #852e37; }
+#btn-finish-timer:focus-visible, #btn-confirm-cancel-focus:focus-visible { outline: 2px solid #ffd6d9; outline-offset: 3px; }
