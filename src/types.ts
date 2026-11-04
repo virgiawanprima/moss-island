@@ -31,7 +31,7 @@ export type SeasonMode = 'cycle' | 'manual';
 export interface PomodoroConfig {
   momoIntensity?: 'calm' | 'expressive';
   hoverEnabled?: boolean;
-  focusTargetMin?: number;
+  focusTargetMin?: number; // Kompatibilitas snapshot lama; pengaturan baru memakai totalDurationMin.
   totalDurationMin: number;
   focusDurationMin: number;
   breakDurationMin: number;

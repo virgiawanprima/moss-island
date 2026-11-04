@@ -2750,24 +2750,27 @@ runTest('Uji 86: Momo mengelilingi semua pohon untuk menyiram dan memupuk tanpa 
   assert.strictEqual(renderer.gardeningActivity, null);
 });
 
-runTest('Uji 87: Hujan muncul sesekali, genangan terbentuk lalu mengering', () => {
+runTest('Uji 87: Gerimis musiman muncul bertahap lalu genangan mengering', () => {
   const weather = new FocusWeather(() => 0);
-  let starts = 0;
-  for (let tick = 0; tick < 250; tick++) if (weather.step(0.1, true, true)) starts++;
-  assert.strictEqual(starts, 1);
-  assert.ok(weather.intensity > 0);
+  const step = (seconds: number, enabled = true, season: IslandSeason = 'spring') => {
+    let starts = 0;
+    for (let i = 0; i < seconds * 10; i++) if (weather.step(0.1, enabled, season)) starts++;
+    return starts;
+  };
+  assert.equal(step(100), 0, 'Ada masa kering sebelum hujan pertama');
+  assert.equal(step(25), 1);
+  assert.ok(weather.intensity > 0 && weather.intensity <= 0.5);
   assert.ok(weather.wetness > 0);
   const paused = [weather.intensity, weather.wetness];
-  for (let tick = 0; tick < 100; tick++) weather.step(0.1, false, true);
+  step(10, false);
   assert.deepEqual([weather.intensity, weather.wetness], paused);
-  for (let tick = 0; tick < 180; tick++) if (weather.step(0.1, true, true)) starts++;
-  assert.strictEqual(weather.intensity, 0);
-  assert.ok(weather.wetness > 0.5);
-  for (let tick = 0; tick < 600; tick++) if (weather.step(0.1, true, true)) starts++;
-  assert.strictEqual(starts, 1, 'Tidak hujan lagi sebelum jeda minimum');
-  assert.strictEqual(weather.wetness, 0);
-  for (let tick = 0; tick < 1000; tick++) assert.strictEqual(weather.step(0.1, true, false), false);
-  assert.strictEqual(weather.intensity, 0, 'Musim dingin tetap memakai salju');
+  step(25);
+  assert.equal(weather.intensity, 0);
+  step(70);
+  assert.equal(weather.wetness, 0);
+  assert.equal(step(1000, true, 'winter'), 0);
+  assert.equal(weather.intensity, 0);
+  assert.equal(weather.wetness, 0);
 });
 
 runTest('Uji 88: Momo mendapat semua kegiatan santai, bergantian dengan rutinitas berkebun', () => {
@@ -3073,7 +3076,8 @@ runTest('Uji 106: Pengaturan lama beralih ke pola tetap dan rencana baru dapat d
   const config = sanitizePomodoroConfig(legacy);
   assert.equal(config.focusDurationMin, 25);
   assert.equal(config.breakDurationMin, 5);
-  assert.equal(config.focusTargetMin, buildPomodoroPlan(60, 20, 10).totalFocusMin);
+  assert.equal(config.focusTargetMin, undefined);
+  assert.equal(config.totalDurationMin, 60, 'Durasi keseluruhan tidak diperpanjang saat migrasi');
   const fixed = sanitizePomodoroConfig({ ...config, focusTargetMin: 1440 });
   const plan = buildFocusTargetPlan(1440);
   assert.equal(fixed.totalDurationMin, plan.totalDurationMin);
@@ -3741,7 +3745,9 @@ runTest('Uji 138: Pause saat lompatan menyelesaikan settle, tetap bernapas dan b
   assert.equal(h.latest().pose, 'settle');
   h.clock.tick(270);
   assert.equal(h.latest().pose, 'rest');
-  h.clock.tick(3000);
+  h.clock.tick(5700);
+  assert.equal(h.frames.some(frame => frame.playback === 'paused' && frame.eyes === 'closed'), false);
+  h.clock.tick(300);
   assert.ok(h.frames.some(frame => frame.playback === 'paused' && frame.eyes === 'closed'));
   assert.equal(h.frames.some(frame => frame.pose === 'finish'), false);
   h.momo.dispose();
@@ -4279,11 +4285,14 @@ runTest('Uji 167: Frame Figma lokal mempertahankan jeda idle dan urutan kedip', 
     assert.match(fs.readFileSync(new URL(source), 'utf8'), /width="64" height="64"/);
   }
   assert.equal(figmaIdleFrameAt(0), 0);
-  assert.equal(figmaIdleFrameAt(1799), 0);
-  assert.equal(figmaIdleFrameAt(1800), 1);
-  assert.equal(figmaIdleFrameAt(2175), 4);
-  assert.equal(figmaIdleFrameAt(2674), 7);
-  assert.equal(figmaIdleFrameAt(2675), 0);
+  assert.equal(figmaIdleFrameAt(6199), 0);
+  assert.equal(figmaIdleFrameAt(6200), 1);
+  assert.equal(figmaIdleFrameAt(6395), 4);
+  assert.equal(figmaIdleFrameAt(6654), 7);
+  assert.equal(figmaIdleFrameAt(6655), 0);
+  assert.equal(figmaIdleFrameAt(15754), 0);
+  assert.equal(figmaIdleFrameAt(15755), 1);
+  assert.equal(figmaIdleFrameAt(Number.NaN), 0);
 });
 
 runTest('Uji 168: Lingkaran istirahat mengikuti fase, status dan sisa waktu', () => {
@@ -4333,6 +4342,88 @@ runTest('Uji 169: Fokus-istirahat-fokus mengganti tampilan tanpa timer pengingat
   assert.equal(elements.get('tab-btn-focus')?.textContent, 'Focus');
   engine.reset();
   assert.equal(resting, false);
+});
+
+runTest('Uji 170: Hujan musim panas lebih jarang, singkat dan genangannya lebih cepat kering', () => {
+  const sample = (season: IslandSeason) => {
+    const weather = new FocusWeather(() => 0);
+    let starts = 0, wetTicks = 0;
+    for (let i = 0; i < 36000; i++) {
+      if (weather.step(0.1, true, season)) starts++;
+      if (weather.wetness > 0.01) wetTicks++;
+    }
+    return { starts, wetTicks };
+  };
+  const summer = sample('summer'), spring = sample('spring'), autumn = sample('autumn');
+  assert.ok(summer.starts < spring.starts && spring.starts < autumn.starts);
+  assert.ok(summer.wetTicks < spring.wetTicks && spring.wetTicks < autumn.wetTicks);
+  assert.deepEqual(sample('winter'), { starts: 0, wetTicks: 0 });
+});
+
+runTest('Uji 171: Beralih ke salju menghapus hujan/genangan termasuk saat pause dan ambient rain', () => {
+  const renderer = new IslandRenderer(createMockCanvas()) as any;
+  renderer.weather = new FocusWeather(() => 0);
+  renderer.weather.untilRain = 0;
+  for (let i = 0; i < 120; i++) renderer.update();
+  assert.ok(renderer.weather.wetness > 0);
+  renderer.setTimerPaused(true);
+  renderer.setAmbientMode('rain');
+  renderer.setSeason('winter');
+  assert.equal(renderer.weather.intensity, 0);
+  assert.equal(renderer.weather.wetness, 0);
+  assert.deepEqual(renderer.puddles, []);
+  assert.equal(renderer.rainJoyTimer, 0);
+  renderer.setSeason('summer');
+  renderer.setTimerPaused(false);
+  for (let i = 0; i < 120; i++) renderer.update();
+  assert.equal(renderer.weather.intensity, 0, 'Musim baru tidak langsung hujan');
+});
+
+runTest('Uji 172: Momo menunda berkebun saat hujan lalu melanjutkan menanam, menyiram dan memupuk', () => {
+  const renderer = new IslandRenderer(createMockCanvas()) as any;
+  renderer.startFocusPlanting();
+  renderer.updateFocusProgress(0.55);
+  renderer.weather = new FocusWeather(() => 0);
+  renderer.weather.untilRain = 0;
+  for (let i = 0; i < 150; i++) renderer.update();
+  assert.ok(renderer.weather.intensity > 0.15);
+  const position = { ...renderer.currentPos };
+  for (let i = 0; i < 30; i++) renderer.update();
+  assert.deepEqual(renderer.currentPos, position);
+  assert.equal(renderer.gardeningActivity, null);
+  const actions = new Set<string>();
+  for (let i = 0; i < 2500; i++) {
+    renderer.update();
+    if (renderer.gardeningActivity) actions.add(renderer.gardeningActivity.action);
+  }
+  assert.deepEqual([...actions].sort(), ['fertilize', 'plant', 'water']);
+  assert.equal(renderer.hasActiveSprout(), true);
+  assert.deepEqual(renderer.getPlantedTrees(), []);
+});
+
+runTest('Uji 173: Input tiga jam mencakup seluruh fokus dan istirahat, juga setelah disimpan dan dipulihkan', () => {
+  for (const total of [1, 25, 30, 60, 120, 180, 240, 1440]) {
+    const hours = String(Math.floor(total / 60)), minutes = String(total % 60);
+    const result = parseSettingsDuration({ hours, minutes });
+    assert.ok(result.valid);
+    const config = sanitizePomodoroConfig({ ...FIXED_DEFAULT_CONFIG, focusTargetMin: undefined, totalDurationMin: result.total });
+    const engine = new PomodoroEngine(config);
+    const plan = engine.getPlan();
+    assert.equal(plan.totalDurationMin, total);
+    assert.equal(plan.totalFocusMin + plan.totalBreakMin, total);
+    assert.equal(plan.phases.reduce((sum, phase) => sum + phase.durationMin, 0), total);
+    engine.start();
+    engine.pause();
+    const snapshot = engine.getSnapshot();
+    assert.ok(snapshot);
+    const restored = new PomodoroEngine(sanitizePomodoroConfig(JSON.parse(JSON.stringify(config))));
+    assert.ok(restored.restoreFromSnapshot(snapshot));
+    assert.equal(restored.getPlan().totalDurationMin, total);
+  }
+  const threeHours = buildPomodoroPlan(180, 25, 5);
+  assert.equal(threeHours.totalDurationMin, 180);
+  assert.equal(threeHours.totalFocusMin, 145);
+  assert.equal(threeHours.totalBreakMin, 35);
 });
 
 console.log(`\n=== HASIL: ${passedTests}/${passedTests + failedTests} PENGUJIAN LOLOS DENGAN SUKSES ===`);

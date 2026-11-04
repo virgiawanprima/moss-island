@@ -1,3 +1,12 @@
+import type { IslandSeason } from '../types';
+
+export const SEASON_WEATHER = {
+  spring: { gap: [120, 240], duration: [18, 30], strength: 0.5, dryingSeconds: 65 },
+  summer: { gap: [300, 540], duration: [8, 16], strength: 0.35, dryingSeconds: 30 },
+  autumn: { gap: [90, 180], duration: [28, 45], strength: 0.7, dryingSeconds: 95 },
+  winter: { gap: [0, 0], duration: [0, 0], strength: 0, dryingSeconds: 1 },
+} as const;
+
 export interface Puddle {
   r: number;
   c: number;
@@ -29,30 +38,51 @@ export class FocusWeather {
   private remaining = 0;
   public intensity = 0;
   public wetness = 0;
+  private season: IslandSeason = 'spring';
 
   constructor(private random: () => number = Math.random) {
-    this.untilRain = 24 + random() * 24;
+    this.untilRain = this.nextGap();
   }
 
-  step(seconds: number, enabled: boolean, allowRain: boolean): boolean {
+  private nextGap(): number {
+    const [low, high] = SEASON_WEATHER[this.season].gap;
+    return low + this.random() * (high - low);
+  }
+
+  setSeason(season: IslandSeason) {
+    if (season === this.season) return;
+    this.season = season;
+    this.remaining = 0;
+    this.untilRain = this.nextGap();
+    if (season === 'winter') this.intensity = this.wetness = 0;
+  }
+
+  step(seconds: number, enabled: boolean, season: IslandSeason): boolean {
+    this.setSeason(season);
     if (!enabled) return false;
-    const dt = Math.min(0.25, Math.max(0, seconds));
+    const dt = Number.isFinite(seconds) ? Math.min(0.25, Math.max(0, seconds)) : 0;
+    if (dt === 0) return false;
+    const profile = SEASON_WEATHER[season];
     let started = false;
-    if (!allowRain) {
-      this.remaining = 0;
+    if (season === 'winter') {
+      this.intensity = this.wetness = 0;
+      return false;
     } else if (this.remaining > 0) {
       this.remaining = Math.max(0, this.remaining - dt);
-      if (this.remaining === 0) this.untilRain = 90 + this.random() * 70;
+      if (this.remaining === 0) this.untilRain = this.nextGap();
     } else {
       this.untilRain -= dt;
       if (this.untilRain <= 0) {
-        this.remaining = 14 + this.random() * 8;
+        const [low, high] = profile.duration;
+        this.remaining = low + this.random() * (high - low);
         started = true;
       }
     }
     const raining = this.remaining > 0;
-    this.intensity = Math.max(0, Math.min(1, this.intensity + (raining ? dt / 2 : -dt / 3)));
-    this.wetness = Math.max(0, Math.min(1, this.wetness + (raining ? dt / 14 : -dt / 55)));
+    this.intensity = raining
+      ? Math.min(profile.strength, this.intensity + dt * profile.strength / 4)
+      : Math.max(0, this.intensity - dt / 6);
+    this.wetness = Math.max(0, Math.min(1, this.wetness + (raining ? this.intensity * dt / 14 : -dt / profile.dryingSeconds)));
     return started;
   }
 }

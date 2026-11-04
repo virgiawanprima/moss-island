@@ -151,8 +151,7 @@ export function buildFocusTargetPlan(focusTargetMin: number): PomodoroPlan {
 export const DEFAULT_POMODORO_CONFIG: PomodoroConfig = {
   hoverEnabled: false,
   momoIntensity: 'expressive',
-  totalDurationMin: 305,
-  focusTargetMin: 240,
+  totalDurationMin: 240,
   focusDurationMin: 25,
   breakDurationMin: 5,
   autostartBreak: true,

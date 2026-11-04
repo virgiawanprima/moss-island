@@ -110,7 +110,7 @@ export class MusicMomo {
   }
 
   private blinkLater() {
-    this.later(2600 + this.random() * 4300, () => {
+    this.later(6200 + this.random() * 4600, () => {
       this.frame.eyes = 'closed';
       this.emit();
       this.later(110, () => { this.frame.eyes = 'open'; this.emit(); this.blinkLater(); });

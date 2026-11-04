@@ -12,7 +12,7 @@ import {
 } from './types';
 import { IslandRenderer } from './canvas/islandRenderer';
 import { PomodoroEngine } from './timer/pomodoroEngine';
-import { buildFocusTargetPlan, getFirstPhasePreview, getNextPhaseLabel } from './timer/pomodoroPlan';
+import { buildPomodoroPlan, getFirstPhasePreview, getNextPhaseLabel } from './timer/pomodoroPlan';
 import { AmbientSynth, AMBIENT_TRACKS } from './audio/ambientSynth';
 import { STUDY_COVERS } from './audio/studyMusic';
 import { formatPlaybackTime } from './audio/formatPlaybackTime';
@@ -2462,7 +2462,7 @@ function bindSettingsModal() {
 
 function updateSettingsFormInputs() {
   const cfg = appState.config;
-  const target = cfg.focusTargetMin ?? engine.getPlan().totalFocusMin;
+  const target = cfg.totalDurationMin;
   const hours = Math.floor(target / 60);
   const mins = target % 60;
 
@@ -2560,7 +2560,7 @@ function updateModalPlanPreview() {
     summaryEl.style.color = '';
   }
 
-  const plan = buildFocusTargetPlan(result.total);
+  const plan = buildPomodoroPlan(result.total, result.focus, result.rest);
 
   // Update elemen sesuai Figma 1:1
   if (summaryEl) {
@@ -2613,10 +2613,10 @@ async function saveSettingsFromModal(onSuccess: () => void) {
     document.querySelector<HTMLInputElement>('[aria-invalid="true"]')?.focus();
     return;
   }
-  const tempPlan = buildFocusTargetPlan(result.total);
+  const tempPlan = buildPomodoroPlan(result.total, result.focus, result.rest);
   const newConfig: PomodoroConfig = {
     ...appState.config,
-    focusTargetMin: result.total,
+    focusTargetMin: undefined,
     hoverEnabled: document.querySelector<HTMLInputElement>('#setting-hover')?.checked ?? false,
     momoIntensity: document.querySelector<HTMLSelectElement>('#setting-momo-intensity')?.value === 'calm' ? 'calm' : 'expressive',
     totalDurationMin: tempPlan.totalDurationMin,

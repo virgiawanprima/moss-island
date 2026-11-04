@@ -229,6 +229,8 @@ body.is-tauri-native .desktop-env {
    2. DYNAMIC ISLAND WIDGET CONTAINER (Menempel Presisi di Bezel Atas Layar)
    ========================================================================== */
 .island-widget {
+  container-type: inline-size;
+  container-name: island;
   position: fixed;
   top: 0;
   left: 50%;
@@ -1181,7 +1183,7 @@ html::-webkit-scrollbar {
   line-height: 1.4;
 }
 
-@media (min-width: 800px) {
+@container island (min-width: 800px) {
   #panel-music {
     grid-template-columns: minmax(288px, 320px) minmax(0, 1fr) 112px;
   }
@@ -1760,7 +1762,7 @@ html[data-dock-edge="right"] body.is-tauri-native .island-widget.state-expanded.
 /* ==========================================================================
    8. RESPONSIVE MEDIA QUERIES (DPI Terskala / Layar Laptop)
    ========================================================================== */
-@media (max-width: 1024px) {
+@container island (max-width: 1024px) {
   .panel-body {
     gap: 12px;
     grid-template-columns: minmax(180px, 1.1fr) minmax(220px, 1.8fr) minmax(160px, 1fr);
@@ -1770,7 +1772,7 @@ html[data-dock-edge="right"] body.is-tauri-native .island-widget.state-expanded.
   }
 }
 
-@media (max-width: 820px) {
+@container island (max-width: 820px) {
   .panel-body {
     gap: 8px;
     grid-template-columns: minmax(160px, 1fr) minmax(200px, 1.6fr) minmax(150px, 1fr);
@@ -1785,7 +1787,7 @@ html[data-dock-edge="right"] body.is-tauri-native .island-widget.state-expanded.
   }
 }
 
-@media (max-width: 680px) {
+@container island (max-width: 680px) {
   .island-widget.state-expanded .view-expanded {
     padding: 10px 14px 12px 14px;
   }

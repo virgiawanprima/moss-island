@@ -70,22 +70,6 @@ export function sanitizePomodoroConfig(rawConfig: unknown): PomodoroConfig {
       ? raw.totalDurationMin
       : base.totalDurationMin;
 
-  const focus =
-    typeof raw.focusDurationMin === 'number' &&
-    Number.isInteger(raw.focusDurationMin) &&
-    raw.focusDurationMin >= 1 &&
-    raw.focusDurationMin <= 180
-      ? raw.focusDurationMin
-      : base.focusDurationMin;
-
-  const brk =
-    typeof raw.breakDurationMin === 'number' &&
-    Number.isInteger(raw.breakDurationMin) &&
-    raw.breakDurationMin >= 1 &&
-    raw.breakDurationMin <= 60
-      ? raw.breakDurationMin
-      : base.breakDurationMin;
-
   const autostartBreak =
     typeof raw.autostartBreak === 'boolean' ? raw.autostartBreak : base.autostartBreak;
 
@@ -119,13 +103,14 @@ export function sanitizePomodoroConfig(rawConfig: unknown): PomodoroConfig {
       : base.seasonMode;
 
   const focusTargetMin = typeof raw.focusTargetMin === 'number' && Number.isInteger(raw.focusTargetMin) && raw.focusTargetMin >= 1 && raw.focusTargetMin <= 1440
-    ? raw.focusTargetMin : buildPomodoroPlan(total, focus, brk).totalFocusMin;
-  const fixedPlan = buildFocusTargetPlan(focusTargetMin);
+    ? raw.focusTargetMin : undefined;
+  // Snapshot lama tetap memakai jadwalnya sampai pengguna menyimpan durasi baru.
+  const legacyPlan = focusTargetMin === undefined ? null : buildFocusTargetPlan(focusTargetMin);
   return {
     focusTargetMin,
     hoverEnabled: typeof raw.hoverEnabled === 'boolean' ? raw.hoverEnabled : false,
     momoIntensity: raw.momoIntensity === 'calm' ? 'calm' : 'expressive',
-    totalDurationMin: fixedPlan.totalDurationMin,
+    totalDurationMin: legacyPlan?.totalDurationMin ?? total,
     focusDurationMin: 25,
     breakDurationMin: 5,
     autostartBreak,

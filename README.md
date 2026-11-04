@@ -15,7 +15,7 @@ Proyek memakai **Tauri 2, Rust, TypeScript, HTML/CSS, dan Canvas 2D**. Integrasi
 
 | Area | Perilaku |
 | --- | --- |
-| Fokus dan pulau | Timer fokus/istirahat, progres sesi, pohon, musim, dan animasi Momo pada pulau. |
+| Fokus dan pulau | Durasi pilihan mencakup fokus dan istirahat. Contoh: 3 jam dibagi menjadi 2 jam 25 menit fokus dan 35 menit istirahat. Progres sesi menumbuhkan pohon, dengan musim dan aktivitas berkebun Momo. |
 | Istirahat | Tab Focus berganti menjadi Istirahat dengan lingkaran hitung mundur, pengingat minum, dan ajakan merilekskan tubuh. |
 | Musik | Playlist audio lokal serta metadata, artwork, timeline, dan kontrol sesi media Windows sesuai kemampuan pemutar. |
 | Lirik | Pencarian melalui LRCLIB, lirik bertimestamp bila tersedia, dan koreksi waktu per rekaman. |
@@ -24,6 +24,8 @@ Proyek memakai **Tauri 2, Rust, TypeScript, HTML/CSS, dan Canvas 2D**. Integrasi
 | Akses cepat | Tray, shortcut `Ctrl+Shift+M` di Windows, pengaturan selalu di atas, dan dukungan autostart. |
 
 Bilah minimize dan mode pet adalah dua tampilan berbeda. Acuan visual Momo mengikuti aset Figma lokal; pose berjalan samping merupakan adaptasi untuk pet desktop.
+
+Cuaca pulau mengikuti musim: gerimis sesekali pada musim semi, hujan lebih jarang dan singkat saat panas, hujan lebih lama saat gugur, serta salju tanpa hujan atau genangan saat dingin. Genangan mengering bertahap; Momo menunda berkebun saat hujan dan melanjutkannya setelah reda. Cuaca ini simulasi visual, bukan laporan cuaca lokasi pengguna.
 
 ## Arsitektur
 

@@ -11,10 +11,8 @@ export const FIGMA_IDLE_SOURCES = [
   new URL('./assets/figma_svg/momo_v2/momo_v2_idle_08.svg', import.meta.url).href,
 ];
 
-export function figmaIdleFrameAt(time: number): number {
-  const phase = Math.max(0, time) % 2675;
-  return phase < 1800 ? 0 : Math.min(7, 1 + Math.floor((phase - 1800) / 125));
-}
+import { idleFrameAt as figmaIdleFrameAt } from './canvas/idleTiming';
+export { figmaIdleFrameAt };
 
 export interface PetContext {
   x: number;

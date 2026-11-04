@@ -7,6 +7,7 @@ import { GardenSchedule } from './gardenSchedule';
 import { buildGardenRoute, type GardenWaypoint, type GardenAction } from './gardening';
 import { FocusWeather, createPuddles, type Puddle } from './focusWeather';
 import { MomoLeisure } from './momoLeisure';
+import { idleFrameAt } from './idleTiming';
 
 export interface PlantingSlot {
   r: number;
@@ -43,7 +44,6 @@ export class IslandRenderer {
 
   // Animation states
   private frameCount: number = 0;
-  private blinkTimer: number = 0;
   private momoMood: 'idle' | 'happy' | 'hydrated' | 'resting' = 'idle';
   private celebrationTimer: number = 0;
   private hydrationTimer: number = 0;
@@ -138,6 +138,8 @@ export class IslandRenderer {
   public setSeason(season: IslandSeason): void {
     if (this.currentSeason !== season) {
       this.currentSeason = season;
+      this.weather.setSeason(season);
+      if (season === 'winter') { this.puddles = []; this.rainJoyTimer = 0; }
       this.initSeasonalParticles();
       if (season !== 'winter') {
         this.snowAccumulationLevel = 0;
@@ -570,7 +572,7 @@ export class IslandRenderer {
     const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
     const weatherEnabled = !this.focusPaused && !this.inBreak;
     if (this.rainJoyTimer > 0 && weatherEnabled) this.rainJoyTimer--;
-    if (this.weather.step(this.frameInterval / 1000, weatherEnabled, this.currentSeason !== 'winter')) {
+    if (this.weather.step(this.frameInterval / 1000, weatherEnabled, this.currentSeason)) {
       const occupied = this.getCurrentGenTrees().map(tree => ({ r: tree.gridR, c: tree.gridC }));
       if (this.activeSprout) occupied.push(PLANTING_SLOTS[this.activeSprout.slotIndex]);
       this.puddles = createPuddles(occupied);
@@ -660,9 +662,6 @@ export class IslandRenderer {
       else this.bloomingTrees.set(id, remaining - 1);
     }
 
-    // Blinking logic
-    this.blinkTimer = (this.blinkTimer + 1) % 90;
-
     // Reduced motion check: jika pengguna menginginkan gerakan statis, partikel tidak digerakkan
     const prefersReducedMotion =
       typeof window !== 'undefined' &&
@@ -707,7 +706,7 @@ export class IslandRenderer {
       }
 
       // Gerimis Hujan saat mode ambient rain aktif
-      if (this.ambientMode === 'rain' || (this.weather.intensity > 0 && weatherEnabled)) {
+      if (this.weather.intensity > 0 && weatherEnabled && this.currentSeason !== 'winter') {
         for (const drop of this.rainDrops) {
           drop.y += drop.speed;
           drop.x -= drop.speed * 0.4;
@@ -740,7 +739,8 @@ export class IslandRenderer {
       }
     }
 
-    if (prefersReducedMotion || this.focusPaused || this.inBreak || this.rainJoyTimer > 0 || this.momoMood === 'resting') {
+    if (prefersReducedMotion || this.focusPaused || this.inBreak || this.rainJoyTimer > 0
+      || this.weather.intensity > 0.15 || this.momoMood === 'resting') {
       this.isWalking = false;
       return;
     }
@@ -877,8 +877,8 @@ export class IslandRenderer {
     // 3. Pohon, Tunas, dan Momo dengan Y-depth sorting
     this.drawDepthSortedEntities();
 
-    // 4. Efek Rintik Gerimis Hujan saat mode ambient rain
-    if ((this.ambientMode === 'rain' || this.weather.intensity > 0)
+    // Hujan visual mengikuti musim, bukan pilihan audio ambient.
+    if (this.currentSeason !== 'winter' && this.weather.intensity > 0
       && !window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
       this.drawRain();
     }
@@ -898,7 +898,7 @@ export class IslandRenderer {
 
   private drawRain() {
     this.ctx.save();
-    this.ctx.globalAlpha = this.ambientMode === 'rain' ? 1 : this.weather.intensity;
+    this.ctx.globalAlpha = this.weather.intensity;
     this.ctx.strokeStyle = 'rgba(168, 217, 230, 0.45)';
     this.ctx.lineWidth = 1.2;
     this.ctx.beginPath();
@@ -911,7 +911,7 @@ export class IslandRenderer {
   }
 
   private drawPuddles() {
-    if (this.weather.wetness <= 0.01) return;
+    if (this.currentSeason === 'winter' || this.weather.wetness <= 0.01) return;
     const ctx = this.ctx;
     const motion = !window.matchMedia('(prefers-reduced-motion: reduce)').matches;
     ctx.save();
@@ -1341,7 +1341,9 @@ export class IslandRenderer {
       action = 'celebrate';
     }
 
-    const frameIdx = prefersReducedMotion || this.focusPaused ? 0 : Math.floor(this.frameCount / frameDurationTicks) % 8;
+    const frameIdx = prefersReducedMotion || this.focusPaused ? 0
+      : action === 'idle' ? idleFrameAt(this.frameCount * this.frameInterval)
+      : Math.floor(this.frameCount / frameDurationTicks) % 8;
     const scale = 0.52;
     const drawW = 64 * scale;
     const drawH = 64 * scale;
