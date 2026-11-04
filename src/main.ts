@@ -987,6 +987,7 @@ function bindTimerControls() {
     if (cancelPrompt) cancelPrompt.hidden = !open;
     if (actionStack) actionStack.hidden = open;
     const details = document.querySelector<HTMLDetailsElement>('#focus-plan-details');
+    if (details) details.hidden = open;
     if (open) { if (details) details.open = false; keepFocus?.focus(); }
     else document.querySelector<HTMLElement>('#focus-plan-details > summary')?.focus();
   };
