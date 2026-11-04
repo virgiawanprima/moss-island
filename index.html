@@ -139,7 +139,7 @@
           <!-- Column Left: Timer & Session Info (Timer wing) -->
           <div class="col-left">
             <div class="session-pill-row" id="session-pill-clickable" title="Klik untuk membuka pengaturan sesi Pomodoro" style="cursor: pointer;" tabindex="0" role="button">
-              <span class="session-badge" id="session-tag">Fokus · 1</span>
+              <span class="session-badge" id="session-tag">Fokus · Sesi 1/6</span>
               <span class="session-duration" id="session-duration-tag" hidden>30 / 10 menit</span>
             </div>
 
@@ -161,7 +161,10 @@
               <p id="rest-reminder-text">Minum dulu.</p>
             </div>
 
-            <!-- Sub Stats (2 lines exact from Figma) -->
+            <div class="stat-meta-group">
+              <div class="stat-line-title" id="stat-total-title">TOTAL 4 JAM</div>
+              <div class="stat-line-desc" id="stat-total-desc">3 jam fokus + 1 jam istirahat</div>
+            </div>
 
           </div>
 
@@ -174,12 +177,13 @@
             <!-- Island Subtitle & Progress Bar -->
             <div class="island-progress-meta">
               <div class="growth-caption-row">
-                <span class="growth-caption" id="growth-caption" hidden>Oak kecilmu sedang tumbuh</span>
-                <span class="forest-gen-badge" id="forest-gen-badge" title="Pencapaian Generasi Hutan">0/14 pohon</span>
+                <span class="growth-caption" id="tree-plan-summary">6 sesi · 6 pohon akan tumbuh</span>
+                <span id="growth-caption" hidden>Oak kecilmu sedang tumbuh</span>
+                <span class="forest-gen-badge" id="forest-gen-badge" hidden title="Pencapaian Generasi Hutan">0/14 pohon</span>
               </div>
-              <span class="growth-percent" id="growth-percent" hidden>0%</span>
+              <span class="growth-percent" id="growth-percent">0%</span>
             </div>
-            <div class="progress-bar-track" hidden>
+            <div class="progress-bar-track">
               <div class="progress-bar-fill" id="focus-progress-fill" style="width: 0%;"></div>
             </div>
           </div>
@@ -218,10 +222,7 @@
             <details class="focus-plan-details" id="focus-plan-details">
               <summary>Rencana</summary>
               <div class="focus-plan-content">
-            <div class="stat-meta-group">
-              <div class="stat-line-title" id="stat-total-title">TOTAL 4 JAM</div>
-              <div class="stat-line-desc" id="stat-total-desc">3 jam fokus + 1 jam istirahat</div>
-            </div>
+
                 <p id="auto-loop-p2"></p>
                 <button class="btn-action-secondary" id="btn-finish-timer">Batalkan rencana</button>
               </div>

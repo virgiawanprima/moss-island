@@ -549,6 +549,8 @@ function updateSessionMeta() {
   const statDesc = document.querySelector<HTMLElement>('#stat-total-desc');
   const autoLoopP1 = document.querySelector<HTMLElement>('#auto-loop-p1');
   const autoLoopP2 = document.querySelector<HTMLElement>('#auto-loop-p2');
+  const treePlan = document.querySelector<HTMLElement>('#tree-plan-summary');
+  if (treePlan) treePlan.innerText = `${plan.focusSessionCount} sesi · ${plan.focusSessionCount} pohon akan tumbuh`;
 
   const totalHours = Math.floor(plan.totalDurationMin / 60);
   const remainingMins = plan.totalDurationMin % 60;
@@ -606,12 +608,12 @@ function updateSessionMeta() {
     const sessionNum = match ? parseInt(match[0], 10) : 1;
 
     if (phase.type === 'focus') {
-      if (sessionTag) sessionTag.innerText = `Fokus · ${sessionNum}`;
+      if (sessionTag) sessionTag.innerText = `Fokus · Sesi ${sessionNum}/${plan.focusSessionCount}`;
       if (durationTag) {
         durationTag.innerText = `${phase.durationMin} menit`;
       }
     } else {
-      if (sessionTag) sessionTag.innerText = `Rehat · ${sessionNum}`;
+      if (sessionTag) sessionTag.innerText = `Rehat · Sesi ${sessionNum}/${plan.focusSessionCount}`;
       if (durationTag) durationTag.innerText = `${phase.durationMin} menit`;
     }
   }

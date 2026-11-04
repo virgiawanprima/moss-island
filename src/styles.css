@@ -2795,7 +2795,7 @@ html:is([data-dock-edge="left"], [data-dock-edge="right"]) #panel-focus.is-resti
 .focus-plan-content .stat-meta-group { display: block !important; }
 #panel-focus .focus-plan-content .btn-action-secondary { min-height: 36px; font-size: .75rem; }
 #panel-focus .col-right { gap: 8px; }
-#panel-focus .island-progress-meta { grid-template-columns: 1fr; justify-items: center; }
+#panel-focus .island-progress-meta { grid-template-columns: minmax(0, 1fr) auto; justify-items: stretch; }
 #panel-focus .forest-gen-badge { border: 0; justify-self: center; background: transparent; color: var(--color-text-muted); font-weight: 400; }
 #panel-focus [hidden] { display: none !important; }
 #panel-focus .session-pill-row { align-self: center; }
@@ -2804,3 +2804,7 @@ html:is([data-dock-edge="left"], [data-dock-edge="right"]) #panel-focus.is-resti
 #music-lyrics-card.is-local-music .row-prev,
 #music-lyrics-card.is-local-music .row-next { display: none; }
 .island-menu summary:focus-visible, .focus-plan-details summary:focus-visible { outline: 2px solid var(--color-accent-lime); outline-offset: 3px; }
+
+#panel-focus #tree-plan-summary { grid-column: 1; font-size: .65rem; color: var(--color-text-muted); }
+#panel-focus .stat-meta-group { align-self: stretch; line-height: 1.6; }
+#panel-focus .session-badge { white-space: nowrap; }
