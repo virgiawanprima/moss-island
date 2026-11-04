@@ -527,7 +527,7 @@ function updateForestGenerationBadge() {
 
   const info = renderer.getForestGenerationInfo();
   const currentGen = info.generation + 1;
-  badge.innerText = `Hutan ke-${currentGen} · ${info.currentGenTrees}/${info.maxSlots} pohon`;
+  badge.innerText = `${info.currentGenTrees}/${info.maxSlots} pohon`;
   badge.title = `Generasi hutan aktif: ke-${currentGen}. Total pohon permanen yang ditanam: ${info.totalTrees}.`;
 }
 
@@ -604,14 +604,14 @@ function updateSessionMeta() {
   if (phase) {
     const match = phase.label.match(/\d+/);
     const sessionNum = match ? parseInt(match[0], 10) : 1;
-    const sessionStr = sessionNum.toString().padStart(2, '0');
+
     if (phase.type === 'focus') {
-      if (sessionTag) sessionTag.innerText = `FOKUS · SESI ${sessionStr}`;
+      if (sessionTag) sessionTag.innerText = `Fokus · ${sessionNum}`;
       if (durationTag) {
         durationTag.innerText = `${phase.durationMin} menit`;
       }
     } else {
-      if (sessionTag) sessionTag.innerText = `${phase.breakKind === 'long' ? 'REHAT PANJANG' : 'ISTIRAHAT'} · SESI ${sessionStr}`;
+      if (sessionTag) sessionTag.innerText = `Rehat · ${sessionNum}`;
       if (durationTag) durationTag.innerText = `${phase.durationMin} menit`;
     }
   }
@@ -981,13 +981,14 @@ function bindTimerControls() {
   const btnToggle = document.querySelector<HTMLButtonElement>('#btn-toggle-timer');
   const btnFinish = document.querySelector<HTMLButtonElement>('#btn-finish-timer');
   const cancelPrompt = document.querySelector<HTMLElement>('#focus-cancel-confirm');
-  const actionStack = btnFinish?.parentElement;
+  const actionStack = document.querySelector<HTMLElement>('#panel-focus .actions-stack');
   const keepFocus = document.querySelector<HTMLButtonElement>('#btn-keep-focus');
   const setCancelPrompt = (open: boolean) => {
     if (cancelPrompt) cancelPrompt.hidden = !open;
     if (actionStack) actionStack.hidden = open;
-    if (open) keepFocus?.focus();
-    else btnFinish?.focus();
+    const details = document.querySelector<HTMLDetailsElement>('#focus-plan-details');
+    if (open) { if (details) details.open = false; keepFocus?.focus(); }
+    else document.querySelector<HTMLElement>('#focus-plan-details > summary')?.focus();
   };
   const cancelPlan = () => {
     setCancelPrompt(false);
@@ -1536,7 +1537,7 @@ function bindMusicControls() {
     const current = document.querySelector<HTMLElement>('#music-time-current');
     const total = document.querySelector<HTMLElement>('#music-time-total');
     const progress = document.querySelector<HTMLElement>('#music-progress-track');
-    if (current) current.innerText = `Sudah diputar ${formatTime(elapsed)}`;
+    if (current) current.innerText = formatTime(elapsed);
     if (total) total.style.display = 'none';
     if (progress) progress.style.display = 'none';
   }
@@ -2288,6 +2289,17 @@ function bindWindowAndNotchControls() {
   });
 
   // Tombol keluar aplikasi [⏻]
+  document.addEventListener('keydown', event => {
+    if (event.key !== 'Escape') return;
+    for (const menu of document.querySelectorAll<HTMLDetailsElement>('.island-menu[open], .focus-plan-details[open]')) {
+      menu.open = false; menu.querySelector<HTMLElement>('summary')?.focus();
+    }
+  });
+  document.addEventListener('pointerdown', event => {
+    for (const menu of document.querySelectorAll<HTMLDetailsElement>('.island-menu[open], .focus-plan-details[open]')) {
+      if (event.target instanceof Node && !menu.contains(event.target)) menu.open = false;
+    }
+  });
   document.querySelector('#btn-header-quit')?.addEventListener('click', async (e) => {
     e.stopPropagation();
     if (isTauri()) {

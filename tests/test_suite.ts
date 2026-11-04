@@ -2590,11 +2590,11 @@ runTest('Uji 76: Pratinjau memakai durasi fase nyata saat total lebih pendek dar
 
 runTest('Uji 77: Panel fokus menjelaskan fase berikutnya sesuai rencana dan preferensi autostart', () => {
   const short = buildPomodoroPlan(15, 25, 5);
-  assert.strictEqual(getNextPhaseLabel(short, 0, DEFAULT_POMODORO_CONFIG), 'Sesi terakhir · Rencana selesai setelah fase ini.');
+  assert.strictEqual(getNextPhaseLabel(short, 0, DEFAULT_POMODORO_CONFIG), 'Sesi terakhir.');
   const plan = buildPomodoroPlan(60, 25, 5);
-  assert.strictEqual(getNextPhaseLabel(plan, 0, DEFAULT_POMODORO_CONFIG), 'Berikutnya: Istirahat 5 menit · otomatis');
+  assert.strictEqual(getNextPhaseLabel(plan, 0, DEFAULT_POMODORO_CONFIG), 'Rehat 5 menit setelah ini');
   assert.strictEqual(getNextPhaseLabel(plan, 1, { ...DEFAULT_POMODORO_CONFIG, autostartNextFocus: false }),
-    'Berikutnya: Fokus 25 menit · mulai manual');
+    'Fokus 25 menit setelah ini · mulai manual');
 });
 
 runTest('Uji 78: Penyelesaian berantai tanpa render tetap menanam pada petak berbeda', () => {
@@ -2937,7 +2937,7 @@ runTest('Uji 97: Setiap empat sesi memakai rehat panjang 15 menit, lalu kembali 
   const breaks = plan.phases.filter(p => p.type === 'break');
   assert.deepEqual(breaks.map(p => p.durationMin), [5, 5, 5, 15, 5, 5, 5, 15]);
   assert.deepEqual(breaks.filter(p => p.breakKind === 'long').map(p => p.id), [8, 16]);
-  assert.equal(getNextPhaseLabel(plan, 6, DEFAULT_POMODORO_CONFIG), 'Berikutnya: Istirahat panjang 15 menit · otomatis');
+  assert.equal(getNextPhaseLabel(plan, 6, DEFAULT_POMODORO_CONFIG), 'Rehat panjang 15 menit setelah ini');
   assert.equal(plan.totalFocusMin + plan.totalBreakMin, 260);
   const clippedPhases = buildPomodoroPlan(120, 25, 5).phases;
   const clipped = clippedPhases[clippedPhases.length - 1];
@@ -4304,7 +4304,7 @@ runTest('Uji 168: Lingkaran istirahat mengikuti fase, status dan sisa waktu', ()
 runTest('Uji 169: Fokus-istirahat-fokus mengganti tampilan tanpa timer pengingat terpisah', () => {
   const elements = new Map<string, { hidden: boolean; textContent: string; style: { setProperty: (key: string, value: string) => void } }>();
   const properties = new Map<string, string>();
-  for (const id of ['rest-countdown', 'rest-reminder', 'tab-btn-focus', 'rest-time', 'rest-status', 'rest-ring-progress']) {
+  for (const id of ['rest-countdown', 'rest-reminder', 'rest-reminder-text', 'tab-btn-focus', 'rest-time', 'rest-status', 'rest-ring-progress']) {
     elements.set(id, { hidden: true, textContent: '', style: { setProperty: (key, value) => { properties.set(key, value); } } });
   }
   let resting = false;
@@ -4319,6 +4319,11 @@ runTest('Uji 169: Fokus-istirahat-fokus mengganti tampilan tanpa timer pengingat
   engine.skipCurrentPhase();
   assert.equal(resting, true);
   assert.equal(elements.get('rest-reminder')?.hidden, false);
+  renderRestPhase(root, engine.getCurrentPhase()!, 270, 300, 'running');
+  assert.equal(elements.get('rest-reminder-text')?.textContent, 'Rilekskan bahu.');
+  renderRestPhase(root, engine.getCurrentPhase()!, 240, 300, 'running');
+  assert.equal(elements.get('rest-reminder-text')?.textContent, 'Lihat ke kejauhan sebentar.');
+  engine.notifyTick();
   assert.equal(elements.get('tab-btn-focus')?.textContent, 'Istirahat');
   assert.equal(elements.get('rest-time')?.textContent, '05:00');
   assert.equal(properties.get('stroke-dashoffset'), '0');
@@ -4330,7 +4335,7 @@ runTest('Uji 169: Fokus-istirahat-fokus mengganti tampilan tanpa timer pengingat
   engine.skipCurrentPhase();
   assert.equal(resting, false);
   assert.equal(elements.get('rest-reminder')?.hidden, true);
-  assert.equal(elements.get('tab-btn-focus')?.textContent, 'Focus');
+  assert.equal(elements.get('tab-btn-focus')?.textContent, 'Fokus');
   engine.reset();
   assert.equal(resting, false);
 });

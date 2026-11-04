@@ -172,8 +172,8 @@ export function getFirstPhasePreview(plan: PomodoroPlan): string {
 
 export function getNextPhaseLabel(plan: PomodoroPlan, index: number, config: PomodoroConfig): string {
   const next = plan.phases[index + 1];
-  if (!next) return 'Sesi terakhir · Rencana selesai setelah fase ini.';
-  const label = next.type === 'focus' ? 'Fokus' : next.breakKind === 'long' ? 'Istirahat panjang' : 'Istirahat';
+  if (!next) return 'Sesi terakhir.';
+  const label = next.type === 'focus' ? 'Fokus' : next.breakKind === 'long' ? 'Rehat panjang' : 'Rehat';
   const automatic = next.type === 'focus' ? config.autostartNextFocus : config.autostartBreak;
-  return `Berikutnya: ${label} ${next.durationMin} menit · ${automatic ? 'otomatis' : 'mulai manual'}`;
+  return `${label} ${next.durationMin} menit setelah ini${automatic ? '' : ' · mulai manual'}`;
 }

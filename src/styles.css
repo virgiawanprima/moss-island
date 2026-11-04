@@ -2780,3 +2780,27 @@ html:is([data-dock-edge="left"], [data-dock-edge="right"]) #panel-focus.is-resti
 }
 #desktop-pet-sprite.is-performing .pet-front,
 #desktop-pet-sprite.is-performing .pet-profile { display: none; }
+
+/* Detail rencana dan aksi jarang dipakai dibuka saat dibutuhkan. */
+.island-menu, .focus-plan-details { position: relative; }
+.island-menu > summary { display: grid; place-items: center; list-style: none; cursor: pointer; }
+.island-menu > summary::-webkit-details-marker { display: none; }
+.island-menu-content, .focus-plan-content { position: absolute; right: 0; z-index: 30; width: 230px; padding: 14px; background: var(--color-bg-panel, #192720); border: 1px solid #415248; border-radius: 8px; box-shadow: 0 8px 24px #0005; }
+.island-menu-content { top: calc(100% + 6px); }
+.island-menu-content button { width: 100%; min-height: 40px; background: transparent; color: var(--color-text-main); border: 0; text-align: left; cursor: pointer; font: inherit; }
+.focus-plan-details { align-self: flex-start; color: var(--color-text-muted); font-size: .75rem; }
+.focus-plan-details > summary { min-height: 36px; padding: 8px 0; cursor: pointer; }
+.focus-plan-content { bottom: calc(100% + 4px); right: auto; left: 0; max-height: 190px; overflow: auto; }
+.focus-plan-content p { font-size: .7rem; line-height: 1.6; margin: 10px 0; }
+.focus-plan-content .stat-meta-group { display: block !important; }
+#panel-focus .focus-plan-content .btn-action-secondary { min-height: 36px; font-size: .75rem; }
+#panel-focus .col-right { gap: 8px; }
+#panel-focus .island-progress-meta { grid-template-columns: 1fr; justify-items: center; }
+#panel-focus .forest-gen-badge { border: 0; justify-self: center; background: transparent; color: var(--color-text-muted); font-weight: 400; }
+#panel-focus [hidden] { display: none !important; }
+#panel-focus .session-pill-row { align-self: center; }
+#panel-focus .session-badge { background: transparent; }
+#music-lyrics-card.is-local-music #music-card-tag,
+#music-lyrics-card.is-local-music .row-prev,
+#music-lyrics-card.is-local-music .row-next { display: none; }
+.island-menu summary:focus-visible, .focus-plan-details summary:focus-visible { outline: 2px solid var(--color-accent-lime); outline-offset: 3px; }

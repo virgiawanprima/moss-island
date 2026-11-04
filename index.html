@@ -97,7 +97,7 @@
       <!-- VIEW C: EXPANDED PANEL STATE (960x296 Pixel Exact) -->
       <!-- ============================================== -->
       <div class="view-expanded" id="view-expanded">
-        
+
         <!-- Header Bar: Brand + Pill Tabs + Window Controls -->
         <header class="panel-header" data-tauri-drag-region>
           <!-- Brand Logo (Left) -->
@@ -125,7 +125,10 @@
             <button class="win-control-btn" id="btn-header-settings" title="Pengaturan Pomodoro dan musim" aria-label="Pengaturan Pomodoro dan musim">⚙</button>
             <button class="win-control-btn" id="btn-minimize-notch" title="Kecilkan ke Notch Meringkas">−</button>
             <button class="win-control-btn" id="btn-close-notch" title="Sembunyikan ke Notch Minimal">×</button>
-            <button class="win-control-btn btn-quit" id="btn-header-quit" title="Keluar Aplikasi">⏻</button>
+            <details class="island-menu">
+              <summary class="win-control-btn" aria-label="Menu aplikasi" title="Menu aplikasi">⋯</summary>
+              <div class="island-menu-content"><button id="btn-header-quit">Keluar aplikasi</button></div>
+            </details>
           </div>
         </header>
 
@@ -136,8 +139,8 @@
           <!-- Column Left: Timer & Session Info (Timer wing) -->
           <div class="col-left">
             <div class="session-pill-row" id="session-pill-clickable" title="Klik untuk membuka pengaturan sesi Pomodoro" style="cursor: pointer;" tabindex="0" role="button">
-              <span class="session-badge" id="session-tag">FOKUS · SESI 01</span>
-              <span class="session-duration" id="session-duration-tag">30 / 10 menit</span>
+              <span class="session-badge" id="session-tag">Fokus · 1</span>
+              <span class="session-duration" id="session-duration-tag" hidden>30 / 10 menit</span>
             </div>
 
             <!-- Big Retro Pixel Clock (52px exact from Figma) -->
@@ -147,6 +150,7 @@
                 <circle class="rest-ring-progress" id="focus-ring-progress" cx="90" cy="90" r="80" pathLength="100" />
               </svg>
               <div class="rest-countdown-label">
+
                 <span class="rest-countdown-caption">SISA FOKUS</span>
                 <span class="timer-digits-display" id="timer-display" role="timer" aria-label="Sisa waktu fokus">25:00</span>
                 <span class="rest-countdown-status" id="focus-clock-status">Siap mulai</span>
@@ -154,16 +158,11 @@
             </div>
 
             <div class="rest-reminder" id="rest-reminder" hidden>
-              <h2>Jeda sebentar, yuk.</h2>
-              <p>Minum air dulu, biar tetap terhidrasi.</p>
-              <span>Rilekskan bahu dan alihkan pandangan dari layar.</span>
+              <p id="rest-reminder-text">Minum dulu.</p>
             </div>
 
             <!-- Sub Stats (2 lines exact from Figma) -->
-            <div class="stat-meta-group">
-              <div class="stat-line-title" id="stat-total-title">TOTAL 4 JAM</div>
-              <div class="stat-line-desc" id="stat-total-desc">3 jam fokus + 1 jam istirahat</div>
-            </div>
+
           </div>
 
           <!-- Column Center: Canvas 2D Isometric Island + Progress (Garden wing) -->
@@ -175,12 +174,12 @@
             <!-- Island Subtitle & Progress Bar -->
             <div class="island-progress-meta">
               <div class="growth-caption-row">
-                <span class="growth-caption" id="growth-caption">Oak kecilmu sedang tumbuh</span>
-                <span class="forest-gen-badge" id="forest-gen-badge" title="Pencapaian Generasi Hutan">Hutan ke-1 · 0/14 pohon</span>
+                <span class="growth-caption" id="growth-caption" hidden>Oak kecilmu sedang tumbuh</span>
+                <span class="forest-gen-badge" id="forest-gen-badge" title="Pencapaian Generasi Hutan">0/14 pohon</span>
               </div>
-              <span class="growth-percent" id="growth-percent">0%</span>
+              <span class="growth-percent" id="growth-percent" hidden>0%</span>
             </div>
-            <div class="progress-bar-track">
+            <div class="progress-bar-track" hidden>
               <div class="progress-bar-fill" id="focus-progress-fill" style="width: 0%;"></div>
             </div>
           </div>
@@ -191,6 +190,7 @@
               <circle class="rest-ring-progress" id="rest-ring-progress" cx="90" cy="90" r="80" pathLength="100" />
             </svg>
             <div class="rest-countdown-label">
+
               <span class="rest-countdown-caption">SISA ISTIRAHAT</span>
               <span class="rest-countdown-time" id="rest-time" role="timer" aria-label="Sisa waktu istirahat">05:00</span>
               <span class="rest-countdown-status" id="rest-status" role="status">Nikmati jedamu</span>
@@ -202,8 +202,7 @@
             <div class="actions-stack">
               <!-- Primary Action Button: Jeda / Mulai -->
               <button class="btn-action-primary" id="btn-toggle-timer">Mulai</button>
-              <!-- Secondary Action Button: Selesai -->
-              <button class="btn-action-secondary" id="btn-finish-timer" title="Membatalkan rencana dan mengulang timer; pohon yang sudah tumbuh tetap tersimpan">Batalkan rencana</button>
+
             </div>
 
             <div class="focus-cancel-confirm" id="focus-cancel-confirm" hidden role="group" aria-label="Konfirmasi pembatalan rencana">
@@ -214,8 +213,19 @@
             <!-- Auto Loop Info (Exact from Figma) -->
             <div class="auto-loop-meta" id="auto-loop-meta">
               <p id="auto-loop-p1">Otomatis: fokus 30m &gt; istirahat 10m</p>
-              <p id="auto-loop-p2">6 putaran, berhenti setelah 4 jam.</p>
+
             </div>
+            <details class="focus-plan-details" id="focus-plan-details">
+              <summary>Rencana</summary>
+              <div class="focus-plan-content">
+            <div class="stat-meta-group">
+              <div class="stat-line-title" id="stat-total-title">TOTAL 4 JAM</div>
+              <div class="stat-line-desc" id="stat-total-desc">3 jam fokus + 1 jam istirahat</div>
+            </div>
+                <p id="auto-loop-p2"></p>
+                <button class="btn-action-secondary" id="btn-finish-timer">Batalkan rencana</button>
+              </div>
+            </details>
           </div>
         </main>
 
@@ -299,7 +309,7 @@
               </div>
             </div>
             <div class="music-volume" id="music-volume-control">
-              <label for="music-volume">Volume bawaan</label>
+              <label for="music-volume">Volume</label>
               <input id="music-volume" type="range" min="0" max="100" step="1" value="50" aria-label="Volume musik bawaan">
               <output id="music-volume-value" for="music-volume">50%</output>
             </div>
@@ -317,7 +327,7 @@
                   <path d="M829 93H833V97H829V93ZM833 93H837V97H833V93ZM825 97H829V101H825V97ZM829 97H833V101H829V97ZM805 109H809V113H805V109ZM809 109H813V113H809V109ZM813 109H817V113H813V109ZM817 109H821V113H817V109ZM821 109H825V113H821V109ZM825 109H829V113H825V109ZM829 109H833V113H829V109ZM833 109H837V113H833V109ZM805 113H809V117H805V113ZM809 113H813V117H809V113ZM813 113H817V117H813V113ZM817 113H821V117H817V113ZM821 113H825V117H821V113ZM825 113H829V117H825V113ZM829 113H833V117H829V113ZM833 113H837V117H833V113ZM805 117H809V121H805V117ZM813 117H817V121H813V117ZM817 117H821V121H817V117ZM825 117H829V121H825V117ZM829 117H833V121H829V117ZM805 121H809V125H805V121ZM809 121H813V125H809V121ZM813 121H817V125H813V121ZM817 121H821V125H817V121ZM821 121H825V125H821V121ZM825 121H829V125H825V121ZM829 121H833V125H829V121ZM833 121H837V125H833V121ZM809 125H813V129H809V125ZM813 125H817V129H813V125ZM825 125H829V129H825V125ZM829 125H833V129H829V125Z" fill="#C4F59B"/>
                   <path d="M817 101H821V105H817V101ZM821 101H825V105H821V101Z" fill="#AF8055"/>
                   <path d="M809 117H813V121H809V117ZM821 117H825V121H821V117ZM833 117H837V121H833V117ZM817 125H821V129H817V125ZM821 125H825V129H821V125Z" fill="#15221A"/>
-                  
+
                   <!-- Headphone Pixel Art (Band di atas & Earcup di samping) -->
                   <g id="momo-headphone-gear" class="momo-headphone-gear">
                     <path d="M811 101H831V105H811V101Z" fill="#58486e"/>

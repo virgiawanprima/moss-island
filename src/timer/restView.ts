@@ -8,7 +8,7 @@ export function getRestPresentation(phase: PlanPhase, remaining: number, total: 
     active,
     time: `${Math.floor(seconds / 60).toString().padStart(2, '0')}:${(seconds % 60).toString().padStart(2, '0')}`,
     fraction,
-    tabLabel: active ? 'Istirahat' : 'Focus',
+    tabLabel: active ? 'Istirahat' : 'Fokus',
     status: status === 'paused' ? 'Istirahat dijeda'
       : status === 'waiting_next' ? 'Siap mulai istirahat'
       : 'Nikmati jedamu',
@@ -26,6 +26,9 @@ export function renderRestPhase(root: Document, phase: PlanPhase, remaining: num
     const element = root.getElementById(id);
     if (element) element.hidden = !view.active;
   }
+  const reminder = root.getElementById('rest-reminder-text');
+  const reminders = ['Minum dulu.', 'Rilekskan bahu.', 'Lihat ke kejauhan sebentar.'];
+  if (reminder) reminder.textContent = reminders[Math.floor(Math.max(0, total - remaining) / 30) % reminders.length];
   const label = root.getElementById('tab-btn-focus');
   if (label) label.textContent = view.tabLabel;
   const time = root.getElementById('rest-time');

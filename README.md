@@ -31,6 +31,8 @@ Tunas baru langsung mendapat antrean tanam, siram, dan pupuk, kemudian dijadwalk
 
 Kelima spesies pohon tropis mempertahankan daun pada musim gugur, dengan detail bunga, buah, ujung daun, dan aksen dingin yang berbeda sesuai musim dalam simulasi pulau.
 
+Layar Fokus menampilkan waktu, kebun dan satu tombol utama. Rincian durasi serta pembatalan tersedia melalui Rencana; Keluar aplikasi ada di menu titik tiga. Label dan pesan di dalam lingkaran waktu tetap ditampilkan. Saat istirahat hanya satu pengingat pendek muncul bergantian.
+
 ## Arsitektur
 
 Frontend berjalan di WebView Tauri. TypeScript mengatur interaksi, state aplikasi, timer, dan animasi; Rust menangani kemampuan native Windows. Keduanya bertukar data melalui command dan event Tauri.
