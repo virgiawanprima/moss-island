@@ -75,17 +75,17 @@ export function drawMangoTree(ctx: CanvasRenderingContext2D, x: number, y: numbe
   leafCluster(ctx, -5, -23, 10, greenSeason);
   leafCluster(ctx, 0, -31, 10, greenSeason);
   leafCluster(ctx, -8, -29, 6, greenSeason);
-  for (const [fx, fy] of [[-8, -18], [6, -16], [2, -25]]) {
+  for (const [fx, fy] of season === 'summer' || season === 'autumn' ? [[-8, -18], [6, -16], [2, -25]] : []) {
     polygon(ctx, '#76532F', [[fx, fy - 2], [fx + 3, fy - 1], [fx + 4, fy + 3], [fx + 1, fy + 5], [fx - 1, fy + 2]]);
     polygon(ctx, '#DBAB4E', [[fx, fy - 1], [fx + 2, fy], [fx + 2, fy + 3], [fx, fy + 3]]);
     ctx.fillStyle = '#A9C56A';
     ctx.fillRect(fx, fy - 1, 2, 2);
   }
   if (season === 'spring') {
-    ctx.fillStyle = '#DF9BA3';
+    ctx.fillStyle = '#DCD8A2';
     ctx.fillRect(-8, -28, 2, 2);
     ctx.fillRect(5, -22, 2, 2);
-    ctx.fillStyle = '#F6D8D1';
+    ctx.fillStyle = '#F3EAC8';
     ctx.fillRect(-7, -28, 1, 1);
   } else if (season === 'winter') {
     polygon(ctx, '#E2F0E8', [[-6, -34], [-2, -36], [5, -34], [7, -31], [1, -31], [-3, -32], [-7, -31]]);
@@ -93,6 +93,7 @@ export function drawMangoTree(ctx: CanvasRenderingContext2D, x: number, y: numbe
     ctx.fillRect(-10, -29, 4, 2);
     ctx.fillRect(4, -24, 5, 2);
   }
+  drawSeasonAccents(ctx, 'mango', season);
   ctx.restore();
 }
 
@@ -108,7 +109,7 @@ export function drawDurianTree(ctx: CanvasRenderingContext2D, x: number, y: numb
   leafCluster(ctx, 0, -40, 7, green);
   leafCluster(ctx, -5, -33, 9, green);
   leafCluster(ctx, 6, -31, 8, green);
-  for (const [fx, fy] of [[-6, -20], [5, -15]]) {
+  for (const [fx, fy] of season === 'summer' || season === 'autumn' ? [[-6, -20], [5, -15]] : []) {
     ctx.fillStyle = '#7B633B';
     ctx.fillRect(fx, fy - 5, 1, 6);
     polygon(ctx, '#34472A', [[fx - 4, fy], [fx - 3, fy - 3], [fx - 1, fy - 2], [fx + 1, fy - 3], [fx + 4, fy], [fx + 3, fy + 5], [fx, fy + 7], [fx - 4, fy + 4]]);
@@ -118,6 +119,7 @@ export function drawDurianTree(ctx: CanvasRenderingContext2D, x: number, y: numb
     ctx.fillStyle = '#516735';
     ctx.fillRect(fx + 2, fy + 4, 2, 1);
   }
+  drawSeasonAccents(ctx, 'durian', season);
   ctx.restore();
 }
 
@@ -133,7 +135,7 @@ export function drawGuavaTree(ctx: CanvasRenderingContext2D, x: number, y: numbe
   leafCluster(ctx, -6, -24, 8, green);
   leafCluster(ctx, 6, -23, 8, green);
   leafCluster(ctx, 0, -27, 8, green);
-  for (const [fx, fy] of [[-8, -18], [7, -16], [0, -25]]) {
+  for (const [fx, fy] of season === 'summer' || season === 'autumn' ? [[-8, -18], [7, -16], [0, -25]] : []) {
     polygon(ctx, '#4E6B31', [[fx - 2, fy - 2], [fx + 2, fy - 2], [fx + 3, fy], [fx + 2, fy + 3], [fx - 2, fy + 3], [fx - 3, fy]]);
     ctx.fillStyle = '#C6D36E';
     ctx.fillRect(fx - 1, fy - 1, 3, 3);
@@ -142,9 +144,12 @@ export function drawGuavaTree(ctx: CanvasRenderingContext2D, x: number, y: numbe
     ctx.fillStyle = '#72573B';
     ctx.fillRect(fx, fy + 2, 1, 1);
   }
-  ctx.fillStyle = '#F1D9CF';
-  ctx.fillRect(-10, -24, 2, 2);
-  ctx.fillRect(6, -27, 2, 2);
+  if (season === 'spring') {
+    ctx.fillStyle = '#F1EADB';
+    ctx.fillRect(-10, -24, 2, 2);
+    ctx.fillRect(6, -27, 2, 2);
+  }
+  drawSeasonAccents(ctx, 'guava', season);
   ctx.restore();
 }
 
@@ -180,7 +185,7 @@ export function drawBananaTree(ctx: CanvasRenderingContext2D, x: number, y: numb
   }
   ctx.fillStyle = '#7F6A35';
   ctx.fillRect(-6, 0, 2, 11);
-  for (let row = 0; row < 3; row++) {
+  for (let row = 0; row < (season === 'summer' || season === 'autumn' ? 3 : 0); row++) {
     for (let fruit = 0; fruit < 3; fruit++) {
       const fx = -11 + fruit * 3 + row % 2;
       const fy = 3 + row * 4;
@@ -191,7 +196,9 @@ export function drawBananaTree(ctx: CanvasRenderingContext2D, x: number, y: numb
       ctx.fillRect(fx, fy, 1, 2);
     }
   }
-  polygon(ctx, '#854953', [[-6, 15], [-3, 18], [-5, 22], [-8, 19]]);
+  if (season === 'spring' || season === 'summer') polygon(ctx, '#854953', [[-6, 15], [-3, 18], [-5, 22], [-8, 19]]);
+  ctx.translate(0, 27);
+  drawSeasonAccents(ctx, 'banana', season);
   ctx.restore();
 }
 
@@ -233,18 +240,49 @@ export function drawPalmTree(ctx: CanvasRenderingContext2D, x: number, y: number
   ctx.fillRect(-6, -1, 6, 7);
   ctx.fillRect(1, 0, 6, 7);
   ctx.fillStyle = '#CD713C';
-  for (const [fx, fy] of [[-5, 0], [-2, 3], [2, 1], [5, 4]]) {
+  for (const [fx, fy] of season === 'winter' ? [] : [[-5, 0], [-2, 3], [2, 1], [5, 4]]) {
     ctx.fillRect(fx, fy, 2, 2);
     ctx.fillStyle = '#E7A35A';
     ctx.fillRect(fx, fy, 1, 1);
     ctx.fillStyle = '#CD713C';
   }
+  ctx.translate(0, 30);
+  drawSeasonAccents(ctx, 'palm', season);
   ctx.restore();
 }
 
-export const TREE_RENDERERS: Record<TreeType, typeof drawMangoTree> = {
+export function treeSeasonTraits(type: TreeType, season: IslandSeason) {
+  return { evergreen: true, fruit: season === 'summer' || season === 'autumn',
+    bloom: season === 'spring' && type !== 'palm', snow: season === 'winter',
+    coldSensitive: type === 'banana' || type === 'durian' || type === 'palm' };
+}
+
+const BASE_TREE_RENDERERS: Record<TreeType, typeof drawMangoTree> = {
   banana: drawBananaTree, mango: drawMangoTree, durian: drawDurianTree, palm: drawPalmTree, guava: drawGuavaTree,
 };
+
+function drawSeasonAccents(ctx: CanvasRenderingContext2D, type: TreeType, season: IslandSeason) {
+    const traits = treeSeasonTraits(type, season);
+    ctx.save();
+    const [width, height] = TREE_BOUNDS[type];
+    if (traits.bloom) {
+      ctx.fillStyle = type === 'banana' ? '#A65B79' : type === 'durian' ? '#E7D8A4' : '#F1E6C8';
+      ctx.fillRect(-width / 3, -height + 7, 2, 2); ctx.fillRect(width / 4, -height + 12, 2, 2);
+    }
+    if (season === 'autumn') {
+      // Spesies tropis tetap berdaun; hanya beberapa ujung daun tua menguning.
+      ctx.fillStyle = '#B8AD69'; ctx.fillRect(-width / 2 + 2, -height + 16, 3, 1);
+      ctx.fillRect(width / 3, -height + 13, 2, 1);
+      ctx.fillStyle = '#9C854E'; ctx.fillRect(8, 1, 3, 1);
+    }
+    if (traits.snow) {
+      polygon(ctx, '#DFEDE6', [[-width / 3, -height + 7], [-width / 5, -height + 4], [width / 5, -height + 4], [width / 3, -height + 7]]);
+      ctx.fillStyle = '#A2BEB7'; ctx.fillRect(-width / 3, -height + 7, width * 2 / 3, 1);
+      if (traits.coldSensitive) { ctx.fillStyle = '#9B956D'; ctx.fillRect(width / 3, -height + 17, 3, 2); }
+    }
+    ctx.restore();
+}
+export const TREE_RENDERERS = BASE_TREE_RENDERERS;
 
 export function drawSproutProgress(ctx: CanvasRenderingContext2D, x: number, y: number, progress: number, windSway = 0) {
   ctx.save();

@@ -1,3 +1,4 @@
+import type { PetAction } from './petPerformance';
 import type { WorkArea } from './edgeDock';
 
 export const FIGMA_IDLE_SOURCES = [
@@ -145,9 +146,45 @@ export function mountPetGait(svg: SVGSVGElement) {
   const left = part('left-foot'); const right = part('right-foot');
   const body = part('body'); const head = part('head'); const sprout = part('sprout');
   const leftArm = part('left-arm'); const rightArm = part('right-arm');
+  const performance = document.createElementNS('http://www.w3.org/2000/svg', 'image');
+  performance.classList.add('pet-performance'); performance.setAttribute('width', '64'); performance.setAttribute('height', '64');
+  performance.style.display = 'none'; svg.append(performance);
+  const sources: Record<string, string> = {
+    './assets/figma_svg/momo_v2/momo_v2_dance_01.svg': new URL('./assets/figma_svg/momo_v2/momo_v2_dance_01.svg', import.meta.url).href,
+    './assets/figma_svg/momo_v2/momo_v2_dance_02.svg': new URL('./assets/figma_svg/momo_v2/momo_v2_dance_02.svg', import.meta.url).href,
+    './assets/figma_svg/momo_v2/momo_v2_dance_03.svg': new URL('./assets/figma_svg/momo_v2/momo_v2_dance_03.svg', import.meta.url).href,
+    './assets/figma_svg/momo_v2/momo_v2_dance_04.svg': new URL('./assets/figma_svg/momo_v2/momo_v2_dance_04.svg', import.meta.url).href,
+    './assets/figma_svg/momo_v2/momo_v2_dance_05.svg': new URL('./assets/figma_svg/momo_v2/momo_v2_dance_05.svg', import.meta.url).href,
+    './assets/figma_svg/momo_v2/momo_v2_dance_06.svg': new URL('./assets/figma_svg/momo_v2/momo_v2_dance_06.svg', import.meta.url).href,
+    './assets/figma_svg/momo_v2/momo_v2_dance_07.svg': new URL('./assets/figma_svg/momo_v2/momo_v2_dance_07.svg', import.meta.url).href,
+    './assets/figma_svg/momo_v2/momo_v2_dance_08.svg': new URL('./assets/figma_svg/momo_v2/momo_v2_dance_08.svg', import.meta.url).href,
+    './assets/figma_svg/momo_v2/momo_v2_wave_01.svg': new URL('./assets/figma_svg/momo_v2/momo_v2_wave_01.svg', import.meta.url).href,
+    './assets/figma_svg/momo_v2/momo_v2_wave_02.svg': new URL('./assets/figma_svg/momo_v2/momo_v2_wave_02.svg', import.meta.url).href,
+    './assets/figma_svg/momo_v2/momo_v2_wave_03.svg': new URL('./assets/figma_svg/momo_v2/momo_v2_wave_03.svg', import.meta.url).href,
+    './assets/figma_svg/momo_v2/momo_v2_wave_04.svg': new URL('./assets/figma_svg/momo_v2/momo_v2_wave_04.svg', import.meta.url).href,
+    './assets/figma_svg/momo_v2/momo_v2_wave_05.svg': new URL('./assets/figma_svg/momo_v2/momo_v2_wave_05.svg', import.meta.url).href,
+    './assets/figma_svg/momo_v2/momo_v2_wave_06.svg': new URL('./assets/figma_svg/momo_v2/momo_v2_wave_06.svg', import.meta.url).href,
+    './assets/figma_svg/momo_v2/momo_v2_wave_07.svg': new URL('./assets/figma_svg/momo_v2/momo_v2_wave_07.svg', import.meta.url).href,
+    './assets/figma_svg/momo_v2/momo_v2_wave_08.svg': new URL('./assets/figma_svg/momo_v2/momo_v2_wave_08.svg', import.meta.url).href,
+    './assets/figma_svg/momo_v2/momo_v2_celebrate_01.svg': new URL('./assets/figma_svg/momo_v2/momo_v2_celebrate_01.svg', import.meta.url).href,
+    './assets/figma_svg/momo_v2/momo_v2_celebrate_02.svg': new URL('./assets/figma_svg/momo_v2/momo_v2_celebrate_02.svg', import.meta.url).href,
+    './assets/figma_svg/momo_v2/momo_v2_celebrate_03.svg': new URL('./assets/figma_svg/momo_v2/momo_v2_celebrate_03.svg', import.meta.url).href,
+    './assets/figma_svg/momo_v2/momo_v2_celebrate_04.svg': new URL('./assets/figma_svg/momo_v2/momo_v2_celebrate_04.svg', import.meta.url).href,
+    './assets/figma_svg/momo_v2/momo_v2_celebrate_05.svg': new URL('./assets/figma_svg/momo_v2/momo_v2_celebrate_05.svg', import.meta.url).href,
+    './assets/figma_svg/momo_v2/momo_v2_celebrate_06.svg': new URL('./assets/figma_svg/momo_v2/momo_v2_celebrate_06.svg', import.meta.url).href,
+    './assets/figma_svg/momo_v2/momo_v2_celebrate_07.svg': new URL('./assets/figma_svg/momo_v2/momo_v2_celebrate_07.svg', import.meta.url).href,
+    './assets/figma_svg/momo_v2/momo_v2_celebrate_08.svg': new URL('./assets/figma_svg/momo_v2/momo_v2_celebrate_08.svg', import.meta.url).href,
+  };
   const frames = [...svg.querySelectorAll<SVGImageElement>('.pet-front image')];
   let lastIdle = -1; let lastWalk = -1;
-  return (distance: number, time: number, walking: boolean, reduced = false) => {
+  return (distance: number, time: number, walking: boolean, reduced = false, action: PetAction = 'idle', actionFrame = 0) => {
+    const performing = !walking && !reduced && action !== 'idle';
+    performance.style.display = performing ? 'block' : 'none';
+    svg.classList.toggle('is-performing', performing);
+    if (performing) {
+      const source = sources[`./assets/figma_svg/momo_v2/momo_v2_${action}_0${actionFrame + 1}.svg`];
+      if (performance.getAttribute('href') !== source) performance.setAttribute('href', source);
+    }
     const idle = reduced ? 0 : figmaIdleFrameAt(time);
     if (idle !== lastIdle) {
       for (const [index, image] of frames.entries()) image.style.display = index === idle ? 'block' : 'none';

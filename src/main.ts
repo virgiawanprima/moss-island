@@ -1,3 +1,4 @@
+import { PetPerformance } from './petPerformance';
 import { parseSettingsDuration, hasScheduleChanged } from './settings';
 import { TabTransition } from './tabTransition';
 import {
@@ -58,6 +59,7 @@ let audio: AmbientSynth;
 let mediaBridge: SystemMediaBridge | null = null;
 let isAudioPlaying: boolean = false;
 let isSystemMediaActive: boolean = false;
+let petMusicPlaying = false;
 let isAlwaysOnTopActive: boolean = appState.config.alwaysOnTop ?? true;
 let isSettingsModalOpen: boolean = false;
 let lastKnownDate: string = getTodayDateString();
@@ -441,6 +443,7 @@ export async function setIslandState(state: IslandState) {
     if (token !== activeTransitionToken) return;
   }
   currentIslandState = state;
+  if (!isTauri() && state !== 'hidden') { widget.style.left = ''; widget.style.top = ''; }
 
   const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
   const fadeOutDuration = prefersReducedMotion ? 0 : 80;
@@ -875,6 +878,7 @@ function handleStatusChange(status: TimerStatus) {
     btnToggle.style.color = '#101917';
 
     // Timer dijeda: Momo duduk di dekat tunas; pertumbuhan berhenti
+    if (engine.getCurrentPhase()?.type === 'focus' && renderer && !renderer.hasActiveSprout()) renderer.startFocusPlanting();
     renderer?.setTimerPaused(true);
   } else if (status === 'waiting_next') {
     btnToggle.innerText = engine.getCurrentPhase()?.type === 'break' ? 'Mulai Istirahat' : 'Mulai Fokus';
@@ -1552,7 +1556,7 @@ function bindMusicControls() {
       setPlaybackAppearance(false);
       stageEl?.classList.remove('playing');
       setEqualizerPlaying(false);
-      renderer?.setMusicPlaying(false);
+      petMusicPlaying = false; renderer?.setMusicPlaying(false);
       lyricsService.setAmbientTrack(ambientTracks[currentTrackIdx].id, false);
       if (musicStatus) musicStatus.innerText = audio.getPlaybackFailure()?.message ?? 'Audio gagal dimuat. Coba putar kembali.';
     }
@@ -1771,7 +1775,7 @@ function bindMusicControls() {
       }
       stageEl?.classList.toggle('playing', track.is_playing);
       setEqualizerPlaying(track.is_playing);
-      renderer?.setMusicPlaying(track.is_playing);
+      petMusicPlaying = track.is_playing; renderer?.setMusicPlaying(track.is_playing);
       renderer?.setAmbientMode(null);
 
     } else {
@@ -1815,7 +1819,7 @@ function bindMusicControls() {
         setPlaybackAppearance(false, 'disconnected');
         stageEl?.classList.remove('playing');
         setEqualizerPlaying(false);
-        renderer?.setMusicPlaying(false);
+        petMusicPlaying = false; renderer?.setMusicPlaying(false);
         return;
       }
       renderMusicAlbumArt(null, null, 'none');
@@ -1930,7 +1934,7 @@ function bindMusicControls() {
         setPlaybackAppearance(true);
         stageEl?.classList.add('playing');
         setEqualizerPlaying(true);
-        renderer?.setMusicPlaying(true);
+        petMusicPlaying = true; renderer?.setMusicPlaying(true);
         renderer?.setAmbientMode(null);
         lyricsService.setAmbientTrack(currentAmbient, true);
       } else {
@@ -1939,7 +1943,7 @@ function bindMusicControls() {
         audio.stop();
         stageEl?.classList.remove('playing');
         setEqualizerPlaying(false);
-        renderer?.setMusicPlaying(false);
+        petMusicPlaying = false; renderer?.setMusicPlaying(false);
         lyricsService.setAmbientTrack(currentAmbient, false);
       }
       renderAmbientTime();
@@ -1977,7 +1981,7 @@ function bindMusicControls() {
       ambientStartedAt = started ? performance.now() : null;
       setPlaybackAppearance(started);
       setEqualizerPlaying(started);
-      renderer?.setMusicPlaying(started);
+      petMusicPlaying = started; renderer?.setMusicPlaying(started);
       stageEl?.classList.toggle('playing', started);
       if (!started && musicStatus) musicStatus.innerText = audio.getPlaybackFailure()?.message ?? 'Audio gagal diputar. Coba lagi.';
       renderer?.setAmbientMode(null);
@@ -2016,6 +2020,16 @@ function bindWindowAndNotchControls() {
     document.querySelector('#view-minimal .minimal-momo')?.append(minimalSprite);
   }
   const renderPetGait = minimalSprite ? mountPetGait(minimalSprite) : null;
+  const petPerformance = new PetPerformance();
+  const renderPet = (distance: number, time: number, walking: boolean, reduced = false) => {
+    const elapsed = lastPetRender === null ? 0 : (time - lastPetRender) / 1000;
+    lastPetRender = time;
+    const pose = petPerformance.step(elapsed, { visible: currentIslandState === 'hidden' && !document.hidden,
+      music: petMusicPlaying, walking, reduced, blocked: isIslandTransitioning || isSettingsModalOpen || minimalDragging || startPointer !== null });
+    renderPetGait?.(distance, time, walking, reduced, pose.action, pose.frame);
+    if (minimal) minimal.dataset.action = walking ? 'walk' : pose.action;
+  };
+  let lastPetRender: number | null = null;
   const minimal = document.querySelector<HTMLElement>('#view-minimal');
   const compact = document.querySelector<HTMLElement>('#view-compact');
   let startPointer: { x: number; y: number } | null = null;
@@ -2026,6 +2040,31 @@ function bindWindowAndNotchControls() {
   let suppressMinimalClick = false;
   let moveTimer: number | null = null;
   let docking = false;
+  if (minimal && !isTauri()) {
+    let cursor = { x: -1000, y: -1000 }, pressed = false;
+    let motion = restingPet(), previous = performance.now(), travelled = 0;
+    document.addEventListener('pointermove', event => { cursor = { x: event.clientX, y: event.clientY }; });
+    document.addEventListener('pointerdown', () => { pressed = true; });
+    document.addEventListener('pointerup', () => { pressed = false; });
+    const animatePreview = (time: number) => {
+      const dt = (time - previous) / 1000; previous = time;
+      const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+      if (currentIslandState === 'hidden' && !isIslandTransitioning && !document.hidden && !reduced) {
+        const rect = widget?.getBoundingClientRect();
+        if (rect && widget) {
+          const next = stepDesktopPet({ x: rect.left + rect.width / 2, y: rect.top + rect.height / 2,
+            width: rect.width, height: rect.height, scale: 1, cursorX: cursor.x, cursorY: cursor.y,
+            pressed, visible: true, area: { x: 0, y: 0, width: innerWidth, height: innerHeight } }, motion, dt, time);
+          motion = next.motion; travelled += Math.hypot(motion.vx, motion.vy) * Math.min(.08, dt);
+          widget.style.left = `${next.x}px`; widget.style.top = `${next.y - rect.height / 2}px`;
+          minimal.dataset.walking = String(motion.walking); minimal.dataset.facing = motion.facing;
+        }
+      } else motion = restingPet();
+      renderPet(travelled, time, motion.walking, reduced);
+      requestAnimationFrame(animatePreview);
+    };
+    requestAnimationFrame(animatePreview);
+  }
   if (minimal && isTauri()) {
     void import('@tauri-apps/api/window').then(({ getCurrentWindow }) => {
       const nativeWindow = getCurrentWindow();
@@ -2125,7 +2164,7 @@ function bindWindowAndNotchControls() {
           || window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
           motion = restingPet(); fractional = null; cachedContext = null;
           if (minimal) minimal.dataset.walking = 'false';
-          renderPetGait?.(travelled, now, false, window.matchMedia('(prefers-reduced-motion: reduce)').matches);
+          renderPet(travelled, now, false, window.matchMedia('(prefers-reduced-motion: reduce)').matches);
           return;
         }
         const { invoke } = await import('@tauri-apps/api/core');
@@ -2141,7 +2180,7 @@ function bindWindowAndNotchControls() {
         const next = stepDesktopPet(context, motion, elapsed, now);
         motion = next.motion;
         travelled += Math.hypot(next.x - context.x, next.y - context.y) / context.scale;
-        renderPetGait?.(travelled, now, motion.walking);
+        renderPet(travelled, now, motion.walking);
         if (minimal) { minimal.dataset.walking = String(motion.walking); minimal.dataset.facing = motion.facing; }
         if (!motion.walking) { fractional = null; return; }
         fractional = { x: next.x, y: next.y };

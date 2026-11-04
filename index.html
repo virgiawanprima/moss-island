@@ -141,7 +141,17 @@
             </div>
 
             <!-- Big Retro Pixel Clock (52px exact from Figma) -->
-            <div class="timer-digits-display" id="timer-display">30:00</div>
+            <div class="focus-countdown">
+              <svg class="rest-ring" viewBox="0 0 180 180" aria-hidden="true">
+                <circle class="rest-ring-track" cx="90" cy="90" r="80" />
+                <circle class="rest-ring-progress" id="focus-ring-progress" cx="90" cy="90" r="80" pathLength="100" />
+              </svg>
+              <div class="rest-countdown-label">
+                <span class="rest-countdown-caption">SISA FOKUS</span>
+                <span class="timer-digits-display" id="timer-display" role="timer" aria-label="Sisa waktu fokus">25:00</span>
+                <span class="rest-countdown-status" id="focus-clock-status">Siap mulai</span>
+              </div>
+            </div>
 
             <div class="rest-reminder" id="rest-reminder" hidden>
               <h2>Jeda sebentar, yuk.</h2>

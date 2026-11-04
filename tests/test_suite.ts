@@ -1,3 +1,5 @@
+import { PetPerformance } from '../src/petPerformance';
+import { treeSeasonTraits } from '../src/canvas/treeSprites';
 import { getRestPresentation, renderRestPhase } from '../src/timer/restView';
 import { parseSettingsDuration, hasScheduleChanged } from '../src/settings';
 import { isAutostartEnabled } from '../src/autostartService';
@@ -2835,22 +2837,21 @@ runTest('Uji 91: Pohon menjadi solid saat dirawat dan kembali memudar setelah se
   assert.strictEqual(getTreeOpacity(tree, [tree, rear], momo, false), 0.55);
 });
 
-runTest('Uji 92: Jeda antar kunjungan berkebun berada di 60 sampai 180 detik', () => {
-  for (const random of [() => 0, () => 0.5, () => 1]) {
-    const schedule = new GardenSchedule(random);
-    let elapsed = 0;
-    while (!schedule.active && elapsed <= 180) {
-      schedule.step(0.25, true);
-      elapsed += 0.25;
+runTest('Uji 92: Pohon mendapat giliran setiap menit tanpa pengulangan dalam satu putaran', () => {
+  const schedule = new GardenSchedule(() => 0.3);
+  const trees = PLANTING_SLOTS.slice(0, 4).map((slot, i) => ({ id: String(i), gridR: slot.r, gridC: slot.c, treeType: slot.type, plantedAtTimestamp: 0 }));
+  const visited: string[] = [];
+  for (let round = 0; round < 2; round++) {
+    const cycle: string[] = [];
+    for (let tree = 0; tree < 4; tree++) {
+      for (let i = 0; i < 239; i++) assert.equal(schedule.next(.25, true, trees), null);
+      const job = schedule.next(.25, true, trees);
+      assert.ok(job?.treeId); cycle.push(job.treeId); schedule.finish();
+      for (let i = 0; i < 1000; i++) assert.equal(schedule.next(.25, false, trees), null);
     }
-    assert.ok(elapsed >= 60 && elapsed <= 180);
-    assert.strictEqual(schedule.active, true);
-    schedule.finish();
-    for (let tick = 0; tick < 1000; tick++) schedule.step(0.25, false);
-    assert.strictEqual(schedule.active, false, 'Timer jeda tidak boleh menghabiskan jeda kunjungan');
-    for (let tick = 0; tick < 239; tick++) schedule.step(0.25, true);
-    assert.strictEqual(schedule.active, false, 'Tidak berkebun lagi sebelum satu menit');
+    assert.equal(new Set(cycle).size, trees.length); visited.push(...cycle);
   }
+  assert.equal(visited.length, 8);
 });
 
 runTest('Uji 93: Tunas baru ditanam, disiram, dan dipupuk berurutan dalam satu kunjungan', () => {
@@ -2872,29 +2873,19 @@ runTest('Uji 93: Tunas baru ditanam, disiram, dan dipupuk berurutan dalam satu k
   assert.strictEqual(renderer.getPlantedTrees().length, 0);
 });
 
-runTest('Uji 94: Pertumbuhan tunas memicu perawatan sekali tiap tahap dan berhenti saat dijeda', () => {
-  const renderer = new IslandRenderer(createMockCanvas()) as any;
-  renderer.startFocusPlanting();
-  for (let tick = 0; tick < 2000 && renderer.gardenSchedule.active; tick++) renderer.update();
-  for (const growth of [0.4, 0.8]) {
-    renderer.updateFocusProgress(growth);
-    assert.strictEqual(renderer.gardenSchedule.active, true);
-    renderer.setTimerPaused(true);
-    const pos = { ...renderer.currentPos };
-    for (let tick = 0; tick < 100; tick++) renderer.update();
-    assert.deepEqual(renderer.currentPos, pos);
-    renderer.setTimerPaused(false);
-    const actions = new Set<string>();
-    for (let tick = 0; tick < 2000 && renderer.gardenSchedule.active; tick++) {
-      renderer.update();
-      if (renderer.gardeningActivity) actions.add(renderer.gardeningActivity.action);
-    }
-    assert.deepEqual([...actions], ['water', 'fertilize']);
-    assert.strictEqual(renderer.gardenSchedule.active, false);
-    renderer.updateFocusProgress(growth + 0.01);
-    assert.strictEqual(renderer.gardenSchedule.active, false);
-  }
-  assert.strictEqual(renderer.getPlantedTrees().length, 0);
+runTest('Uji 94: Tunas dirawat segera lalu tiap30 detik aktif tanpa tumpukan setelah pause', () => {
+  const schedule = new GardenSchedule(() => 0);
+  const sprout = { r: 0, c: 2 }; schedule.setSprout('new');
+  assert.deepEqual(schedule.next(0, true, [], sprout)?.actions, ['plant', 'water', 'fertilize']);
+  schedule.finish();
+  for (let i = 0; i < 119; i++) assert.equal(schedule.next(.25, true, [], sprout), null);
+  for (let i = 0; i < 500; i++) assert.equal(schedule.next(.25, false, [], sprout), null);
+  assert.deepEqual(schedule.next(.25, true, [], sprout)?.actions, ['water']);
+  for (let i = 0; i < 500; i++) assert.equal(schedule.next(.25, true, [], sprout), null);
+  schedule.finish();
+  assert.deepEqual(schedule.next(0, true, [], sprout)?.actions, ['water']);
+  schedule.finish();
+  assert.equal(schedule.next(0, true, [], sprout), null);
 });
 
 runTest('Uji 95: Migrasi pohon lama mempertahankan jumlah, posisi, dan identitas pohon', () => {
@@ -4424,6 +4415,51 @@ runTest('Uji 173: Input tiga jam mencakup seluruh fokus dan istirahat, juga sete
   assert.equal(threeHours.totalDurationMin, 180);
   assert.equal(threeHours.totalFocusMin, 145);
   assert.equal(threeHours.totalBreakMin, 35);
+});
+
+runTest('Uji 174: Pet musik memiliki satu aksi, jeda, dan mengalah pada berjalan/drag/reduced motion', () => {
+  const pet = new PetPerformance(() => 0);
+  const input = { visible: true, music: true, walking: false, blocked: false, reduced: false };
+  for (let i = 0; i < 31; i++) assert.equal(pet.step(.25, input).action, 'idle');
+  assert.equal(pet.step(.25, input).action, 'dance');
+  assert.equal(pet.step(.25, { ...input, walking: true }).action, 'idle');
+  for (let i = 0; i < 8; i++) pet.step(.25, input);
+  const frame = pet.step(.25, input);
+  assert.ok(['wave', 'celebrate', 'dance'].includes(frame.action));
+  assert.equal(pet.step(.25, { ...input, music: false }).action, 'idle');
+  assert.equal(pet.step(.25, { ...input, reduced: true }).action, 'idle');
+  assert.equal(pet.step(.25, { ...input, blocked: true }).action, 'idle');
+  assert.equal(pet.step(.25, { ...input, visible: false }).action, 'idle');
+});
+
+runTest('Uji 175: Setiap jenis pohon memiliki hasil gambar berbeda di empat musim tanpa meranggas seragam', () => {
+  for (const type of ['banana', 'mango', 'durian', 'palm', 'guava'] as const) {
+    const signatures: string[] = [];
+    for (const season of ['spring', 'summer', 'autumn', 'winter'] as const) {
+      const canvas = createMockCanvas(); const ctx = canvas.getContext('2d')!;
+      const painted: string[] = [];
+      ctx.fill = () => { painted.push(String(ctx.fillStyle)); };
+      ctx.fillRect = () => { painted.push(String(ctx.fillStyle)); };
+      TREE_RENDERERS[type](ctx, 0, 0, 1, 0, season);
+      signatures.push(painted.join(','));
+      assert.equal(treeSeasonTraits(type, season).evergreen, true);
+      assert.equal(treeSeasonTraits(type, season).snow, season === 'winter');
+    }
+    assert.equal(new Set(signatures).size, 4, type);
+  }
+});
+
+runTest('Uji 176: Perawatan tunas berprioritas dan antrean pohon tetap mengunjungi semuanya', () => {
+  const schedule = new GardenSchedule(() => .7);
+  const trees = PLANTING_SLOTS.slice(0, 5).map((slot, i) => ({ id: String(i), gridR: slot.r, gridC: slot.c, treeType: slot.type, plantedAtTimestamp: 0 }));
+  const sprout = { r: 5, c: 4 }; schedule.setSprout('seed');
+  const visited = new Set<string>(); let watered = 0;
+  for (let tick = 0; tick < 1400; tick++) {
+    const job = schedule.next(.25, true, trees, sprout);
+    if (job) { if (job.treeId) visited.add(job.treeId); else watered++; schedule.finish(); }
+  }
+  assert.equal(visited.size, trees.length);
+  assert.ok(watered >= 11);
 });
 
 console.log(`\n=== HASIL: ${passedTests}/${passedTests + failedTests} PENGUJIAN LOLOS DENGAN SUKSES ===`);

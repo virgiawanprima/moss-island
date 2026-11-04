@@ -15,17 +15,21 @@ Proyek memakai **Tauri 2, Rust, TypeScript, HTML/CSS, dan Canvas 2D**. Integrasi
 
 | Area | Perilaku |
 | --- | --- |
-| Fokus dan pulau | Durasi pilihan mencakup fokus dan istirahat. Contoh: 3 jam dibagi menjadi 2 jam 25 menit fokus dan 35 menit istirahat. Progres sesi menumbuhkan pohon, dengan musim dan aktivitas berkebun Momo. |
+| Fokus dan pulau | Durasi pilihan mencakup fokus dan istirahat. Contoh: 3 jam dibagi menjadi 2 jam 25 menit fokus dan 35 menit istirahat. Lingkaran waktu berada di samping kebun. Progres sesi menumbuhkan pohon, dengan musim dan aktivitas berkebun Momo. |
 | Istirahat | Tab Focus berganti menjadi Istirahat dengan lingkaran hitung mundur, pengingat minum, dan ajakan merilekskan tubuh. |
 | Musik | Playlist audio lokal serta metadata, artwork, timeline, dan kontrol sesi media Windows sesuai kemampuan pemutar. |
 | Lirik | Pencarian melalui LRCLIB, lirik bertimestamp bila tersedia, dan koreksi waktu per rekaman. |
-| Mode desktop | Panel penuh, bilah minimize, dan pet utuh yang berjalan menghadap kiri/kanan serta perlahan menjauhi kursor. |
+| Mode desktop | Panel penuh, bilah minimize, dan pet utuh yang berjalan menghadap kiri/kanan serta perlahan menjauhi kursor. Saat musik diputar, Momo sesekali menari, melambai, atau bereaksi lucu. |
 | Posisi jendela | Dapat mengambang; snap ke tepi baru berlaku dalam ambang 10% area kerja layar. |
 | Akses cepat | Tray, shortcut `Ctrl+Shift+M` di Windows, pengaturan selalu di atas, dan dukungan autostart. |
 
 Bilah minimize dan mode pet adalah dua tampilan berbeda. Acuan visual Momo mengikuti aset Figma lokal; pose berjalan samping merupakan adaptasi untuk pet desktop.
 
 Cuaca pulau mengikuti musim: gerimis sesekali pada musim semi, hujan lebih jarang dan singkat saat panas, hujan lebih lama saat gugur, serta salju tanpa hujan atau genangan saat dingin. Genangan mengering bertahap; Momo menunda berkebun saat hujan dan melanjutkannya setelah reda. Cuaca ini simulasi visual, bukan laporan cuaca lokasi pengguna.
+
+Tunas baru langsung mendapat antrean tanam, siram, dan pupuk, kemudian dijadwalkan disiram setiap 30 detik aktif. Pohon dewasa mendapat satu kunjungan per 60 detik aktif dengan urutan acak tanpa pengulangan sampai seluruh pohon dikunjungi. Waktu perjalanan dan pekerjaan yang sedang berlangsung dapat menunda kedatangan; jeda, istirahat, dan hujan menahan jadwal tanpa menumpuk pekerjaan. Animasi berkebun dan gerak mendapat prioritas di atas aksi dekoratif.
+
+Kelima spesies pohon tropis mempertahankan daun pada musim gugur, dengan detail bunga, buah, ujung daun, dan aksen dingin yang berbeda sesuai musim dalam simulasi pulau.
 
 ## Arsitektur
 

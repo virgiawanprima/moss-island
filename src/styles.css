@@ -2767,3 +2767,16 @@ html:is([data-dock-edge="left"], [data-dock-edge="right"]) #panel-focus.is-resti
 @media (max-width: 440px) {
   html:is([data-dock-edge="left"], [data-dock-edge="right"]) #panel-focus.is-resting .rest-countdown { grid-area: 3 / 1; }
 }
+
+.focus-countdown { position: relative; width: 148px; height: 148px; flex: 0 0 148px; align-self: center; }
+.focus-countdown .rest-ring-progress { stroke: var(--color-accent-lime); }
+.focus-countdown .rest-countdown-caption { color: var(--color-accent-lime); }
+#panel-focus .focus-countdown .timer-digits-display { font-size: 2rem; line-height: 1; letter-spacing: 0; }
+#panel-focus:not(.is-resting) > .col-left { gap: 5px; }
+#panel-focus.is-resting .focus-countdown { display: none; }
+#panel-focus .stat-meta-group { font-size: .65rem; }
+@container island (max-width: 600px) {
+  .focus-countdown { width: 150px; height: 150px; flex-basis: 150px; }
+}
+#desktop-pet-sprite.is-performing .pet-front,
+#desktop-pet-sprite.is-performing .pet-profile { display: none; }

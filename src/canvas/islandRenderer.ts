@@ -57,8 +57,6 @@ export class IslandRenderer {
   private rainJoyTimer = 0;
   private leisure = new MomoLeisure();
   private gardenSchedule = new GardenSchedule();
-  private sproutGrowthStage = 0;
-  private pendingSproutCare = false;
   private leisureRunIndex = 0;
   private ambientMode: 'rain' | 'stream' | 'breeze' | null = null;
   private rainDrops: Array<{ x: number; y: number; speed: number; length: number }> = [];
@@ -246,12 +244,19 @@ export class IslandRenderer {
     this.gardeningActivity = null;
   }
 
-  private beginSproutCare() {
-    if (!this.activeSprout) return;
-    this.pendingSproutCare = false;
-    this.rebuildGardenRoute(false);
-    this.gardenSchedule.start();
-    this.leisure.stop();
+  private dispatchCare(seconds: number) {
+    const slot = this.activeSprout ? PLANTING_SLOTS[this.activeSprout.slotIndex] : undefined;
+    const enabled = !this.focusPaused && !this.inBreak && this.weather.intensity <= 0.15
+      && this.rainJoyTimer === 0 && this.celebrationTimer === 0
+      && !window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    const job = this.gardenSchedule.next(seconds, enabled, this.getCurrentGenTrees(), slot);
+    if (!job) return;
+    const route = buildGardenRoute(job.treeId ? [{ id: job.treeId, gridR: job.target.r, gridC: job.target.c,
+      treeType: 'mango', plantedAtTimestamp: 0 }] : [], job.treeId ? undefined : job.target, job.actions.includes('plant'));
+    this.waypoints = route.filter(wp => wp.action && job.actions.includes(wp.action));
+    this.currentWaypointIndex = 0; this.waitCounter = 0;
+    this.leisure.stop(); this.activeSeasonalAction = null; this.seasonalActionTimer = 0; this.waveTimer = 0;
+    this.momoMood = 'idle';
   }
 
   public getPlantedTrees(): PlantedTree[] {
@@ -321,10 +326,10 @@ export class IslandRenderer {
   public startFocusPlanting(): { r: number; c: number; slotIndex: number } {
     this.focusPaused = false;
     this.inBreak = false;
-    this.gardenSchedule.start();
+    this.celebrationTimer = 0;
+    this.waveTimer = 0;
+    this.activeSeasonalAction = null;
     this.leisure.stop();
-    this.sproutGrowthStage = 0;
-    this.pendingSproutCare = false;
     const slotIndex = this.getNextSlotIndex();
     const slot = PLANTING_SLOTS[slotIndex];
 
@@ -334,8 +339,9 @@ export class IslandRenderer {
       isPaused: false,
     };
 
-    // Arahkan Momo berjalan mendekati petak tanam
-    this.rebuildGardenRoute();
+    this.gardenSchedule.finish();
+    this.gardenSchedule.setSprout(`${this.permanentTrees.length}:${slotIndex}`);
+    this.dispatchCare(0);
     this.momoMood = 'idle';
 
     return { r: slot.r, c: slot.c, slotIndex };
@@ -348,12 +354,7 @@ export class IslandRenderer {
   public updateFocusProgress(progress: number) {
     if (this.activeSprout) {
       this.activeSprout.progress = Math.max(0.05, Math.min(1.0, progress));
-      const stage = progress >= 0.8 ? 2 : progress >= 0.4 ? 1 : 0;
-      if (stage > this.sproutGrowthStage && progress < 1) {
-        this.sproutGrowthStage = stage;
-        this.pendingSproutCare = true;
-        if (!this.gardenSchedule.active) this.beginSproutCare();
-      }
+
     }
   }
 
@@ -389,7 +390,7 @@ export class IslandRenderer {
   public completeFocusSession(): PlantedTree {
     const slotIndex = this.getNextSlotIndex();
     this.activeSprout = null;
-    this.pendingSproutCare = false;
+    this.gardenSchedule.setSprout(null);
 
     const slot = PLANTING_SLOTS[slotIndex];
     const newTree: PlantedTree = {
@@ -418,7 +419,7 @@ export class IslandRenderer {
     this.focusPaused = false;
     this.gardenSchedule.finish();
     this.activeSprout = null;
-    this.pendingSproutCare = false;
+    this.gardenSchedule.setSprout(null);
     this.momoMood = 'idle';
     this.rebuildGardenRoute();
   }
@@ -494,11 +495,13 @@ export class IslandRenderer {
   }
 
   public waveHello(frames: number = 40) {
+    if (this.gardenSchedule.active || this.isWalking) return;
     this.momoMood = 'happy';
     this.waveTimer = frames;
   }
 
   public triggerSeasonalAction(action?: MomoSeasonalAction): void {
+    if (this.gardenSchedule.active || this.isWalking) return;
     if (action) {
       this.activeSeasonalAction = action;
     } else {
@@ -581,10 +584,7 @@ export class IslandRenderer {
         this.celebrateBriefly(72);
       }
     }
-    if (this.gardenSchedule.step(this.frameInterval / 1000,
-      weatherEnabled && !reducedMotion && this.rainJoyTimer === 0 && this.waypoints.some(wp => wp.action))) {
-      this.leisure.stop();
-    }
+    this.dispatchCare(this.frameInterval / 1000);
     const oldLeisure = this.leisure.action;
     this.leisure.step(this.frameInterval / 1000, weatherEnabled && !reducedMotion && this.rainJoyTimer === 0 && !this.gardenSchedule.active);
     if (oldLeisure !== this.leisure.action && this.leisure.action === 'run') this.leisureRunIndex = 0;
@@ -648,7 +648,7 @@ export class IslandRenderer {
         !this.activeSeasonalAction &&
         this.momoMood === 'idle' &&
         this.celebrationTimer === 0 &&
-        this.waveTimer === 0
+        this.waveTimer === 0 && !this.gardenSchedule.active
       ) {
         this.triggerSeasonalAction('winter_snow_shake');
       }
@@ -830,15 +830,11 @@ export class IslandRenderer {
 
       if (this.waitCounter >= targetWp.waitFrames) {
         this.waitCounter = 0;
-        if (targetWp.action === 'plant') {
-          this.waypoints.splice(this.currentWaypointIndex, 1);
-          this.currentWaypointIndex %= this.waypoints.length;
-        } else {
-          this.currentWaypointIndex = (this.currentWaypointIndex + 1) % this.waypoints.length;
-        }
-        if (targetWp.action === 'fertilize') {
+        this.currentWaypointIndex++;
+        if (this.currentWaypointIndex >= this.waypoints.length) {
           this.gardenSchedule.finish();
-          if (this.pendingSproutCare) this.beginSproutCare();
+          this.waypoints = this.normalWaypoints;
+          this.currentWaypointIndex = 0;
         }
       }
     }
@@ -1316,6 +1312,12 @@ export class IslandRenderer {
       action = 'sleep';
     } else if (this.rainJoyTimer > 0 || this.celebrationTimer > 0) {
       action = 'celebrate';
+    } else if (this.isWalking) {
+      action = 'walk';
+    } else if (this.gardeningActivity) {
+      action = this.gardeningActivity.action === 'water' ? 'drink' : 'plant';
+    } else if (this.gardenSchedule.active) {
+      action = 'idle';
     } else if (this.leisure.action) {
       action = this.leisure.action === 'run' ? 'walk'
         : this.leisure.action === 'dance' ? 'dance'
@@ -1325,10 +1327,6 @@ export class IslandRenderer {
       action = 'wave';
     } else if (this.activeSeasonalAction) {
       action = 'idle';
-    } else if (this.isWalking) {
-      action = 'walk';
-    } else if (this.gardeningActivity) {
-      action = this.gardeningActivity.action === 'water' ? 'drink' : 'plant';
     } else if (this.isMusicPlaying) {
       action = 'dance';
     } else if (this.hydrationTimer > 0 || this.momoMood === 'hydrated') {

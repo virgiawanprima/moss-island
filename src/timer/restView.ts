@@ -16,6 +16,10 @@ export function getRestPresentation(phase: PlanPhase, remaining: number, total: 
 }
 
 export function renderRestPhase(root: Document, phase: PlanPhase, remaining: number, total: number, status: TimerStatus) {
+  const fraction = Number.isFinite(total) && total > 0 ? Math.max(0, Math.min(1, remaining / total)) : 0;
+  root.getElementById('focus-ring-progress')?.style.setProperty('stroke-dashoffset', String(100 * (1 - fraction)));
+  const focusStatus = root.getElementById('focus-clock-status');
+  if (focusStatus) focusStatus.textContent = status === 'paused' ? 'Fokus dijeda' : status === 'running' ? 'Satu hal dulu' : status === 'completed' ? 'Rencana selesai' : 'Siap mulai';
   const view = getRestPresentation(phase, remaining, total, status);
   root.querySelector('#panel-focus')?.classList.toggle('is-resting', view.active);
   for (const id of ['rest-countdown', 'rest-reminder']) {
