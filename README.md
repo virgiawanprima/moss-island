@@ -51,6 +51,8 @@ Layar Fokus menampilkan waktu, kebun dan satu tombol utama. Total durasi dan rin
 
 </details>
 
+Jika penyimpanan perangkat gagal, aplikasi menampilkan peringatan dan tombol **Coba simpan lagi**. Progres sementara tetap ada selama aplikasi terbuka; tunggu penyimpanan berhasil sebelum menutupnya. Pembatalan rencana hanya tersedia saat ada sesi aktif.
+
 ## Arsitektur
 
 Frontend berjalan di WebView Tauri. TypeScript mengatur interaksi, state aplikasi, timer, dan animasi; Rust menangani kemampuan native Windows. Keduanya bertukar data melalui command dan event Tauri.

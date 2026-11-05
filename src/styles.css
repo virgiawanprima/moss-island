@@ -2818,3 +2818,31 @@ html:is([data-dock-edge="left"], [data-dock-edge="right"]) #panel-focus.is-resti
 #btn-finish-timer:hover, #btn-confirm-cancel-focus:hover { background: #b5434e; border-color: #eb939b; }
 #btn-finish-timer:active, #btn-confirm-cancel-focus:active { background: #852e37; }
 #btn-finish-timer:focus-visible, #btn-confirm-cancel-focus:focus-visible { outline: 2px solid #ffd6d9; outline-offset: 3px; }
+
+#btn-finish-timer:disabled {
+  background: transparent;
+  border-color: #465149;
+  color: var(--color-text-muted);
+  cursor: not-allowed;
+  opacity: .65;
+}
+.storage-notice[hidden] { display: none; }
+.storage-notice { position: absolute; top: 8px; left: 12px; right: 12px; z-index: 60; display: flex; align-items: center; gap: 12px; padding: 12px; background: #512b2f; color: #fff; border: 1px solid #d46d76; border-radius: 8px; font-size: .75rem; line-height: 1.5; }
+.storage-notice button { flex-shrink: 0; min-height: 36px; padding: 6px 10px; border: 1px solid #eb939b; border-radius: 4px; background: #9f3942; color: #fff; font: inherit; cursor: pointer; }
+.storage-notice button:focus-visible { outline: 2px solid #ffd6d9; outline-offset: 2px; }
+.has-storage-error #view-minimal::after, .has-storage-error #view-compact::after { content: '!'; position: absolute; top: 4px; left: 4px; width: 18px; height: 18px; border-radius: 50%; background: #9f3942; color: #fff; font: bold 12px/18px sans-serif; text-align: center; }
+@media (max-width: 600px) {
+  .island-widget.state-expanded:is(.tab-focus, .tab-music),
+  .island-widget.state-expanded.expanded-ready:is(.tab-focus, .tab-music) {
+    height: auto;
+    min-height: 0;
+    max-height: 100dvh;
+  }
+  .island-widget.state-expanded:is(.tab-focus, .tab-music) .view-expanded {
+    height: auto;
+    max-height: calc(100dvh - 2px);
+    overflow-y: auto;
+  }
+  #panel-focus { flex: 0 0 auto; }
+  .storage-notice { flex-direction: column; align-items: stretch; }
+}

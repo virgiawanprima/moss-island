@@ -11,6 +11,19 @@ import { DEFAULT_POMODORO_CONFIG, buildPomodoroPlan, buildFocusTargetPlan } from
 export { DEFAULT_POMODORO_CONFIG };
 
 const STORAGE_KEY_APP_STATE = 'moss_island_state_v2';
+let lastWriteSucceeded = true;
+const storageStatusListeners = new Set<(saved: boolean) => void>();
+
+export function subscribeStorageStatus(listener: (saved: boolean) => void): () => void {
+  storageStatusListeners.add(listener);
+  listener(lastWriteSucceeded);
+  return () => { storageStatusListeners.delete(listener); };
+}
+
+function reportStorageStatus(saved: boolean) {
+  lastWriteSucceeded = saved;
+  for (const listener of storageStatusListeners) listener(saved);
+}
 
 export function isTauri(): boolean {
   return (
@@ -307,8 +320,10 @@ export function saveAppState(state: StoredAppState): boolean {
       lastActiveDate: getTodayDateString(),
     };
     localStorage.setItem(STORAGE_KEY_APP_STATE, JSON.stringify(updatedState));
+    reportStorageStatus(true);
     return true;
   } catch (_e) {
+    reportStorageStatus(false);
     return false;
   }
 }

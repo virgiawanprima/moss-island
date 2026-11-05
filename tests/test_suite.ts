@@ -1,3 +1,5 @@
+import { formatDuration } from '../src/timer/formatDuration';
+import { subscribeStorageStatus } from '../src/storage';
 import { PetPerformance } from '../src/petPerformance';
 import { treeSeasonTraits } from '../src/canvas/treeSprites';
 import { getRestPresentation, renderRestPhase } from '../src/timer/restView';
@@ -4465,6 +4467,35 @@ runTest('Uji 176: Perawatan tunas berprioritas dan antrean pohon tetap mengunjun
   }
   assert.equal(visited.size, trees.length);
   assert.ok(watered >= 11);
+});
+
+runTest('Uji 177: Durasi pendek, jam utuh dan gabungan tidak memuat unit nol', () => {
+  assert.equal(formatDuration(1), '1 menit');
+  assert.equal(formatDuration(0), '0 menit');
+  assert.equal(formatDuration(60), '1 jam');
+  assert.equal(formatDuration(145), '2 jam 25 menit');
+  assert.equal(formatDuration(1440), '24 jam');
+});
+
+runTest('Uji 178: Status penyimpanan melaporkan gagal, retry berhasil, dan bisa dilepas', () => {
+  const state = getDefaultAppState();
+  saveAppState(state);
+  const seen: boolean[] = [];
+  const unsubscribe = subscribeStorageStatus(saved => seen.push(saved));
+  const original = localStorage.setItem;
+  try {
+    localStorage.setItem = () => { throw new Error('quota full'); };
+    state.progress.completedSessionsToday = 3;
+    assert.equal(saveAppState(state), false);
+    assert.deepEqual(seen, [true, false]);
+  } finally { localStorage.setItem = original; }
+  assert.equal(saveAppState(state), true);
+  assert.deepEqual(seen, [true, false, true]);
+  assert.equal(loadAppState().progress.completedSessionsToday, 3);
+  unsubscribe();
+  const length = seen.length;
+  saveAppState(state);
+  assert.equal(seen.length, length);
 });
 
 console.log(`\n=== HASIL: ${passedTests}/${passedTests + failedTests} PENGUJIAN LOLOS DENGAN SUKSES ===`);

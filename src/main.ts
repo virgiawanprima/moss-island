@@ -1,3 +1,4 @@
+import { formatDuration } from './timer/formatDuration';
 import { PetPerformance } from './petPerformance';
 import { parseSettingsDuration, hasScheduleChanged } from './settings';
 import { TabTransition } from './tabTransition';
@@ -35,6 +36,7 @@ import type { ArtworkSource } from './audio/lyricsService';
 import {
   loadAppState,
   saveAppState,
+  subscribeStorageStatus,
   getTodayDateString,
   isYesterday,
 } from './storage';
@@ -184,6 +186,17 @@ if (typeof window !== 'undefined') {
   bindSettingsModal();
   bindStateSwitcher();
   bindClockTicker();
+
+  subscribeStorageStatus(saved => {
+    const notice = document.querySelector<HTMLElement>('#storage-notice');
+    if (notice) notice.hidden = saved;
+    document.querySelector('#dynamic-island')?.classList.toggle('has-storage-error', !saved);
+    document.querySelector('#view-minimal')?.setAttribute('aria-label', saved ? 'Buka Moss Island' : 'Buka Moss Island. Perubahan belum tersimpan.');
+  });
+  document.querySelector('#btn-retry-storage')?.addEventListener('click', () => {
+    appState.timerSession = engine.getSnapshot();
+    saveAppState(appState);
+  });
 
   // Sinkronisasi status awal UI
   syncUI();
@@ -552,35 +565,8 @@ function updateSessionMeta() {
   const treePlan = document.querySelector<HTMLElement>('#tree-plan-summary');
   if (treePlan) treePlan.innerText = `${plan.focusSessionCount} sesi · ${plan.focusSessionCount} pohon akan tumbuh`;
 
-  const totalHours = Math.floor(plan.totalDurationMin / 60);
-  const remainingMins = plan.totalDurationMin % 60;
-  const totalTimeLabel =
-    remainingMins > 0 ? `TOTAL ${totalHours} JAM ${remainingMins}M` : `TOTAL ${totalHours} JAM`;
-
-  if (statTitle) {
-    statTitle.innerText = totalTimeLabel;
-  }
-  if (statDesc) {
-    const focusHours = Math.floor(plan.totalFocusMin / 60);
-    const focusMins = plan.totalFocusMin % 60;
-    const focusStr =
-      focusHours > 0 && focusMins === 0
-        ? `${focusHours} jam Fokus`
-        : focusHours > 0
-        ? `${focusHours} jam ${focusMins}m Fokus`
-        : `${plan.totalFocusMin}m Fokus`;
-
-    const breakHours = Math.floor(plan.totalBreakMin / 60);
-    const breakMins = plan.totalBreakMin % 60;
-    const breakStr =
-      breakHours > 0 && breakMins === 0
-        ? `${breakHours} jam istirahat`
-        : breakHours > 0
-        ? `${breakHours} jam ${breakMins}m istirahat`
-        : `${plan.totalBreakMin}m istirahat`;
-
-    statDesc.innerText = `${focusStr} + ${breakStr}`;
-  }
+  if (statTitle) statTitle.innerText = `TOTAL ${formatDuration(plan.totalDurationMin).toUpperCase()}`;
+  if (statDesc) statDesc.innerText = `${formatDuration(plan.totalFocusMin)} fokus${plan.totalBreakMin ? ` + ${formatDuration(plan.totalBreakMin)} istirahat` : ''}`;
 
   if (autoLoopP1) {
     autoLoopP1.innerText = engine.getStatus() === 'completed'
@@ -899,6 +885,18 @@ function handleStatusChange(status: TimerStatus) {
     renderer?.setMood('idle');
   }
 
+  const cancellable = ['running', 'paused', 'waiting_next'].includes(status);
+  const cancelButton = document.querySelector<HTMLButtonElement>('#btn-finish-timer');
+  if (cancelButton) {
+    cancelButton.disabled = !cancellable;
+    cancelButton.title = cancellable ? 'Mengulang rencana; pohon yang sudah tumbuh tetap tersimpan' : 'Tidak ada sesi aktif untuk dibatalkan';
+  }
+  const hint = document.querySelector<HTMLElement>('#plan-action-hint');
+  if (hint) {
+    hint.hidden = cancellable;
+    hint.textContent = status === 'completed' ? 'Rencana sudah selesai.' : 'Belum ada sesi aktif.';
+  }
+
   previousTimerStatus = status;
   persistTimerSnapshot();
 }
@@ -1015,7 +1013,6 @@ function bindTimerControls() {
       setCancelPrompt(true);
       return;
     }
-    cancelPlan();
   });
 }
 
@@ -2621,21 +2618,9 @@ function updateModalPlanPreview() {
     summaryEl.innerText = `${plan.focusSessionCount} sesi Fokus`;
   }
 
-  if (cardTotalEl) {
-    const th = Math.floor(plan.totalDurationMin / 60);
-    const tm = plan.totalDurationMin % 60;
-    cardTotalEl.innerText = tm > 0 ? `${th} jam ${tm} m` : `${th} jam`;
-  }
-
-  if (cardFocusEl) {
-    const fh = Math.floor(plan.totalFocusMin / 60);
-    const fm = plan.totalFocusMin % 60;
-    cardFocusEl.innerText = fh > 0 ? (fm > 0 ? `${fh} jam ${fm} menit` : `${fh} jam`) : `${fm} menit`;
-  }
-
-  if (cardBreakEl) {
-    cardBreakEl.innerText = `${plan.totalBreakMin} menit`;
-  }
+  if (cardTotalEl) cardTotalEl.innerText = formatDuration(plan.totalDurationMin);
+  if (cardFocusEl) cardFocusEl.innerText = formatDuration(plan.totalFocusMin);
+  if (cardBreakEl) cardBreakEl.innerText = formatDuration(plan.totalBreakMin);
 
   if (rangeMetaEl) {
     rangeMetaEl.innerText = `${plan.totalDurationMin} menit`;

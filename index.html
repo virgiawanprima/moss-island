@@ -42,8 +42,6 @@
 
       <!-- Bottom Center Dock Bar -->
       <div class="desktop-dock">
-        <button class="dock-btn" title="Workspace">▫</button>
-        <button class="dock-btn" title="Catatan">▫</button>
         <button class="dock-btn active" id="dock-btn-music" title="Pemutar Musik">♫</button>
         <button class="dock-btn" id="dock-btn-focus" title="Fokus Pomodoro">⚅</button>
         <button class="dock-btn" id="dock-btn-settings" title="Pengaturan">⚙</button>
@@ -99,6 +97,10 @@
       <div class="view-expanded" id="view-expanded">
 
         <!-- Header Bar: Brand + Pill Tabs + Window Controls -->
+        <div class="storage-notice" id="storage-notice" role="alert" hidden>
+          <span>Perubahan belum tersimpan. Jangan tutup aplikasi dulu.</span>
+          <button id="btn-retry-storage" type="button">Coba simpan lagi</button>
+        </div>
         <header class="panel-header" data-tauri-drag-region>
           <!-- Brand Logo (Left) -->
           <div class="brand-group" data-tauri-drag-region="false">
@@ -224,7 +226,8 @@
               <div class="focus-plan-content">
 
                 <p id="auto-loop-p2"></p>
-                <button class="btn-action-secondary" id="btn-finish-timer">Batalkan rencana</button>
+                <p id="plan-action-hint">Belum ada sesi aktif.</p>
+                <button class="btn-action-secondary" id="btn-finish-timer" disabled>Batalkan rencana</button>
               </div>
             </details>
           </div>
