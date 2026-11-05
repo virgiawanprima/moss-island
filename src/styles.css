@@ -2851,7 +2851,7 @@ html:is([data-dock-edge="left"], [data-dock-edge="right"]) #panel-music .lyrics-
 
 /* Bilah samping memakai ketebalan yang sama dengan bilah horizontal. */
 html:is([data-dock-edge="left"], [data-dock-edge="right"]) .view-compact { padding: 12px 4px; gap: 12px; }
-html:is([data-dock-edge="left"], [data-dock-edge="right"]) .compact-timer-val { writing-mode: vertical-rl; font-size: .8rem; }
+html:is([data-dock-edge="left"], [data-dock-edge="right"]) .compact-timer-val { writing-mode: horizontal-tb; font-size: .65rem; letter-spacing: 0; white-space: nowrap; }
 html:is([data-dock-edge="left"], [data-dock-edge="right"]) .compact-track-name { display: none; }
 html:is([data-dock-edge="left"], [data-dock-edge="right"]) .compact-right { flex-direction: column; gap: 8px; }
 html:is([data-dock-edge="left"], [data-dock-edge="right"]) .compact-btn { width: 28px; height: 28px; }
