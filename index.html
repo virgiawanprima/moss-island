@@ -385,10 +385,18 @@
               <input type="number" id="setting-total-hours" aria-describedby="setting-total-hours-error" class="settings-mini-input" min="0" max="24" value="4" />
               <span id="setting-total-hours-error" class="settings-field-error" aria-live="polite"></span>
               <span class="input-unit">jam</span>
-              <input type="number" id="setting-total-mins" class="settings-mini-input" min="0" max="59" step="1" value="0" aria-label="Tambahan menit" aria-describedby="setting-total-mins-error" />
-              <span id="setting-total-mins-error" class="settings-field-error" aria-live="polite"></span>
-              <span class="input-unit">menit</span>
+
             </div>
+            <fieldset class="minute-presets">
+              <legend>Menit</legend>
+              <label><input type="radio" name="duration-minutes" value="0" aria-label="0 menit"><span>0</span></label>
+              <label><input type="radio" name="duration-minutes" value="15" aria-label="15 menit"><span>15</span></label>
+              <label><input type="radio" name="duration-minutes" value="30" aria-label="30 menit"><span>30</span></label>
+              <label><input type="radio" name="duration-minutes" value="45" aria-label="45 menit"><span>45</span></label>
+            </fieldset>
+            <input type="hidden" id="setting-total-mins" value="0">
+            <span id="setting-total-mins-error" class="settings-field-error" aria-live="polite"></span>
+            <span id="setting-minutes-current" class="settings-input-label" hidden></span>
           </div>
 
         </div>

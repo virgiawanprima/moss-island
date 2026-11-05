@@ -2931,3 +2931,15 @@ html:is([data-dock-edge="left"], [data-dock-edge="right"]) body.is-tauri-native 
 #panel-music .track-title { grid-area: 1 / 2; align-self: end; }
 #panel-music .track-artist-row { grid-area: 2 / 2; align-self: start; }
 #panel-music .music-controls-row { grid-area: 3 / 1 / 4 / -1; margin-top: 6px; }
+
+@container island (min-width: 801px) {
+  #panel-music { grid-template-columns: 248px minmax(0, 1fr) 104px; }
+}
+.minute-presets { display: flex; flex-wrap: wrap; gap: 10px; border: 0; padding: 0; margin: 14px 0 0; }
+.minute-presets legend { font-size: .72rem; margin-bottom: 8px; color: var(--color-text-muted); }
+.minute-presets label { position: relative; cursor: pointer; }
+.minute-presets input { position: absolute; width: 1px; height: 1px; opacity: 0; }
+.minute-presets span { display: grid; place-items: center; width: 44px; height: 44px; border: 1px solid var(--color-island-border); border-radius: 50%; background: var(--color-bg); font-size: .85rem; }
+.minute-presets input:checked + span { color: var(--color-bg); background: var(--color-accent-lime); border-color: var(--color-accent-lime); font-weight: 700; }
+.minute-presets input:focus-visible + span { outline: 2px solid var(--color-accent-mint); outline-offset: 3px; }
+.minute-presets label:hover span { border-color: var(--color-accent-lime); }

@@ -2495,6 +2495,17 @@ function bindSettingsModal() {
     el?.addEventListener('change', () => updateModalPlanPreview());
   });
 
+  document.querySelectorAll<HTMLInputElement>('input[name="duration-minutes"]').forEach(radio => {
+    radio.addEventListener('change', () => {
+      if (!radio.checked) return;
+      const minutes = document.querySelector<HTMLInputElement>('#setting-total-mins');
+      if (minutes) minutes.value = radio.value;
+      const current = document.querySelector<HTMLElement>('#setting-minutes-current');
+      if (current) current.hidden = true;
+      updateModalPlanPreview();
+    });
+  });
+
   const seasonCycleRadio = document.querySelector<HTMLInputElement>('#season-mode-cycle');
   const seasonManualRadio = document.querySelector<HTMLInputElement>('#season-mode-manual');
   const seasonSelectWrapper = document.querySelector<HTMLElement>('#season-select-wrapper');
@@ -2524,6 +2535,15 @@ function updateSettingsFormInputs() {
 
   if (hInput) hInput.value = String(hours);
   if (mInput) mInput.value = String(mins);
+  document.querySelectorAll<HTMLInputElement>('input[name="duration-minutes"]').forEach(radio => {
+    radio.checked = Number(radio.value) === mins;
+  });
+  const currentMinutes = document.querySelector<HTMLElement>('#setting-minutes-current');
+  if (currentMinutes) {
+    currentMinutes.hidden = [0, 15, 30, 45].includes(mins);
+    currentMinutes.textContent = `Tersimpan: ${mins} menit`;
+  }
+
   if (autoBInput) autoBInput.checked = cfg.autostartBreak;
   if (autoFInput) autoFInput.checked = cfg.autostartNextFocus;
   const hoverInput = document.querySelector<HTMLInputElement>('#setting-hover');
