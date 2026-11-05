@@ -636,7 +636,11 @@ html[data-dock-edge="right"] .island-widget.state-expanded {
 }
 
 .pill-tab-btn {
-  flex: 1;
+  flex: 1 0 auto;
+  min-width: max-content;
+  white-space: nowrap;
+  line-height: 1.5;
+  padding: 0 12px;
   height: 100%;
   background: transparent;
   border: none;
@@ -2745,16 +2749,18 @@ html:is([data-dock-edge="left"], [data-dock-edge="right"]) #panel-music .lyrics-
 /* Istirahat memakai slot pulau agar ukuran panel dan kontrol tetap stabil. */
 #panel-focus .rest-countdown[hidden],
 #panel-focus .rest-reminder[hidden] { display: none; }
-#panel-focus.is-resting > .col-center,
 #panel-focus.is-resting .timer-digits-display,
 #panel-focus.is-resting .stat-meta-group,
 #panel-focus.is-resting #session-duration-tag { display: none; }
-#panel-focus.is-resting > .col-left { gap: 14px; }
+#panel-focus.is-resting > .col-left { gap: 5px; }
+#panel-focus.is-resting .island-progress-meta,
+#panel-focus.is-resting .progress-bar-track { display: none; }
+#panel-focus.is-resting .rest-reminder { text-align: center; }
 #panel-focus.is-resting .session-badge { color: var(--color-break); }
 .rest-reminder h2 { margin: 0 0 10px; font-size: 1.4rem; font-weight: 600; line-height: 1.3; }
 .rest-reminder p { margin: 0; font-size: 0.9rem; line-height: 1.6; color: var(--color-text-main); }
 .rest-reminder > span { display: block; margin-top: 10px; color: var(--color-text-muted); font-size: 0.75rem; line-height: 1.6; }
-.rest-countdown { position: relative; width: 180px; height: 180px; justify-self: center; align-self: center; }
+.rest-countdown { position: relative; width: 148px; height: 148px; flex: 0 0 148px; justify-self: center; align-self: center; }
 .rest-ring { display: block; width: 100%; height: 100%; transform: rotate(-90deg); }
 .rest-ring circle { fill: none; stroke-width: 5; }
 .rest-ring-track { stroke: rgba(197, 186, 244, 0.14); }
@@ -2763,10 +2769,6 @@ html:is([data-dock-edge="left"], [data-dock-edge="right"]) #panel-music .lyrics-
 .rest-countdown-caption { font-size: 0.6rem; letter-spacing: 0.13em; color: var(--color-break); }
 .rest-countdown-time { font-family: var(--font-pixel); font-size: 2.3rem; line-height: 1; font-variant-numeric: tabular-nums; }
 .rest-countdown-status { font-size: 0.65rem; color: var(--color-text-muted); }
-html:is([data-dock-edge="left"], [data-dock-edge="right"]) #panel-focus.is-resting .rest-countdown { grid-area: 2 / 1 / 3 / -1; }
-@media (max-width: 440px) {
-  html:is([data-dock-edge="left"], [data-dock-edge="right"]) #panel-focus.is-resting .rest-countdown { grid-area: 3 / 1; }
-}
 
 .focus-countdown { position: relative; width: 148px; height: 148px; flex: 0 0 148px; align-self: center; }
 .focus-countdown .rest-ring-progress { stroke: var(--color-accent-lime); }
