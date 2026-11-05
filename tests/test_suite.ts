@@ -1250,11 +1250,11 @@ runTest('Uji 35: Panel musik tetap 960 × 228 px dengan isi 156 px dan jarak ant
     '.view-expanded musik harus memakai padding 8 px, gap 8 px, flex column, dan align-items flex-start'
   );
 
-  // 4. Panel fokus tetap mempertahankan tinggi penuh 308 px
+  // 4. Panel fokus tetap mempertahankan tinggi penuh 332 px
   assert.strictEqual(
-    css.includes('.island-widget.state-expanded.tab-focus {\n  height: 308px;\n  max-height: 308px;\n}'),
+    css.includes('.island-widget.state-expanded.tab-focus {\n  height: 332px;\n  max-height: 332px;\n}'),
     true,
-    'Panel fokus tetap harus memakai tinggi 308 px'
+    'Panel fokus tetap harus memakai tinggi 332 px'
   );
 
   // Gap antarkolom dipadatkan menjadi 6 px; gap header dan tinggi native tetap.
@@ -1485,9 +1485,9 @@ runTest('Uji 41: Konfigurasi ISLAND_DIMENSIONS dan fungsi getIslandDimension seb
   });
   assert.deepStrictEqual(getIslandDimension('expanded', 'music', true), ISLAND_DIMENSIONS.settings);
 
-  // 4. Expanded focus (308 px)
-  assert.strictEqual(ISLAND_DIMENSIONS.expanded.focus.height, 308);
-  assert.strictEqual(ISLAND_DIMENSIONS.expanded.focus.minHeight, 308);
+  // 4. Expanded focus (332 px)
+  assert.strictEqual(ISLAND_DIMENSIONS.expanded.focus.height, 332);
+  assert.strictEqual(ISLAND_DIMENSIONS.expanded.focus.minHeight, 332);
 
   // 5. Expanded music (228 px persis sesuai Figma)
   assert.strictEqual(ISLAND_DIMENSIONS.expanded.music.width, 960);
@@ -1505,7 +1505,7 @@ runTest('Uji 42: Alur ukuran panel, bilah minimize (42), dan modal tetap konsist
 
   // 1. Fokus awal
   let dim = getIslandDimension(currentState, currentActiveTab, isModalOpen);
-  assert.strictEqual(dim.height, 308, 'Tab Fokus awal harus 308 px');
+  assert.strictEqual(dim.height, 332, 'Tab Fokus awal harus 332 px');
 
   // 2. Berpindah ke tab Musik
   currentActiveTab = 'music';
@@ -1516,7 +1516,7 @@ runTest('Uji 42: Alur ukuran panel, bilah minimize (42), dan modal tetap konsist
   // 3. Kembali ke panel fokus/istirahat
   currentActiveTab = 'focus';
   dim = getIslandDimension(currentState, currentActiveTab, isModalOpen);
-  assert.strictEqual(dim.height, 308, 'Panel fokus/istirahat harus kembali 308 px');
+  assert.strictEqual(dim.height, 332, 'Panel fokus/istirahat harus kembali 332 px');
 
   // 4. Kembali ke tab Musik
   currentActiveTab = 'music';

@@ -269,9 +269,7 @@
                     <svg class="transport-icon" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="m17 2 4 4-4 4M3 11V9a3 3 0 0 1 3-3h15M7 22l-4-4 4-4m14-1v2a3 3 0 0 1-3 3H3"/></svg>
                     <span class="repeat-one-mark" aria-hidden="true">1</span>
                   </button>
-                  <button class="transport-btn" id="btn-music-volume" popovertarget="music-volume-control" aria-label="Atur volume" title="Atur volume">
-                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M11 5 6 9H3v6h3l5 4zM15 8a6 6 0 0 1 0 8M18 5a10 10 0 0 1 0 14"/></svg>
-                  </button>
+
                 </div>
               </div>
             </div>
@@ -285,6 +283,11 @@
                 <span id="music-time-current">Sudah diputar 00:00:00</span>
                 <span id="music-time-total">00:00:00</span>
               </div>
+            </div>
+              <div class="music-volume" id="music-volume-control">
+              <label for="music-volume">Volume bawaan</label>
+              <input id="music-volume" type="range" min="0" max="100" step="1" value="50" aria-label="Volume musik bawaan">
+              <output id="music-volume-value" for="music-volume">50%</output>
             </div>
             <span class="music-action-status" id="music-action-status" role="status"></span>
           </div>
@@ -366,18 +369,18 @@
       <div class="modal-dialog figma-settings-modal">
         <!-- Top Subheader -->
         <div class="modal-top-meta">
-          <span class="modal-brand-tag">moss island / fokus</span>
-          <span class="modal-sub-tag">DURASI TOTAL · TERMASUK ISTIRAHAT</span>
+          <span class="modal-brand-tag">Pengaturan</span>
+
           <button class="modal-close-btn" id="btn-close-settings" title="Tutup">×</button>
         </div>
 
         <!-- Heading -->
-        <h2 class="modal-main-heading" id="modal-settings-heading">Mau belajar berapa lama?</h2>
+        <h2 class="modal-main-heading" id="modal-settings-heading">Rencana fokus</h2>
 
         <!-- Target waktu fokus -->
         <div class="settings-inputs-row settings-focus-target">
           <div class="settings-input-block">
-            <label for="setting-total-hours" class="settings-input-label">Durasi keseluruhan</label>
+            <label for="setting-total-hours" class="settings-input-label">Durasi total</label>
             <div class="settings-input-combo">
               <input type="number" id="setting-total-hours" aria-describedby="setting-total-hours-error" class="settings-mini-input" min="0" max="24" value="4" />
               <span id="setting-total-hours-error" class="settings-field-error" aria-live="polite"></span>
@@ -389,7 +392,7 @@
           </div>
 
         </div>
-        <p class="settings-input-label">Fokus 25 menit · rehat 5 menit · rehat 15 menit setiap 4 sesi. Semuanya termasuk dalam durasi pilihanmu.</p>
+        <p class="settings-input-label">Termasuk waktu istirahat.</p>
 
         <!-- 3-Card Summary Row -->
         <div class="settings-summary-cards-row">
@@ -407,6 +410,7 @@
           </div>
         </div>
 
+        <details class="settings-disclosure"><summary>Lihat jadwal sesi</summary>
         <!-- Timeline Section -->
         <div class="modal-timeline-section">
           <div class="modal-timeline-header">
@@ -432,13 +436,16 @@
           </div>
         </div>
 
+        </details>
+
+        <details class="settings-disclosure"><summary>Pengaturan lainnya</summary>
         <!-- Autostart Checkboxes Row -->
         <div class="modal-checkboxes-section">
           <label class="figma-checkbox-row">
             <input type="checkbox" id="setting-hover" class="settings-checkbox" />
             <div class="checkbox-text-group">
               <span class="checkbox-title">Buka notch saat kursor mendekat</span>
-              <span class="checkbox-subtitle">Tutup setelah kursor keluar, kecuali saat kontrol sedang digunakan.</span>
+
             </div>
           </label>
           <label class="figma-checkbox-row">
@@ -453,7 +460,7 @@
             <input type="checkbox" id="setting-auto-focus" class="settings-checkbox" checked />
             <div class="checkbox-text-group">
               <span class="checkbox-title">Fokus berikutnya dimulai otomatis</span>
-              <span class="checkbox-subtitle">Mulai fokus berikutnya setelah istirahat selesai, selama rencana belum berakhir.</span>
+
             </div>
           </label>
 
@@ -461,7 +468,7 @@
             <input type="checkbox" id="setting-autostart-app" class="settings-checkbox" />
             <div class="checkbox-text-group">
               <span class="checkbox-title">Mulai aplikasi otomatis saat login desktop</span>
-              <span class="checkbox-subtitle">Buka widget ke notch saat komputer menyala (Windows & Linux).</span>
+
             </div>
           </label>
         </div>
@@ -494,14 +501,14 @@
 
         <section class="settings-music" aria-labelledby="music-settings-heading">
           <h3 id="music-settings-heading">Musik dan lirik</h3>
-          <p>Momo mengikuti suara output Windows, termasuk notifikasi dan aplikasi lain. Audio dianalisis di memori, tidak disimpan atau dikirim. Analisis berhenti saat panel Musik tersembunyi atau gerakan sistem dikurangi.</p>
+          <p>Momo mengikuti suara Windows. Audio tidak disimpan atau dikirim.</p>
           <p id="speaker-beat-status" role="status">Analisis output menunggu panel Musik.</p>
           <label for="setting-momo-intensity">Gerak Momo saat mendengarkan</label>
           <select id="setting-momo-intensity">
             <option value="calm">Tenang</option>
             <option value="expressive">Ekspresif</option>
           </select>
-          <p>Gerak memakai tempo mandiri. Preferensi kurangi gerakan dari sistem tetap diutamakan.</p>
+          <p>Gerakan mengikuti preferensi aksesibilitas sistem.</p>
           <label for="music-session-select">Sumber pemutaran</label>
           <select id="music-session-select">
             <option value="">Otomatis</option>
@@ -515,9 +522,11 @@
             <button type="button" id="btn-lyrics-faster" class="music-text-btn" disabled aria-label="Percepat lirik setengah detik">+0,5 dtk</button>
             <button type="button" id="btn-lyrics-reset" class="music-text-btn" disabled>Reset</button>
           </div>
-          <p>Koreksi disimpan per rekaman dan tidak menggeser posisi lagu. Perubahan sumber dan koreksi langsung berlaku.</p>
+          <p>Koreksi hanya mengubah waktu lirik untuk lagu ini.</p>
           <p id="lyrics-timing-status" role="status"></p>
         </section>
+
+        </details>
 
         <p id="settings-status" role="status" aria-live="polite"></p>
 
@@ -530,10 +539,6 @@
         </div>
       </div>
     </div>
-              <div class="music-volume" id="music-volume-control" popover>
-              <label for="music-volume">Volume bawaan</label>
-              <input id="music-volume" type="range" min="0" max="100" step="1" value="50" aria-label="Volume musik bawaan">
-              <output id="music-volume-value" for="music-volume">50%</output>
-            </div>
+
 </body>
 </html>

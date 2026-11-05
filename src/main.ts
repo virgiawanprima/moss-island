@@ -325,9 +325,9 @@ export const ISLAND_DIMENSIONS = {
   expanded: {
     focus: {
       width: 960,
-      height: 308,
+      height: 332,
       minWidth: 640,
-      minHeight: 308,
+      minHeight: 332,
       resizable: true,
     },
     music: {
@@ -566,7 +566,7 @@ function updateSessionMeta() {
   if (treePlan) treePlan.innerText = `${plan.focusSessionCount} sesi · ${plan.focusSessionCount} pohon akan tumbuh`;
 
   if (statTitle) statTitle.innerText = `TOTAL ${formatDuration(plan.totalDurationMin).toUpperCase()}`;
-  if (statDesc) statDesc.innerText = `${formatDuration(plan.totalFocusMin)} fokus${plan.totalBreakMin ? ` + ${formatDuration(plan.totalBreakMin)} istirahat` : ''}`;
+  if (statDesc) statDesc.innerText = `${formatDuration(plan.totalFocusMin)} fokus${plan.totalBreakMin ? `\n+ ${formatDuration(plan.totalBreakMin)} istirahat` : ''}`;
 
   if (autoLoopP1) {
     autoLoopP1.innerText = engine.getStatus() === 'completed'
@@ -1137,19 +1137,6 @@ function formatTime(seconds: number): string {
 }
 
 function bindMusicControls() {
-  const volumePopover = document.querySelector<HTMLElement>('#music-volume-control');
-  const volumeButton = document.querySelector<HTMLButtonElement>('#btn-music-volume');
-  volumePopover?.addEventListener('toggle', () => {
-    if (!volumePopover.matches(':popover-open') || !volumeButton) return;
-    const anchor = volumeButton.getBoundingClientRect();
-    const left = Math.max(8, Math.min(anchor.left, window.innerWidth - volumePopover.offsetWidth - 8));
-    const below = anchor.bottom + 8;
-    const top = below + volumePopover.offsetHeight <= window.innerHeight - 8
-      ? below : Math.max(8, anchor.top - volumePopover.offsetHeight - 8);
-    volumePopover.style.left = `${left}px`;
-    volumePopover.style.top = `${top}px`;
-  });
-
   const volumeSlider = document.querySelector<HTMLInputElement>('#music-volume');
   const volumeValue = document.querySelector<HTMLOutputElement>('#music-volume-value');
   const volumeLabel = document.querySelector<HTMLLabelElement>('label[for="music-volume"]');
@@ -2242,8 +2229,7 @@ function bindWindowAndNotchControls() {
     const focusInside = !!focused && focused.offsetParent !== null && widget.contains(focused)
       && (keyboardNavigation || focused.matches('input, select, textarea, [contenteditable="true"]'));
     const confirmingCancel = !!document.querySelector('#focus-cancel-confirm:not([hidden])');
-    const volumeOpen = !!document.querySelector('#music-volume-control:popover-open');
-    const blocked = dragging || hoverHold || focusInside || volumeOpen || confirmingCancel || isSettingsModalOpen || isIslandTransitioning;
+    const blocked = dragging || hoverHold || focusInside || confirmingCancel || isSettingsModalOpen || isIslandTransitioning;
     const action = hover.update(inside, appState.config.hoverEnabled === true, blocked, currentIslandState, performance.now());
     if (action) void setIslandState(action === 'expand' ? 'expanded' : 'compact');
   }, 50);
@@ -2578,7 +2564,7 @@ function updateSettingsFormInputs() {
   settingsStartupStatus = null;
   if (autoAppInput) { autoAppInput.disabled = true; autoAppInput.checked = false; }
   if (!isTauri()) {
-    showSettingsStatus('Startup otomatis hanya tersedia di aplikasi desktop.');
+    if (autoAppInput) autoAppInput.title = 'Hanya tersedia di aplikasi desktop';
     return;
   }
   if (saveButton) saveButton.disabled = true;
