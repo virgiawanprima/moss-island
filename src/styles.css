@@ -2895,3 +2895,17 @@ html:is([data-dock-edge="left"], [data-dock-edge="right"]) #panel-music .lyrics-
 html:is([data-dock-edge="left"], [data-dock-edge="right"]) #panel-music { row-gap: 12px; }
 
 html:is([data-dock-edge="left"], [data-dock-edge="right"]) body.is-tauri-native .island-widget.state-expanded #panel-music .col-left { width: 100%; max-width: none; justify-self: stretch; }
+
+.island-widget.state-compact #compact-momo-sprite {
+  transform-origin: center bottom;
+  animation: compact-momo-idle 16s ease-in-out infinite;
+}
+@keyframes compact-momo-idle {
+  0%, 18%, 36%, 54%, 72%, 100% { transform: translateY(0) scale(1) rotate(0deg); }
+  9%, 27%, 45%, 63% { transform: translateY(-1px) scale(1.015, 1.035) rotate(0deg); }
+  80%, 84% { transform: translateY(-1px) scale(1) rotate(-7deg); }
+  89%, 93% { transform: translateY(-1px) scale(1) rotate(6deg); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .island-widget.state-compact #compact-momo-sprite { animation: none; transform: none; }
+}
