@@ -779,7 +779,7 @@ html::-webkit-scrollbar {
 #panel-music .col-center {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
-  grid-template-rows: minmax(0, 1fr) 44px;
+  grid-template-rows: minmax(0, 1fr);
   gap: 4px;
   align-items: stretch;
   min-width: 0;
@@ -2873,3 +2873,25 @@ html[data-dock-edge="right"] body:not(.is-tauri-native) .island-widget { left: a
 
 html:is([data-dock-edge="left"], [data-dock-edge="right"]) .island-widget.state-expanded.tab-music .panel-header { height: auto; min-height: 100px; }
 html:is([data-dock-edge="left"], [data-dock-edge="right"]) .island-widget.state-expanded #panel-music { height: auto; min-height: 0; max-height: none; flex: 0 0 auto; }
+
+/* Circle memberi ruang bagi label dan angka tanpa menyentuh garis. */
+.rest-countdown { width: 164px; height: 164px; flex-basis: 164px; }
+.rest-countdown-label { gap: 7px; }
+.rest-countdown-time { font-size: 2rem; }
+.rest-countdown-status { font-size: .6rem; }
+
+/* Album, judul dan transport berbagi sumbu yang jelas pada panel samping. */
+html:is([data-dock-edge="left"], [data-dock-edge="right"]) #panel-music .album-cover-box { display: grid; grid-template-columns: 64px minmax(0, 1fr); gap: 4px 14px; align-items: center; }
+html:is([data-dock-edge="left"], [data-dock-edge="right"]) #panel-music .album-art-pine { grid-area: 1 / 1 / 3 / 2; }
+html:is([data-dock-edge="left"], [data-dock-edge="right"]) #panel-music .album-info-meta { display: contents; }
+html:is([data-dock-edge="left"], [data-dock-edge="right"]) #panel-music .track-title { grid-area: 1 / 2; align-self: end; }
+html:is([data-dock-edge="left"], [data-dock-edge="right"]) #panel-music .track-artist-row { grid-area: 2 / 2; align-self: start; }
+html:is([data-dock-edge="left"], [data-dock-edge="right"]) #panel-music .music-controls-row { grid-area: 3 / 1 / 4 / -1; justify-content: flex-start; margin-top: 12px; gap: 8px; }
+html:is([data-dock-edge="left"], [data-dock-edge="right"]) #panel-music .col-left { gap: 4px; }
+html:is([data-dock-edge="left"], [data-dock-edge="right"]) #panel-music .col-center,
+html:is([data-dock-edge="left"], [data-dock-edge="right"]) #panel-music .col-right { height: 120px; min-height: 0; align-self: center; }
+html:is([data-dock-edge="left"], [data-dock-edge="right"]) #panel-music .music-momo-stage { height: 120px; min-height: 0; }
+html:is([data-dock-edge="left"], [data-dock-edge="right"]) #panel-music .lyrics-viewport { height: 100%; }
+html:is([data-dock-edge="left"], [data-dock-edge="right"]) #panel-music { row-gap: 12px; }
+
+html:is([data-dock-edge="left"], [data-dock-edge="right"]) body.is-tauri-native .island-widget.state-expanded #panel-music .col-left { width: 100%; max-width: none; justify-self: stretch; }
