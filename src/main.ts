@@ -369,7 +369,7 @@ async function syncTauriWindowState(state: IslandState, modalOpen: boolean = fal
     const baseDim = getIslandDimension(state, currentTab, modalOpen);
     let dim: IslandDimensionConfig = !modalOpen && isVerticalDock(dockEdge) && state === 'expanded'
       ? { ...baseDim, width: 560, height: currentTab === 'focus' ? 560 : currentTab === 'music' ? 480 : 420, minWidth: 440, minHeight: 320 }
-      : !modalOpen && isVerticalDock(dockEdge) && state === 'compact' ? { ...baseDim, width: 96, height: 300 }
+      : !modalOpen && isVerticalDock(dockEdge) && state === 'compact' ? { ...baseDim, width: 42, height: 300 }
       : baseDim;
     const { currentMonitor } = await import('@tauri-apps/api/window');
     const monitor = await currentMonitor();
@@ -1137,6 +1137,19 @@ function formatTime(seconds: number): string {
 }
 
 function bindMusicControls() {
+  const volumePopover = document.querySelector<HTMLElement>('#music-volume-control');
+  const volumeButton = document.querySelector<HTMLButtonElement>('#btn-music-volume');
+  volumePopover?.addEventListener('toggle', () => {
+    if (!volumePopover.matches(':popover-open') || !volumeButton) return;
+    const anchor = volumeButton.getBoundingClientRect();
+    const left = Math.max(8, Math.min(anchor.left, window.innerWidth - volumePopover.offsetWidth - 8));
+    const below = anchor.bottom + 8;
+    const top = below + volumePopover.offsetHeight <= window.innerHeight - 8
+      ? below : Math.max(8, anchor.top - volumePopover.offsetHeight - 8);
+    volumePopover.style.left = `${left}px`;
+    volumePopover.style.top = `${top}px`;
+  });
+
   const volumeSlider = document.querySelector<HTMLInputElement>('#music-volume');
   const volumeValue = document.querySelector<HTMLOutputElement>('#music-volume-value');
   const volumeLabel = document.querySelector<HTMLLabelElement>('label[for="music-volume"]');
@@ -2229,7 +2242,8 @@ function bindWindowAndNotchControls() {
     const focusInside = !!focused && focused.offsetParent !== null && widget.contains(focused)
       && (keyboardNavigation || focused.matches('input, select, textarea, [contenteditable="true"]'));
     const confirmingCancel = !!document.querySelector('#focus-cancel-confirm:not([hidden])');
-    const blocked = dragging || hoverHold || focusInside || confirmingCancel || isSettingsModalOpen || isIslandTransitioning;
+    const volumeOpen = !!document.querySelector('#music-volume-control:popover-open');
+    const blocked = dragging || hoverHold || focusInside || volumeOpen || confirmingCancel || isSettingsModalOpen || isIslandTransitioning;
     const action = hover.update(inside, appState.config.hoverEnabled === true, blocked, currentIslandState, performance.now());
     if (action) void setIslandState(action === 'expand' ? 'expanded' : 'compact');
   }, 50);

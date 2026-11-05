@@ -465,7 +465,7 @@ html[data-dock-edge="bottom"] .island-widget.state-compact {
 }
 html[data-dock-edge="left"] .island-widget.state-compact,
 html[data-dock-edge="right"] .island-widget.state-compact {
-  width: 96px;
+  width: 42px;
   height: 300px;
   border: 1px solid var(--color-island-border);
 }
@@ -2848,3 +2848,28 @@ html:is([data-dock-edge="left"], [data-dock-edge="right"]) #panel-music .lyrics-
   #panel-focus { flex: 0 0 auto; }
   .storage-notice { flex-direction: column; align-items: stretch; }
 }
+
+/* Bilah samping memakai ketebalan yang sama dengan bilah horizontal. */
+html:is([data-dock-edge="left"], [data-dock-edge="right"]) .view-compact { padding: 12px 4px; gap: 12px; }
+html:is([data-dock-edge="left"], [data-dock-edge="right"]) .compact-timer-val { writing-mode: vertical-rl; font-size: .8rem; }
+html:is([data-dock-edge="left"], [data-dock-edge="right"]) .compact-track-name { display: none; }
+html:is([data-dock-edge="left"], [data-dock-edge="right"]) .compact-right { flex-direction: column; gap: 8px; }
+html:is([data-dock-edge="left"], [data-dock-edge="right"]) .compact-btn { width: 28px; height: 28px; }
+html:is([data-dock-edge="left"], [data-dock-edge="right"]) .compact-album-thumb { width: 26px; height: 26px; flex-basis: 26px; }
+html:is([data-dock-edge="left"], [data-dock-edge="right"]) #panel-focus .focus-countdown .timer-digits-display { font-size: 2rem; line-height: 1; }
+.music-volume[popover] { display: none; position: fixed; inset: auto; margin: 0; width: 176px; padding: 12px; border: 1px solid var(--color-island-border); border-radius: 8px; background: var(--color-bg-panel, #192720); color: var(--color-text-main); box-shadow: 0 6px 18px #0005; }
+.music-volume[popover]:popover-open { display: grid; }
+.music-volume[popover] input { width: 120px; justify-self: center; }
+
+html:is([data-dock-edge="left"], [data-dock-edge="right"]) .island-widget.state-expanded:is(.tab-focus, .tab-music) {
+  width: min(560px, 100vw); height: auto; min-height: 0; max-height: 100dvh;
+}
+html:is([data-dock-edge="left"], [data-dock-edge="right"]) .island-widget.state-expanded:is(.tab-focus, .tab-music) .view-expanded {
+  height: auto; max-height: 100dvh; padding: 14px 16px 18px; gap: 12px; overflow-y: auto;
+}
+html:is([data-dock-edge="left"], [data-dock-edge="right"]) body.is-tauri-native .island-widget.state-expanded:is(.tab-focus, .tab-music) .view-expanded { height: 100%; max-height: 100%; }
+html[data-dock-edge="left"] body:not(.is-tauri-native) .island-widget { left: 0; top: 50%; transform: translateY(-50%); }
+html[data-dock-edge="right"] body:not(.is-tauri-native) .island-widget { left: auto; right: 0; top: 50%; transform: translateY(-50%); }
+
+html:is([data-dock-edge="left"], [data-dock-edge="right"]) .island-widget.state-expanded.tab-music .panel-header { height: auto; min-height: 100px; }
+html:is([data-dock-edge="left"], [data-dock-edge="right"]) .island-widget.state-expanded #panel-music { height: auto; min-height: 0; max-height: none; flex: 0 0 auto; }
