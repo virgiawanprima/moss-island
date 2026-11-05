@@ -334,12 +334,7 @@
                   <path d="M817 101H821V105H817V101ZM821 101H825V105H821V101Z" fill="#AF8055"/>
                   <path d="M809 117H813V121H809V117ZM821 117H825V121H821V117ZM833 117H837V121H833V117ZM817 125H821V129H817V125ZM821 125H825V129H821V125Z" fill="#15221A"/>
 
-                  <!-- Headphone Pixel Art (Band di atas & Earcup di samping) -->
-                  <g id="momo-headphone-gear" class="momo-headphone-gear">
-                    <path d="M811 101H831V105H811V101Z" fill="#58486e"/>
-                    <path d="M797 111H805V123H797V111ZM837 111H845V123H837V111Z" fill="#F28B82"/>
-                    <path d="M801 113H805V121H801V113ZM837 113H841V121H837V113Z" fill="#15221A"/>
-                  </g>
+
                 </svg>
               </button>
               <span class="pixel-music-note note-2" aria-hidden="true">♫</span>
@@ -485,12 +480,12 @@
         <div class="settings-season-section">
           <div class="season-section-header">
             <span class="season-header-title">Musim Hutan Pulau</span>
-            <span class="season-status-badge" id="season-status-badge">Siklus 0/6 Sesi</span>
+            <span class="season-status-badge" id="season-status-badge">Setiap sesi fokus</span>
           </div>
           <div class="season-mode-row">
             <label class="season-mode-radio">
               <input type="radio" name="season-mode" id="season-mode-cycle" value="cycle" checked />
-              <span>Bergilir Otomatis (Tiap 6 Sesi)</span>
+              <span>Otomatis setiap sesi fokus</span>
             </label>
             <label class="season-mode-radio">
               <input type="radio" name="season-mode" id="season-mode-manual" value="manual" />
@@ -507,31 +502,13 @@
           </div>
         </div>
 
-        <section class="settings-music" aria-labelledby="music-settings-heading">
-          <h3 id="music-settings-heading">Musik dan lirik</h3>
-          <p>Momo mengikuti suara Windows. Audio tidak disimpan atau dikirim.</p>
-          <p id="speaker-beat-status" role="status">Analisis output menunggu panel Musik.</p>
-          <label for="setting-momo-intensity">Gerak Momo saat mendengarkan</label>
-          <select id="setting-momo-intensity">
-            <option value="calm">Tenang</option>
-            <option value="expressive">Ekspresif</option>
-          </select>
-          <p>Gerakan mengikuti preferensi aksesibilitas sistem.</p>
+        <section class="settings-music" aria-label="Sumber pemutaran">
           <label for="music-session-select">Sumber pemutaran</label>
           <select id="music-session-select">
             <option value="">Otomatis</option>
             <option value="local">Musik bawaan</option>
           </select>
-          <p id="music-session-status" role="status">Membaca sesi media…</p>
-          <p>Lirik dari LRCLIB, bukan katalog lirik Spotify.</p>
-          <div class="lyrics-timing-controls" role="group" aria-label="Koreksi waktu lirik, nilai positif mempercepat lirik">
-            <button type="button" id="btn-lyrics-slower" class="music-text-btn" disabled aria-label="Perlambat lirik setengah detik">−0,5 dtk</button>
-            <output id="lyrics-offset" aria-live="polite">0,0 dtk</output>
-            <button type="button" id="btn-lyrics-faster" class="music-text-btn" disabled aria-label="Percepat lirik setengah detik">+0,5 dtk</button>
-            <button type="button" id="btn-lyrics-reset" class="music-text-btn" disabled>Reset</button>
-          </div>
-          <p>Koreksi hanya mengubah waktu lirik untuk lagu ini.</p>
-          <p id="lyrics-timing-status" role="status"></p>
+          <p id="music-session-status" role="status"></p>
         </section>
 
         </details>

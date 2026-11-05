@@ -202,7 +202,7 @@ export function drawBananaTree(ctx: CanvasRenderingContext2D, x: number, y: numb
   ctx.restore();
 }
 
-export function drawPalmTree(ctx: CanvasRenderingContext2D, x: number, y: number, scale = 1, sway = 0, season: IslandSeason = 'spring') {
+export function drawOilPalmTree(ctx: CanvasRenderingContext2D, x: number, y: number, scale = 1, sway = 0, season: IslandSeason = 'spring') {
   ctx.save();
   ctx.translate(Math.round(x), Math.round(y));
   ctx.scale(scale, scale);
@@ -236,6 +236,16 @@ export function drawPalmTree(ctx: CanvasRenderingContext2D, x: number, y: number
     ctx.lineTo(end[0], end[1]);
     ctx.stroke();
   }
+  // Anak daun menyirip mengikuti arah pelepah sawit.
+  ctx.strokeStyle = p.light;
+  for (const side of [-1, 1]) {
+    for (let step = 1; step <= 4; step++) {
+      const px = side * step * 4;
+      const py = -5 + step;
+      ctx.beginPath(); ctx.moveTo(px, py); ctx.lineTo(px + side * 2, py + 5); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(px, py); ctx.lineTo(px - side * 2, py - 4); ctx.stroke();
+    }
+  }
   ctx.fillStyle = '#8D422D';
   ctx.fillRect(-6, -1, 6, 7);
   ctx.fillRect(1, 0, 6, 7);
@@ -245,6 +255,18 @@ export function drawPalmTree(ctx: CanvasRenderingContext2D, x: number, y: number
     ctx.fillStyle = '#E7A35A';
     ctx.fillRect(fx, fy, 1, 1);
     ctx.fillStyle = '#CD713C';
+  }
+  if (season !== 'winter') {
+    for (const side of [-1, 1]) {
+      polygon(ctx, '#602F25', [[side * 2, -2], [side * 8, -1], [side * 9, 4], [side * 6, 9], [side * 2, 7]]);
+      for (let row = 0; row < 3; row++) {
+        for (let fruit = 0; fruit < 2; fruit++) {
+          ctx.fillStyle = row === 0 ? '#CA5532' : '#E17D3A';
+          ctx.fillRect(side * (3 + fruit * 3), row * 3, 2, 2);
+          ctx.fillStyle = '#F4AD5E'; ctx.fillRect(side * (3 + fruit * 3), row * 3, 1, 1);
+        }
+      }
+    }
   }
   ctx.translate(0, 30);
   drawSeasonAccents(ctx, 'palm', season);
@@ -258,7 +280,7 @@ export function treeSeasonTraits(type: TreeType, season: IslandSeason) {
 }
 
 const BASE_TREE_RENDERERS: Record<TreeType, typeof drawMangoTree> = {
-  banana: drawBananaTree, mango: drawMangoTree, durian: drawDurianTree, palm: drawPalmTree, guava: drawGuavaTree,
+  banana: drawBananaTree, mango: drawMangoTree, durian: drawDurianTree, palm: drawOilPalmTree, guava: drawGuavaTree,
 };
 
 function drawSeasonAccents(ctx: CanvasRenderingContext2D, type: TreeType, season: IslandSeason) {

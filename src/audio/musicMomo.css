@@ -37,7 +37,6 @@
 
 [data-pose="nod"] .momo-head { animation: momo-nod 1.05s ease-in-out 2; }
 [data-pose="nod"] .momo-sprout { animation: momo-leaf-follow 1.05s 100ms ease-in-out 2; }
-[data-pose="nod"] .momo-headphone-gear { animation: momo-cup-follow 1.05s 60ms ease-in-out 2; }
 [data-pose="sway"] .momo-body { animation: momo-sway 1.8s ease-in-out; }
 [data-pose="sway"] .momo-left-arm { animation: momo-arm-swing 1.8s 80ms ease-in-out; }
 [data-pose="sway"] .momo-right-arm { animation: momo-arm-swing 1.8s 140ms reverse ease-in-out; }
@@ -55,7 +54,6 @@
 [data-pose="adjust"] .momo-left-arm { animation: momo-adjust-left 1.25s ease-in-out; }
 [data-pose="start"] .momo-right-arm,
 [data-pose="adjust"] .momo-right-arm { animation: momo-adjust-right 1.25s ease-in-out; }
-[data-pose="adjust"] .momo-headphone-gear { animation: momo-slipping-cups 1.2s ease-in-out; }
 [data-pose="listen"] .momo-right-arm { transform: translate(1px, -16px) rotate(-10deg); }
 [data-pose="listen"] .momo-head { transform: rotate(-5deg); }
 [data-pose="change"] .momo-head { animation: momo-look-track 1.25s ease-in-out; }
@@ -68,7 +66,6 @@
 [data-pose="proud"] .momo-body { animation: momo-proud 1.2s ease-in-out; }
 [data-pose="finish"] .momo-left-arm { animation: momo-stretch-left 2.5s ease-in-out; }
 [data-pose="finish"] .momo-right-arm { animation: momo-stretch-right 2.5s ease-in-out; }
-[data-playback="ended"] .momo-headphone-gear { transform: translateY(20px); transition: transform 700ms ease-in-out; }
 
 @keyframes momo-breathe {
   0%, 100% { transform: translateY(0) scaleY(1); }
@@ -179,7 +176,6 @@
 [data-active="false"] .momo-rig * { transition: none !important; }
 [data-reduced="true"] .momo-rig g { transform: none !important; transition: none !important; }
 [data-reduced="true"][data-eyes="closed"] .momo-eyes { opacity: 0.4; }
-[data-reduced="true"][data-playback="ended"] .momo-headphone-gear { transform: translateY(20px) !important; }
 [data-reduced="true"][data-pose="listen"] .momo-right-arm { transform: translate(1px, -16px) !important; }
 .music-momo-stage:has([data-reduced="true"]) .pixel-music-note,
 .music-momo-stage:has([data-active="false"]) .pixel-music-note { display: none; }

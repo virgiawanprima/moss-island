@@ -1,3 +1,4 @@
+import { seasonAfterPhase } from '../src/timer/seasonCycle';
 import { formatDuration } from '../src/timer/formatDuration';
 import { subscribeStorageStatus } from '../src/storage';
 import { PetPerformance } from '../src/petPerformance';
@@ -920,49 +921,15 @@ runTest('Uji 25: loadAppState mempertahankan currentSeason dan seasonCycleCount 
   assert.strictEqual(loaded.config.seasonMode, 'cycle');
 });
 
-runTest('Uji 26: Selesai 6 sesi fokus penuh dalam mode cycle merotasi musim secara berurutan', () => {
-  let currentSeason: IslandSeason = 'spring';
-  let seasonCycleCount = 0;
-  const seasons: IslandSeason[] = ['spring', 'summer', 'autumn', 'winter'];
-
-  function completeOneFocusSession() {
-    seasonCycleCount++;
-    if (seasonCycleCount >= 6) {
-      const idx = seasons.indexOf(currentSeason);
-      currentSeason = seasons[(idx + 1) % seasons.length];
-      seasonCycleCount = 0;
-    }
+runTest('Uji 26: Setiap fokus selesai merotasi musim; skip, istirahat dan manual mempertahankannya', () => {
+  let season: IslandSeason = 'spring';
+  for (const expected of ['summer', 'autumn', 'winter', 'spring'] as IslandSeason[]) {
+    assert.equal(seasonAfterPhase(season, 'cycle', 'break'), season);
+    assert.equal(seasonAfterPhase(season, 'cycle', 'focus', true), season);
+    assert.equal(seasonAfterPhase(season, 'manual', 'focus'), season);
+    season = seasonAfterPhase(season, 'cycle', 'focus');
+    assert.equal(season, expected);
   }
-
-  // Jalankan 5 sesi
-  for (let i = 0; i < 5; i++) {
-    completeOneFocusSession();
-    assert.strictEqual(currentSeason, 'spring');
-    assert.strictEqual(seasonCycleCount, i + 1);
-  }
-
-  // Sesi ke-6: harus rotasi menjadi summer dan cycle count direset menjadi 0
-  completeOneFocusSession();
-  assert.strictEqual(currentSeason, 'summer', 'Sesi ke-6 harus merotasi musim dari spring menjadi summer');
-  assert.strictEqual(seasonCycleCount, 0, 'Siklus hitungan harus kembali ke 0 setelah pergantian musim');
-
-  // Jalankan 6 sesi lagi: summer menjadi autumn
-  for (let i = 0; i < 6; i++) {
-    completeOneFocusSession();
-  }
-  assert.strictEqual(currentSeason, 'autumn');
-
-  // Jalankan 6 sesi lagi: autumn menjadi winter
-  for (let i = 0; i < 6; i++) {
-    completeOneFocusSession();
-  }
-  assert.strictEqual(currentSeason, 'winter');
-
-  // Jalankan 6 sesi lagi: winter kembali menjadi spring
-  for (let i = 0; i < 6; i++) {
-    completeOneFocusSession();
-  }
-  assert.strictEqual(currentSeason, 'spring');
 });
 
 runTest('Uji 27: Lewati fase (skipCurrentPhase) mengirim flag isSkipped true sehingga tidak menambah hitungan musim', () => {
@@ -4440,6 +4407,7 @@ runTest('Uji 174: Pet musik memiliki satu aksi, jeda, dan mengalah pada berjalan
 });
 
 runTest('Uji 175: Setiap jenis pohon memiliki hasil gambar berbeda di empat musim tanpa meranggas seragam', () => {
+  const speciesBySeason = new Map<string, string[]>();
   for (const type of ['banana', 'mango', 'durian', 'palm', 'guava'] as const) {
     const signatures: string[] = [];
     for (const season of ['spring', 'summer', 'autumn', 'winter'] as const) {
@@ -4448,11 +4416,16 @@ runTest('Uji 175: Setiap jenis pohon memiliki hasil gambar berbeda di empat musi
       ctx.fill = () => { painted.push(String(ctx.fillStyle)); };
       ctx.fillRect = () => { painted.push(String(ctx.fillStyle)); };
       TREE_RENDERERS[type](ctx, 0, 0, 1, 0, season);
-      signatures.push(painted.join(','));
+      const signature = painted.join(',');
+      signatures.push(signature);
+      speciesBySeason.set(season, [...(speciesBySeason.get(season) ?? []), signature]);
       assert.equal(treeSeasonTraits(type, season).evergreen, true);
       assert.equal(treeSeasonTraits(type, season).snow, season === 'winter');
     }
     assert.equal(new Set(signatures).size, 4, type);
+  }
+  for (const [season, signatures] of speciesBySeason) {
+    assert.equal(new Set(signatures).size, 5, `Lima jenis pohon harus berbeda pada ${season}`);
   }
 });
 

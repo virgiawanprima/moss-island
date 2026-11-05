@@ -1,3 +1,4 @@
+import { seasonAfterPhase } from './timer/seasonCycle';
 import { formatDuration } from './timer/formatDuration';
 import { PetPerformance } from './petPerformance';
 import { parseSettingsDuration, hasScheduleChanged } from './settings';
@@ -368,7 +369,7 @@ async function syncTauriWindowState(state: IslandState, modalOpen: boolean = fal
     const { invoke } = await import('@tauri-apps/api/core');
     const baseDim = getIslandDimension(state, currentTab, modalOpen);
     let dim: IslandDimensionConfig = !modalOpen && isVerticalDock(dockEdge) && state === 'expanded'
-      ? { ...baseDim, width: 560, height: currentTab === 'focus' ? 560 : currentTab === 'music' ? 480 : 420, minWidth: 440, minHeight: 320 }
+      ? { ...baseDim, width: 560, height: currentTab === 'focus' ? 640 : currentTab === 'music' ? 480 : 420, minWidth: 440, minHeight: 320 }
       : !modalOpen && isVerticalDock(dockEdge) && state === 'compact' ? { ...baseDim, width: 42, height: 300 }
       : baseDim;
     const { currentMonitor } = await import('@tauri-apps/api/window');
@@ -756,20 +757,12 @@ function handlePhaseComplete(
   if (completedPhase.type === 'focus' && !isSkipped) {
     appState.progress.completedSessionsToday++;
 
-    // Hitungan musim: bertambah hanya jika sesi fokus selesai penuh
-    if (appState.config.seasonMode === 'cycle') {
-      const nextCycle = (appState.progress.seasonCycleCount || 0) + 1;
-      if (nextCycle >= 6) {
-        // Rotasi ke musim berikutnya: semi -> panas -> gugur -> dingin -> semi
-        const seasons: IslandSeason[] = ['spring', 'summer', 'autumn', 'winter'];
-        const currentIdx = seasons.indexOf(appState.progress.currentSeason || 'spring');
-        const nextSeason = seasons[(currentIdx + 1) % seasons.length];
-        appState.progress.currentSeason = nextSeason;
-        appState.progress.seasonCycleCount = 0;
-        renderer?.setSeason(nextSeason);
-      } else {
-        appState.progress.seasonCycleCount = nextCycle;
-      }
+    const nextSeason = seasonAfterPhase(appState.progress.currentSeason || 'spring',
+      appState.config.seasonMode, completedPhase.type, isSkipped);
+    appState.progress.seasonCycleCount = 0;
+    if (nextSeason !== appState.progress.currentSeason) {
+      appState.progress.currentSeason = nextSeason;
+      renderer?.setSeason(nextSeason);
     }
 
     // Tunas tumbuh menjadi satu pohon permanen, disambut Momo merayakan gembira
@@ -2572,7 +2565,7 @@ function updateSettingsFormInputs() {
     };
     const sName = seasonNames[appState.progress.currentSeason || 'spring'] || 'Semi';
     if (isCycle) {
-      seasonBadge.innerText = `${sName} · Siklus ${appState.progress.seasonCycleCount || 0}/6 Sesi`;
+      seasonBadge.innerText = `${sName} · Setiap sesi fokus`;
     } else {
       seasonBadge.innerText = `${sName} (Manual)`;
     }
@@ -2677,7 +2670,7 @@ async function saveSettingsFromModal(onSuccess: () => void) {
     ...appState.config,
     focusTargetMin: undefined,
     hoverEnabled: document.querySelector<HTMLInputElement>('#setting-hover')?.checked ?? false,
-    momoIntensity: document.querySelector<HTMLSelectElement>('#setting-momo-intensity')?.value === 'calm' ? 'calm' : 'expressive',
+    momoIntensity: appState.config.momoIntensity,
     totalDurationMin: tempPlan.totalDurationMin,
     focusDurationMin: result.focus,
     breakDurationMin: result.rest,

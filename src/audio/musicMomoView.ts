@@ -31,7 +31,6 @@ export function rigMusicMomo(svg: SVGSVGElement) {
     }
     path.remove();
   }
-  const headphones = svg.querySelector('#momo-headphone-gear');
   head.append(parts.eyes, parts.mouth, parts.sprout);
   const smile = group('smile');
   const smilePath = document.createElementNS(SVG_NS, 'path');
@@ -44,7 +43,6 @@ export function rigMusicMomo(svg: SVGSVGElement) {
   blushPath.setAttribute('fill', '#F28B82');
   blush.append(blushPath);
   head.append(smile, blush);
-  if (headphones) head.append(headphones);
   const beatHead = group('beat-head');
   const beatFoot = group('beat-foot');
   beatHead.append(head);

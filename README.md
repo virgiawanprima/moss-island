@@ -45,6 +45,8 @@ Cuaca pulau mengikuti musim: gerimis sesekali pada musim semi, hujan lebih jaran
 
 Tunas baru langsung mendapat antrean tanam, siram, dan pupuk, kemudian dijadwalkan disiram setiap 30 detik aktif. Pohon dewasa mendapat satu kunjungan per 60 detik aktif dengan urutan acak tanpa pengulangan sampai seluruh pohon dikunjungi. Waktu perjalanan dan pekerjaan yang sedang berlangsung dapat menunda kedatangan; jeda, istirahat, dan hujan menahan jadwal tanpa menumpuk pekerjaan. Animasi berkebun dan gerak mendapat prioritas di atas aksi dekoratif.
 
+Jenis pohon: pisang, mangga, durian, sawit, dan jambu. Dalam mode otomatis, musim berganti setiap satu sesi fokus selesai: semi → panas → gugur → dingin → semi. Melewati sesi atau menyelesaikan istirahat tidak mengganti musim.
+
 Kelima spesies pohon tropis mempertahankan daun pada musim gugur, dengan detail bunga, buah, ujung daun, dan aksen dingin yang berbeda sesuai musim dalam simulasi pulau.
 
 Layar Fokus menampilkan waktu, kebun dan satu tombol utama. Total durasi dan rincian fokus/istirahat terlihat di bawah circle; pembatalan tersedia melalui Rencana; Keluar aplikasi ada di menu titik tiga. Label dan pesan di dalam lingkaran waktu tetap ditampilkan. Saat istirahat hanya satu pengingat pendek muncul bergantian.

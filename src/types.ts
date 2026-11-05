@@ -56,6 +56,7 @@ export interface PomodoroSettings {
   targetDailySessions: number;
 }
 
+// 'palm' adalah kunci data lama untuk pohon sawit.
 export const TREE_SPECIES = ['banana', 'mango', 'durian', 'palm', 'guava'] as const;
 export type TreeSpecies = typeof TREE_SPECIES[number];
 
@@ -73,7 +74,7 @@ export interface IslandProgress {
   currentStreakDays: number;
   trees: PlantedTree[]; // Koleksi pohon permanen yang diperoleh dari sesi selesai
   currentSeason: IslandSeason;
-  seasonCycleCount: number; // 0..5 (berganti musim tiap 6 sesi fokus selesai)
+  seasonCycleCount: number; // Hitungan lama dipertahankan untuk kompatibilitas data.
 }
 
 export interface StoredAppState {

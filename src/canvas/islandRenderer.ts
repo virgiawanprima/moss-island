@@ -852,7 +852,7 @@ export class IslandRenderer {
 
     const baseW = 360;
     const baseH = 160;
-    const scale = Math.min(1, Math.min(w / baseW, h / baseH));
+    const scale = Math.min(1.35, w / baseW, h / baseH);
 
     this.ctx.save();
     const offsetX = (w - baseW * scale) / 2;
