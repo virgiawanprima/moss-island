@@ -1,7 +1,7 @@
 export type MomoPlayback = 'idle' | 'loading' | 'playing' | 'paused' | 'ended' | 'disconnected';
 export type MomoIntensity = 'calm' | 'expressive';
 export type MomoPose = 'rest' | 'start' | 'nod' | 'sway' | 'tap' | 'step' | 'shoulder'
-  | 'adjust' | 'stumble' | 'change' | 'settle' | 'listen' | 'finish' | 'wave' | 'shy' | 'proud';
+  | 'stumble' | 'change' | 'settle' | 'listen' | 'wave' | 'shy' | 'proud';
 export interface MomoFrame {
   playback: MomoPlayback;
   pose: MomoPose;
@@ -42,7 +42,7 @@ export class MusicMomo {
     this.key = key;
     this.frame.playback = playback;
     const pose: MomoPose = playback === 'playing' ? this.pendingChange ? 'change' : previous === 'playing' ? 'nod' : 'start'
-      : playback === 'loading' ? 'listen' : playback === 'ended' ? 'finish'
+      : playback === 'loading' ? 'listen'
       : playback === 'paused' ? 'settle' : 'rest';
     this.restart(pose);
     if (playback === 'playing') this.pendingChange = false;
@@ -58,8 +58,6 @@ export class MusicMomo {
 
   interact() {
     if (!this.frame.active || this.disposed) return;
-    // Reaksi klik tidak mengganti status playback, dan tidak memotong adegan selesai.
-    if (this.frame.pose === 'finish') return;
     const poses = ['wave', 'shy', 'proud'] as const;
     this.restart(poses[this.interaction++ % poses.length]);
   }
@@ -94,12 +92,12 @@ export class MusicMomo {
     this.clear();
     this.frame.pose = this.frame.active ? pose : this.basePose();
     this.frame.eyes = 'open';
-    this.frame.smile = this.frame.playback === 'ended' || ['start', 'finish', 'wave', 'shy', 'proud'].includes(pose);
+    this.frame.smile = this.frame.playback === 'ended' || ['start', 'wave', 'shy', 'proud'].includes(pose);
     this.emit();
     if (!this.frame.active) return;
     this.blinkLater();
-    if (['start', 'change', 'settle', 'finish', 'wave', 'shy', 'proud'].includes(pose)) {
-      const duration = this.frame.reduced ? 180 : pose === 'finish' ? 2600 : pose === 'settle' ? 260 : 1300;
+    if (['start', 'change', 'settle', 'wave', 'shy', 'proud'].includes(pose)) {
+      const duration = this.frame.reduced ? 180 : pose === 'settle' ? 260 : 1300;
       this.later(duration, () => {
         this.frame.pose = this.basePose();
         this.frame.smile = this.frame.playback === 'ended';
@@ -131,7 +129,7 @@ export class MusicMomo {
       const rare = this.frame.intensity === 'expressive' ? 0.07 : 0;
       const dances: MomoPose[] = this.frame.intensity === 'expressive'
         ? ['nod', 'tap', 'sway', 'shoulder', 'nod', 'step'] : ['nod', 'tap', 'sway', 'nod'];
-      this.frame.pose = roll < rare ? 'stumble' : roll < rare + 0.1 ? 'adjust'
+      this.frame.pose = roll < rare ? 'stumble'
         : dances[(this.dance++ + Math.floor(this.random() * dances.length)) % dances.length]!;
       this.frame.smile = false;
       this.emit();

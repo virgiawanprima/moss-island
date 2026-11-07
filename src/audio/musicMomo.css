@@ -50,11 +50,6 @@
 [data-pose="shoulder"] .momo-right-arm { animation: momo-arm-swing 900ms 450ms ease-in-out 2; }
 
 [data-pose="start"] .momo-body { animation: momo-happy-hop 950ms ease-out; }
-[data-pose="start"] .momo-left-arm,
-[data-pose="adjust"] .momo-left-arm { animation: momo-adjust-left 1.25s ease-in-out; }
-[data-pose="start"] .momo-right-arm,
-[data-pose="adjust"] .momo-right-arm { animation: momo-adjust-right 1.25s ease-in-out; }
-[data-pose="listen"] .momo-right-arm { transform: translate(1px, -16px) rotate(-10deg); }
 [data-pose="listen"] .momo-head { transform: rotate(-5deg); }
 [data-pose="change"] .momo-head { animation: momo-look-track 1.25s ease-in-out; }
 [data-pose="change"] .momo-eyes { transform: translateX(-2px); }
@@ -64,8 +59,6 @@
 [data-pose="wave"] .momo-right-arm { animation: momo-wave-hand 1.2s ease-in-out; }
 [data-pose="shy"] .momo-head { transform: translateY(1px) rotate(-4deg); }
 [data-pose="proud"] .momo-body { animation: momo-proud 1.2s ease-in-out; }
-[data-pose="finish"] .momo-left-arm { animation: momo-stretch-left 2.5s ease-in-out; }
-[data-pose="finish"] .momo-right-arm { animation: momo-stretch-right 2.5s ease-in-out; }
 
 @keyframes momo-breathe {
   0%, 100% { transform: translateY(0) scaleY(1); }
@@ -118,18 +111,6 @@
   66% { transform: translateY(0) scale(1.03, 0.96); }
   83% { transform: scale(0.99, 1.01); }
 }
-@keyframes momo-adjust-left {
-  0%, 100% { transform: translate(0, 0); }
-  22% { transform: translate(-1px, 1px); }
-  40%, 65% { transform: translate(-2px, -18px) rotate(8deg); }
-  78% { transform: translate(-1px, -14px); }
-}
-@keyframes momo-adjust-right {
-  0%, 100% { transform: translate(0, 0); }
-  22% { transform: translate(1px, 1px); }
-  40%, 65% { transform: translate(2px, -18px) rotate(-8deg); }
-  78% { transform: translate(1px, -14px); }
-}
 @keyframes momo-slipping-cups {
   0%, 100% { transform: translateY(0); }
   20% { transform: translateY(2px) rotate(2deg); }
@@ -160,14 +141,6 @@
 @keyframes momo-proud {
   0%, 100% { transform: scale(1); }
   25%, 65% { transform: translateY(-1px) scale(1.02, 1); }
-}
-@keyframes momo-stretch-left {
-  0%, 100% { transform: rotate(0); }
-  25%, 60% { transform: translateY(-8px) rotate(65deg); }
-}
-@keyframes momo-stretch-right {
-  0%, 100% { transform: rotate(0); }
-  25%, 60% { transform: translateY(-8px) rotate(-65deg); }
 }
 
 [data-intensity="calm"][data-pose="start"] .momo-body { animation: momo-breathe 4.8s ease-in-out infinite; }

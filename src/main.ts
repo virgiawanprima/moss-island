@@ -126,6 +126,7 @@ if (typeof window !== 'undefined') {
 
   // 1. Deteksi Lingkungan Native Tauri Desktop
   initTauriEnvironment();
+  if (!isTauri()) applyDockEdge(dockEdge);
 
   // 2. Inisialisasi Renderer Canvas 2D
   const canvasEl = document.querySelector<HTMLCanvasElement>('#island-canvas');
@@ -310,7 +311,7 @@ export const ISLAND_DIMENSIONS = {
     resizable: false,
   },
   compact: {
-    width: 460,
+    width: 300,
     height: 42,
     minWidth: null,
     minHeight: null,
@@ -325,17 +326,17 @@ export const ISLAND_DIMENSIONS = {
   },
   expanded: {
     focus: {
-      width: 960,
-      height: 332,
+      width: 880,
+      height: 320,
       minWidth: 640,
-      minHeight: 332,
+      minHeight: 320,
       resizable: true,
     },
     music: {
-      width: 960,
-      height: 228,
+      width: 880,
+      height: 220,
       minWidth: 640,
-      minHeight: 228,
+      minHeight: 220,
       resizable: true,
     },
   },
@@ -369,7 +370,7 @@ async function syncTauriWindowState(state: IslandState, modalOpen: boolean = fal
     const { invoke } = await import('@tauri-apps/api/core');
     const baseDim = getIslandDimension(state, currentTab, modalOpen);
     let dim: IslandDimensionConfig = !modalOpen && isVerticalDock(dockEdge) && state === 'expanded'
-      ? { ...baseDim, width: 560, height: currentTab === 'focus' ? 640 : currentTab === 'music' ? 480 : 420, minWidth: 440, minHeight: 320 }
+      ? { ...baseDim, width: 400, height: currentTab === 'focus' ? 580 : 430, minWidth: 400, minHeight: 320 }
       : !modalOpen && isVerticalDock(dockEdge) && state === 'compact' ? { ...baseDim, width: 42, height: 300 }
       : baseDim;
     const { currentMonitor } = await import('@tauri-apps/api/window');
@@ -457,7 +458,13 @@ export async function setIslandState(state: IslandState) {
     if (token !== activeTransitionToken) return;
   }
   currentIslandState = state;
-  if (!isTauri() && state !== 'hidden') { widget.style.left = ''; widget.style.top = ''; }
+  if (!isTauri() && state !== 'hidden' && dockEdge !== 'floating') {
+    widget.style.left = '';
+    widget.style.top = '';
+    widget.style.right = '';
+    widget.style.bottom = '';
+    widget.style.transform = '';
+  }
 
   const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
   const fadeOutDuration = prefersReducedMotion ? 0 : 80;
@@ -744,11 +751,16 @@ function handleTimerTick(
   }
 }
 
+let openCompletedPhasePanel: () => Promise<void> = async () => { await setIslandState('expanded'); };
+
 function handlePhaseComplete(
   completedPhase: PlanPhase,
   nextPhase?: PlanPhase | null,
   isSkipped: boolean = false
 ) {
+  if (!isSkipped) {
+    void openCompletedPhasePanel().catch(error => console.error('Gagal membuka panel sesi selesai:', error));
+  }
   // Bunyikan lonceng lembut jika suara aktif dan bukan fase yang di-skip
   if (appState.config.soundEnabled && !isSkipped) {
     audio.playChime();
@@ -960,6 +972,10 @@ function bindTabs() {
   });
 
   // Dock buttons navigation
+  openCompletedPhasePanel = async () => {
+    await transition.request('focus');
+    await setIslandState('expanded');
+  };
   document.querySelector('#dock-btn-focus')?.addEventListener('click', async () => {
     await transition.request('focus');
     await setIslandState('expanded');
@@ -1221,6 +1237,17 @@ function bindMusicControls() {
   const musicStatus = document.querySelector<HTMLElement>('#music-action-status');
   let mediaCommandPending = false;
 
+  function showLocalAudioFailure() {
+    if (!musicStatus) return;
+    const failure = audio.getPlaybackFailure();
+    musicStatus.innerText = !mediaBridge?.isTauriAvailable
+      ? 'Preview web tidak membaca Spotify. Gunakan aplikasi desktop Moss Island.'
+      : failure?.mediaCode === 4
+        ? 'Format audio bawaan ini tidak didukung WebView.'
+        : 'Audio bawaan gagal diputar. Coba lagi.';
+    musicStatus.title = failure?.message ?? '';
+  }
+
   let endedMomoRecord = '';
   const momoRecord = () => {
     const track = mediaBridge?.getCurrentTrack();
@@ -1240,7 +1267,7 @@ function bindMusicControls() {
   }
 
   function updateMediaControls(track: import('./audio/systemMediaBridge').SystemMediaTrack | null) {
-    const missingSelected = !track && !!mediaBridge?.getSelectedSession() && mediaBridge.getSelectedSession() !== 'local';
+    const missingSelected = mediaBridge?.waitingForTrack || (!track && !!mediaBridge?.getSelectedSession() && mediaBridge.getSelectedSession() !== 'local');
     if (btnToggle) btnToggle.disabled = mediaCommandPending || missingSelected || (!!track && !track.capabilities?.toggle);
     if (btnNext) btnNext.disabled = mediaCommandPending || missingSelected || (!!track && !track.capabilities?.next);
     if (btnPrev) btnPrev.disabled = mediaCommandPending || missingSelected || (!!track && !track.capabilities?.previous);
@@ -1335,6 +1362,7 @@ function bindMusicControls() {
   const lyricsView = new LyricsView(renderLyricsContent);
 
   function renderLyricsContent(update: import('./audio/lyricsService').LyricsLinesUpdate) {
+    const cardBefore = document.querySelector<HTMLElement>('#music-card-line-before');
     const cardLine1 = document.querySelector<HTMLElement>('#music-card-line1');
     const cardHighlight = document.querySelector<HTMLElement>('#music-card-highlight');
     const cardLine2 = document.querySelector<HTMLElement>('#music-card-line2');
@@ -1356,6 +1384,7 @@ function bindMusicControls() {
         : isSystemMediaActive ? 'Lirik lagu, gulir untuk membaca baris panjang' : 'Playlist bawaan berulang');
     }
 
+    if (cardBefore) cardBefore.innerText = update.before || '';
     if (cardLine1) cardLine1.innerText = update.line1;
 
     if (cardHighlight) {
@@ -1471,7 +1500,7 @@ function bindMusicControls() {
       }
       const status = document.querySelector<HTMLElement>('#music-session-status');
       if (status) status.innerText = !mediaBridge!.isTauriAvailable
-        ? 'Sesi aplikasi lain hanya tersedia di desktop.'
+        ? 'Preview web tidak dapat membaca Spotify dari tab atau aplikasi lain. Gunakan aplikasi desktop Moss Island.'
         : selected && selected !== 'local' && !sessions.some(s => s.session_key === selected)
         ? 'Sesi pilihan terputus. Pilih sesi lain atau Otomatis.'
         : sessions.length ? `${sessions.length} sesi tersedia.` : 'Belum ada sesi media.';
@@ -1497,9 +1526,7 @@ function bindMusicControls() {
     void runMediaCommand(() => mediaBridge!.setRepeat(mode === 'off' ? 'all' : mode === 'all' ? 'one' : 'off'));
   });
 
-  // Daftarkan listener saat lagu selesai (Momo melepas headphone dan meregangkan badan)
   mediaBridge.onSongFinished(() => {
-    renderer?.triggerSongFinished();
     endedMomoRecord = momoRecord();
     musicMomo?.controller.setPlayback('ended', endedMomoRecord);
   });
@@ -1530,7 +1557,7 @@ function bindMusicControls() {
     const current = document.querySelector<HTMLElement>('#music-time-current');
     const total = document.querySelector<HTMLElement>('#music-time-total');
     const progress = document.querySelector<HTMLElement>('#music-progress-track');
-    if (current) current.innerText = formatTime(elapsed);
+    if (current) current.innerText = `Sudah diputar ${formatTime(elapsed)}`;
     if (total) total.style.display = 'none';
     if (progress) progress.style.display = 'none';
   }
@@ -1552,7 +1579,7 @@ function bindMusicControls() {
       setEqualizerPlaying(false);
       petMusicPlaying = false; renderer?.setMusicPlaying(false);
       lyricsService.setAmbientTrack(ambientTracks[currentTrackIdx].id, false);
-      if (musicStatus) musicStatus.innerText = audio.getPlaybackFailure()?.message ?? 'Audio gagal dimuat. Coba putar kembali.';
+      showLocalAudioFailure();
     }
   };
 
@@ -1587,9 +1614,10 @@ function bindMusicControls() {
     lyricsService.syncPosition(clampedPos, isPlaybackActive);
   }
 
+  let lastTickTime = 0;
   function startPlaybackTicker() {
     if (playbackTickerTimer !== null) return;
-    let lastTickTime = performance.now();
+    lastTickTime = performance.now();
     playbackTickerTimer = window.setInterval(() => {
       const now = performance.now();
       const dt = (now - lastTickTime) / 1000;
@@ -1621,10 +1649,11 @@ function bindMusicControls() {
       !isSystemMediaActive && (isAudioPlaying || localHasStarted))) return;
     updateMediaControls(track);
     const hasExternalMedia = !!(track && track.has_session && track.title.trim().length > 0);
+    const waiting = mediaBridge!.waitingForTrack;
     const disconnected = !hasExternalMedia && !!mediaBridge?.getSelectedSession()
       && mediaBridge.getSelectedSession() !== 'local';
-    void updateVolumeMode(hasExternalMedia);
-    document.querySelector('#music-lyrics-card')?.classList.toggle('is-local-music', !hasExternalMedia && !disconnected);
+    void updateVolumeMode(hasExternalMedia || waiting);
+    document.querySelector('#music-lyrics-card')?.classList.toggle('is-local-music', !hasExternalMedia && !disconnected && !waiting);
     if (track && track.has_session && track.title.trim().length > 0) {
       if (isAudioPlaying) console.warn('Sesi sistem mengambil alih audio lokal:', {
         sourceApp: track.source_app,
@@ -1647,6 +1676,7 @@ function bindMusicControls() {
         seekCooldownUntil = 0;
         triggerTrackChangeAnimation();
         localPlaybackPos = track.position_secs;
+        lastTickTime = performance.now();
         lastReportedSystemPos = track.position_secs;
       }
 
@@ -1712,8 +1742,9 @@ function bindMusicControls() {
 
       if (!isNewTrack && performance.now() >= seekCooldownUntil) {
         // Jika sistem melaporkan posisi baru yang berbeda dari laporan sistem sebelumnya
-        if (track.position_secs !== lastReportedSystemPos) {
+        if (!track.is_playing || track.position_secs !== lastReportedSystemPos) {
           const reconciled = reconcilePlayback(localPlaybackPos, track.position_secs, track.is_playing);
+          if (reconciled.position !== localPlaybackPos) lastTickTime = performance.now();
           localPlaybackPos = reconciled.position;
           playbackCorrection = reconciled.correction;
           lastReportedSystemPos = track.position_secs;
@@ -1773,7 +1804,7 @@ function bindMusicControls() {
       renderer?.setAmbientMode(null);
 
     } else {
-      isSystemMediaActive = false;
+      isSystemMediaActive = waiting;
       isPlaybackActive = false;
       stopPlaybackTicker();
       localPlaybackPos = 0;
@@ -1786,7 +1817,7 @@ function bindMusicControls() {
       lastMediaTrackKey = '';
       currentCustomArtUrl = null;
       currentArtSource = 'none';
-      if (disconnected) {
+      if (disconnected || waiting) {
         takeOverLocalPlayback(audio, pauseAmbientClock, () => ++localPlaybackRequest);
         isAudioPlaying = false;
         lyricsService.clear();
@@ -1801,16 +1832,24 @@ function bindMusicControls() {
         const highlight = document.querySelector<HTMLElement>('#music-card-highlight');
         const line1 = document.querySelector<HTMLElement>('#music-card-line1');
         const line2 = document.querySelector<HTMLElement>('#music-card-line2');
-        if (title) title.innerText = 'Sesi media terputus';
-        if (artist) artist.innerText = 'Pilih sumber lain di pengaturan.';
-        if (compact) compact.innerText = 'Sesi media terputus';
-        if (badge) badge.innerText = 'SESI TERPUTUS';
-        if (tag) tag.innerText = 'SUMBER TIDAK TERSEDIA';
+        const status = waiting ? 'Menunggu lagu berikutnya…' : 'Sesi media terputus';
+        if (title) title.innerText = status;
+        if (artist) artist.innerText = waiting ? '' : 'Pilih sumber lain di pengaturan.';
+        if (compact) compact.innerText = status;
+        if (badge) badge.innerText = waiting ? 'MEDIA SISTEM' : 'SESI TERPUTUS';
+        if (tag) tag.innerText = waiting ? '' : 'SUMBER TIDAK TERSEDIA';
+        if (waiting) {
+          updateMusicProgressUI(0, 0);
+          for (const id of ['#music-card-line-before', '#music-card-incoming']) {
+            const row = document.querySelector<HTMLElement>(id);
+            if (row) row.innerText = '';
+          }
+        }
         if (line1) line1.innerText = '';
-        if (highlight) { highlight.innerText = 'Pilih sumber lain di pengaturan.'; highlight.style.display = 'block'; }
+        if (highlight) { highlight.innerText = waiting ? '' : 'Pilih sumber lain di pengaturan.'; highlight.style.display = 'block'; }
         if (line2) line2.innerText = '';
         document.querySelector<HTMLElement>('#lyrics-instrumental-dots')?.style.setProperty('display', 'none');
-        setPlaybackAppearance(false, 'disconnected');
+        setPlaybackAppearance(false, waiting ? 'loading' : 'disconnected');
         stageEl?.classList.remove('playing');
         setEqualizerPlaying(false);
         petMusicPlaying = false; renderer?.setMusicPlaying(false);
@@ -1866,7 +1905,6 @@ function bindMusicControls() {
     targetPos = Math.max(0, Math.min(targetPos, track.duration_secs));
     const ratio = targetPos / track.duration_secs;
 
-    const prevPos = localPlaybackPos;
     // Beri preview visual sementara pada progres bar
     const progressFill = document.querySelector<HTMLElement>('#music-progress-fill');
     if (progressFill) progressFill.style.width = `${ratio * 100}%`;
@@ -1877,13 +1915,14 @@ function bindMusicControls() {
     if (request !== seekRequest || active?.session_key !== track.session_key || active?.record_key !== track.record_key) return;
     if (success) {
       localPlaybackPos = targetPos;
+      lastTickTime = performance.now();
       playbackCorrection = 0;
       lastReportedSystemPos = targetPos;
       seekCooldownUntil = performance.now() + 800;
       updateMusicProgressUI(targetPos, currentTrackDuration);
     } else {
       // Jika perintah seek gagal atau ditolak oleh sistem, pulihkan tampilan ke posisi sebenarnya
-      updateMusicProgressUI(prevPos, currentTrackDuration);
+      updateMusicProgressUI(localPlaybackPos, currentTrackDuration);
     }
   };
   progressTrack?.addEventListener('click', (e: MouseEvent) => {
@@ -1919,7 +1958,7 @@ function bindMusicControls() {
           isAudioPlaying = false;
           setPlaybackAppearance(false);
           if (!isSystemMediaActive) {
-            if (musicStatus) musicStatus.innerText = audio.getPlaybackFailure()?.message ?? 'Audio gagal diputar. Coba lagi.';
+            showLocalAudioFailure();
           }
           return;
         }
@@ -1977,7 +2016,7 @@ function bindMusicControls() {
       setEqualizerPlaying(started);
       petMusicPlaying = started; renderer?.setMusicPlaying(started);
       stageEl?.classList.toggle('playing', started);
-      if (!started && musicStatus) musicStatus.innerText = audio.getPlaybackFailure()?.message ?? 'Audio gagal diputar. Coba lagi.';
+      if (!started) showLocalAudioFailure();
       renderer?.setAmbientMode(null);
       lyricsService.setAmbientTrack(track.id, started);
     } else {
@@ -2214,6 +2253,65 @@ function bindWindowAndNotchControls() {
   window.addEventListener('pointerup', () => { dragging = false; });
   window.addEventListener('pointercancel', () => { dragging = false; });
   window.addEventListener('blur', () => { dragging = false; hover.reset(); });
+
+  if (widget && !isTauri()) {
+    let dragStart: { pointerId: number; x: number; y: number; left: number; top: number } | null = null;
+    let moved = false;
+    widget.addEventListener('pointerdown', event => {
+      if (event.button !== 0 || isIslandTransitioning || isSettingsModalOpen) return;
+      const target = event.target as HTMLElement;
+      const region = target.closest<HTMLElement>('[data-tauri-drag-region]');
+      if (!region || region.getAttribute('data-tauri-drag-region') === 'false') return;
+      const rect = widget.getBoundingClientRect();
+      dragStart = { pointerId: event.pointerId, x: event.clientX, y: event.clientY, left: rect.left, top: rect.top };
+      moved = false;
+      widget.setPointerCapture(event.pointerId);
+    });
+
+    widget.addEventListener('pointermove', event => {
+      if (!dragStart || dragStart.pointerId !== event.pointerId) return;
+      const dx = event.clientX - dragStart.x;
+      const dy = event.clientY - dragStart.y;
+      if (!moved && Math.hypot(dx, dy) < 5) return;
+      if (!moved) {
+        moved = true;
+        suppressMinimalClick = true;
+        applyDockEdge('floating');
+        widget.classList.add('is-web-dragging');
+      }
+      const rect = widget.getBoundingClientRect();
+      const maxLeft = Math.max(0, window.innerWidth - rect.width);
+      const maxTop = Math.max(0, window.innerHeight - rect.height);
+      widget.style.left = `${Math.min(maxLeft, Math.max(0, dragStart.left + dx))}px`;
+      widget.style.top = `${Math.min(maxTop, Math.max(0, dragStart.top + dy))}px`;
+      widget.style.right = 'auto';
+      widget.style.bottom = 'auto';
+      widget.style.transform = 'none';
+      event.preventDefault();
+    });
+
+    const finishWebDrag = (event: PointerEvent) => {
+      if (!dragStart || dragStart.pointerId !== event.pointerId) return;
+      const wasMoved = moved;
+      dragStart = null;
+      moved = false;
+      widget.classList.remove('is-web-dragging');
+      if (!wasMoved) return;
+      const rect = widget.getBoundingClientRect();
+      const edge = dockWithinThreshold(rect.left + rect.width / 2, rect.top + rect.height / 2,
+        { x: 0, y: 0, width: window.innerWidth, height: window.innerHeight }, rect);
+      applyDockEdge(edge);
+      if (edge !== 'floating') {
+        widget.style.left = '';
+        widget.style.top = '';
+        widget.style.right = '';
+        widget.style.bottom = '';
+        widget.style.transform = '';
+      }
+    };
+    widget.addEventListener('pointerup', finishWebDrag);
+    widget.addEventListener('pointercancel', finishWebDrag);
+  }
   window.setInterval(() => {
     if (!widget) return;
     const inside = widget.matches(':hover');
@@ -2523,8 +2621,7 @@ function updateSettingsFormInputs() {
 
   const hInput = document.querySelector<HTMLInputElement>('#setting-total-hours');
   const mInput = document.querySelector<HTMLInputElement>('#setting-total-mins');
-  const autoBInput = document.querySelector<HTMLInputElement>('#setting-auto-break');
-  const autoFInput = document.querySelector<HTMLInputElement>('#setting-auto-focus');
+  const autoSessionInput = document.querySelector<HTMLInputElement>('#setting-auto-session');
 
   if (hInput) hInput.value = String(hours);
   if (mInput) mInput.value = String(mins);
@@ -2537,8 +2634,7 @@ function updateSettingsFormInputs() {
     currentMinutes.textContent = `Tersimpan: ${mins} menit`;
   }
 
-  if (autoBInput) autoBInput.checked = cfg.autostartBreak;
-  if (autoFInput) autoFInput.checked = cfg.autostartNextFocus;
+  if (autoSessionInput) autoSessionInput.checked = cfg.autostartBreak && cfg.autostartNextFocus;
   const hoverInput = document.querySelector<HTMLInputElement>('#setting-hover');
   if (hoverInput) hoverInput.checked = cfg.hoverEnabled === true;
   const momoIntensity = document.querySelector<HTMLSelectElement>('#setting-momo-intensity');
@@ -2674,8 +2770,8 @@ async function saveSettingsFromModal(onSuccess: () => void) {
     totalDurationMin: tempPlan.totalDurationMin,
     focusDurationMin: result.focus,
     breakDurationMin: result.rest,
-    autostartBreak: document.querySelector<HTMLInputElement>('#setting-auto-break')?.checked ?? appState.config.autostartBreak,
-    autostartNextFocus: document.querySelector<HTMLInputElement>('#setting-auto-focus')?.checked ?? appState.config.autostartNextFocus,
+    autostartBreak: document.querySelector<HTMLInputElement>('#setting-auto-session')?.checked ?? appState.config.autostartBreak,
+    autostartNextFocus: document.querySelector<HTMLInputElement>('#setting-auto-session')?.checked ?? appState.config.autostartNextFocus,
     alwaysOnTop: isAlwaysOnTopActive,
     targetDailySessions: tempPlan.focusSessionCount,
     seasonMode: document.querySelector<HTMLInputElement>('#season-mode-manual')?.checked ? 'manual' : 'cycle',

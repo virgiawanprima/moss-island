@@ -13,7 +13,7 @@ export class LyricsTiming {
     } catch { /* Pengaturan waktu tidak boleh menghalangi pemutaran. */ }
   }
 
-  public get(key: string): number { return this.offsets[key] || 0; }
+  public get(key: string, fallback = 0): number { return this.offsets[key] ?? fallback; }
 
   public set(key: string, value: number): boolean {
     if (!Number.isFinite(value)) return false;

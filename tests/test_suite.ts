@@ -138,6 +138,7 @@ function createMockCanvas(): HTMLCanvasElement {
     scale: () => {},
     drawImage: () => {},
     setTransform: () => {},
+    getTransform: () => ({ a: 1, b: 0, c: 0, d: 1, e: 0, f: 0 }),
     clearRect: () => {},
     fillText: () => {},
     fillRect: () => {},
@@ -287,6 +288,44 @@ runTest('Uji 6: Konfigurasi tersimpan yang rusak (focusDurationMin: 0) dipulihka
 // ----------------------------------------------------------------------------
 // 5. Temuan Audit 5: Jeda pada batas akhir fase tidak melewatkan pencatatan
 // ----------------------------------------------------------------------------
+runTest('Pergantian manual dan otomatis memancarkan penyelesaian dari mode kecil maupun pet', () => {
+  for (const automatic of [false, true]) {
+    for (const initialPanel of ['compact', 'hidden']) {
+      let panel = initialPanel;
+      let completions = 0;
+      const engine = new PomodoroEngine({
+        ...DEFAULT_POMODORO_CONFIG, totalDurationMin: 3, focusDurationMin: 1, breakDurationMin: 1,
+        autostartBreak: automatic, autostartNextFocus: automatic,
+      }, { onPhaseComplete: (_phase, _next, skipped) => {
+        if (!skipped) { panel = 'expanded'; completions++; }
+      } });
+      try {
+        engine.start();
+        for (const nextType of ['break', 'focus']) {
+          (engine as any).targetEndTime = Date.now() - 1;
+          (engine as any).tick();
+          assert.equal(panel, 'expanded');
+          assert.equal(engine.getCurrentPhase()?.type, nextType);
+          assert.equal(engine.getStatus(), automatic ? 'running' : 'waiting_next');
+          if (!automatic) {
+            const remaining = engine.getPhaseRemainingSeconds();
+            (engine as any).tick();
+            assert.equal(engine.getPhaseRemainingSeconds(), remaining);
+            engine.start();
+            assert.equal(engine.getStatus(), 'running');
+          }
+          panel = initialPanel;
+        }
+        (engine as any).targetEndTime = Date.now() - 1;
+        (engine as any).tick();
+        assert.equal(engine.getStatus(), 'completed');
+        assert.equal(panel, 'expanded');
+        assert.equal(completions, 3);
+      } finally { engine.pause(); }
+    }
+  }
+});
+
 runTest('Uji 7: Menekan jeda saat batas waktu habis tetap memicu onPhaseComplete', () => {
   let completedFocusCount = 0;
   let lastCompletedPhase: PlanPhase | null = null;
@@ -765,11 +804,13 @@ runTest('Uji 21: parseSyncedLyrics mengurai format LRC bertimestamp [mm:ss.xx], 
   assert.strictEqual(parsed[2].text, 'Baris kedua pada detik tiga puluh');
   assert.strictEqual(parsed[3].timeSecs, 65.12);
   assert.strictEqual(parsed[3].text, 'Baris ketiga pada menit satu lewat lima detik');
+  assert.deepEqual(parseSyncedLyrics('[00:02][00:04]Vokal\n[offset:+500]').map(line => line.timeSecs), [1.5, 3.5]);
+  assert.deepEqual(parseSyncedLyrics('[offset:-750]\n[00:02]').map(line => line.timeSecs), [2.75]);
 });
 
 await runTestAsync('Uji 22: syncPosition memilih baris lirik sesuai detik pemutaran lagu (intro, berjalan, dan seek)', async () => {
   const service = new LyricsService();
-  const updates: Array<{ line1: string; highlight: string; line2: string; isSynced: boolean }> = [];
+  const updates: Array<{ before?: string; line1: string; highlight: string; line2: string; incoming?: string; isSynced: boolean }> = [];
 
   service.subscribe((u) => {
     updates.push(u);
@@ -783,8 +824,8 @@ await runTestAsync('Uji 22: syncPosition memilih baris lirik sesuai detik pemuta
         ok: true,
         json: async () => ({
           ...lyricRequestMetadata(url),
-          syncedLyrics: "[00:10.00] Baris 1 (detik 10)\n[00:20.00]\n[00:30.00] Baris 2 (detik 30)\n[00:50.00] Baris 3 (detik 50)",
-          plainLyrics: "Baris 1\nBaris 2\nBaris 3"
+          syncedLyrics: "[00:10.00] Baris 1 (detik 10)\n[00:20.00]\n[00:30.00] Baris 2 (detik 30)\n[00:50.00] Baris 3 (detik 50)\n[01:10.00] Baris 4 (detik 70)\n[01:20.00] Baris 5 (detik 80)\n[01:30.00] Baris 6 (detik 90)",
+          plainLyrics: "Baris 1\nBaris 2\nBaris 3\nBaris 4\nBaris 5\nBaris 6"
         })
       } as unknown as Response;
     }
@@ -823,10 +864,19 @@ await runTestAsync('Uji 22: syncPosition memilih baris lirik sesuai detik pemuta
     assert.strictEqual(latest.highlight, 'Baris 2 (detik 30)', 'Setelah seek ke detik 35, baris detik 30 langsung menjadi highlight');
     assert.strictEqual(latest.line2, 'Baris 3 (detik 50)');
 
-    // 5. Lagu dijeda (pause) pada posisi yang sama
-    service.syncPosition(35, false);
+    // 5. Lima baris lirik: dua sebelum, aktif di posisi tengah, dan dua sesudah
+    service.syncPosition(75, true);
     latest = updates[updates.length - 1];
-    assert.strictEqual(latest.highlight, 'Baris 2 (detik 30)', 'Saat dijeda, posisi highlight lirik tetap terjaga');
+    assert.strictEqual(latest.before, 'Baris 2 (detik 30)', 'Baris pertama dari lima posisi menunjukkan dua baris sebelum lirik aktif');
+    assert.strictEqual(latest.line1, 'Baris 3 (detik 50)', 'Baris kedua tepat sebelum lirik aktif');
+    assert.strictEqual(latest.highlight, 'Baris 4 (detik 70)', 'Lirik yang cocok dengan posisi lagu berada di baris ketiga');
+    assert.strictEqual(latest.line2, 'Baris 5 (detik 80)', 'Baris keempat menampilkan lirik berikutnya');
+    assert.strictEqual(latest.incoming, 'Baris 6 (detik 90)', 'Baris kelima menampilkan lirik kedua sesudah lirik aktif');
+
+    // 6. Lagu dijeda (pause) pada posisi yang sama
+    service.syncPosition(75, false);
+    latest = updates[updates.length - 1];
+    assert.strictEqual(latest.highlight, 'Baris 4 (detik 70)', 'Saat dijeda, posisi highlight lirik tetap terjaga');
   } finally {
     globalThis.fetch = origFetch;
     service.clear();
@@ -1154,6 +1204,7 @@ runTest('Uji 34: prefers-reduced-motion meredam getaran kepala saat snow shake d
     clearRect: () => {},
     fillText: () => {},
     setTransform: () => {},
+    getTransform: () => ({ a: 1, b: 0, c: 0, d: 1, e: 0, f: 0 }),
   } as unknown as CanvasRenderingContext2D;
 
   const mockCanvas = {
@@ -1188,47 +1239,47 @@ runTest('Uji 34: prefers-reduced-motion meredam getaran kepala saat snow shake d
   win.matchMedia = () => ({ matches: false });
 });
 
-runTest('Uji 35: Panel musik tetap 960 × 228 px dengan isi 156 px dan jarak antarkolom 6 px', () => {
-  const css = fs.readFileSync('src/styles.css', 'utf8');
+runTest('Uji 35: Panel musik tetap 880 × 220 px dengan isi 148 px dan jarak antarkolom 6 px', () => {
+  const css = fs.readFileSync('src/styles.css', 'utf8').replace(/\r\n/g, '\n');
 
   // 1. Dimensi dan styling .island-widget.state-expanded.tab-music sesuai Figma
   assert.strictEqual(
-    css.includes('width: 960px;'),
+    css.includes('width: 880px;'),
     true,
-    'Panel musik harus memiliki lebar 960 px'
+    'Panel musik harus memiliki lebar 880 px'
   );
   assert.strictEqual(
-    css.includes('.island-widget.state-expanded.tab-music {\n  box-sizing: border-box;\n  width: 960px;\n  max-width: 100vw;\n  height: 228px;\n  max-height: 228px;\n  background: #17231F;\n  border: 1px solid #35483E;\n  border-top: none;\n  border-top-left-radius: 0;\n  border-top-right-radius: 0;\n  border-bottom-left-radius: 18px;\n  border-bottom-right-radius: 18px;\n}'),
+    css.includes('.island-widget.state-expanded.tab-music {\n  box-sizing: border-box;\n  width: 880px;\n  max-width: 100vw;\n  height: 220px;\n  max-height: 220px;\n  background: #17231F;\n  border: 1px solid #35483E;\n  border-top: none;\n  border-top-left-radius: 0;\n  border-top-right-radius: 0;\n  border-bottom-left-radius: 18px;\n  border-bottom-right-radius: 18px;\n}'),
     true,
-    'Panel musik harus berukuran 960 × 228 px, background #17231F, border #35483E, border-top none, dan sudut bawah 18 px'
-  );
-
-  // 2. Min-height panel musik disetel 228 px
-  assert.strictEqual(
-    css.includes('.island-widget.state-expanded.expanded-ready.tab-music {\n  min-height: 228px;\n  max-height: 228px;\n}'),
-    true,
-    'Min-height panel musik harus disetel ke 228 px'
+    'Panel musik harus berukuran 880 × 220 px, background #17231F, border #35483E, border-top none, dan sudut bawah 18 px'
   );
 
-  // 3. .view-expanded tab musik berukuran 960 × 228 px dengan padding 8 px dan gap 8 px
+  // 2. Min-height panel musik disetel 220 px
   assert.strictEqual(
-    css.includes('.island-widget.state-expanded.tab-music .view-expanded {\n  box-sizing: border-box;\n  display: flex;\n  flex-direction: column;\n  align-items: flex-start;\n  padding: 8px;\n  gap: 8px;\n  width: 100%;\n  height: 228px;\n  max-height: 228px;\n}'),
+    css.includes('.island-widget.state-expanded.expanded-ready.tab-music {\n  min-height: 220px;\n  max-height: 220px;\n}'),
+    true,
+    'Min-height panel musik harus disetel ke 220 px'
+  );
+
+  // 3. .view-expanded tab musik berukuran 880 × 220 px dengan padding 8 px dan gap 8 px
+  assert.strictEqual(
+    css.includes('.island-widget.state-expanded.tab-music .view-expanded {\n  box-sizing: border-box;\n  display: flex;\n  flex-direction: column;\n  align-items: flex-start;\n  padding: 8px;\n  gap: 8px;\n  width: 100%;\n  height: 220px;\n  max-height: 220px;\n}'),
     true,
     '.view-expanded musik harus memakai padding 8 px, gap 8 px, flex column, dan align-items flex-start'
   );
 
-  // 4. Panel fokus tetap mempertahankan tinggi penuh 332 px
+  // 4. Panel fokus tetap mempertahankan tinggi penuh 320 px
   assert.strictEqual(
-    css.includes('.island-widget.state-expanded.tab-focus {\n  height: 332px;\n  max-height: 332px;\n}'),
+    css.includes('.island-widget.state-expanded.tab-focus {\n  height: 320px;\n  max-height: 320px;\n}'),
     true,
-    'Panel fokus tetap harus memakai tinggi 332 px'
+    'Panel fokus tetap harus memakai tinggi 320 px'
   );
 
   // Gap antarkolom dipadatkan menjadi 6 px; gap header dan tinggi native tetap.
   assert.strictEqual(
-    css.includes('#panel-music {\n  width: 100%;\n  height: 156px;\n  min-height: 156px;\n  max-height: 156px;\n  flex: 0 0 156px;\n  margin-top: 0;\n  margin-bottom: 0;\n  gap: 6px;\n  align-items: center;\n  box-sizing: border-box;\n}'),
+    css.includes('#panel-music {\n  width: 100%;\n  height: 148px;\n  min-height: 148px;\n  max-height: 148px;\n  flex: 0 0 148px;\n  margin-top: 0;\n  margin-bottom: 0;\n  gap: 6px;\n  align-items: center;\n  box-sizing: border-box;\n}'),
     true,
-    'Isi panel musik harus memiliki tinggi tetap 156 px (8+48+8+156+8=228 px) dan gap antarkolom 6 px'
+    'Isi panel musik harus memiliki tinggi tetap 148 px (8+48+8+148+8=220 px) dan gap antarkolom 6 px'
   );
 
   // 6. Cover album memiliki flex-shrink: 0 dan teks judul terpotong rapi dengan ellipsis
@@ -1434,7 +1485,7 @@ runTest('Uji 41: Konfigurasi ISLAND_DIMENSIONS dan fungsi getIslandDimension seb
 
   // 2. Compact notch
   assert.deepStrictEqual(ISLAND_DIMENSIONS.compact, {
-    width: 460,
+    width: 300,
     height: 42,
     minWidth: null,
     minHeight: null,
@@ -1452,14 +1503,14 @@ runTest('Uji 41: Konfigurasi ISLAND_DIMENSIONS dan fungsi getIslandDimension seb
   });
   assert.deepStrictEqual(getIslandDimension('expanded', 'music', true), ISLAND_DIMENSIONS.settings);
 
-  // 4. Expanded focus (332 px)
-  assert.strictEqual(ISLAND_DIMENSIONS.expanded.focus.height, 332);
-  assert.strictEqual(ISLAND_DIMENSIONS.expanded.focus.minHeight, 332);
+  // 4. Expanded focus (320 px)
+  assert.strictEqual(ISLAND_DIMENSIONS.expanded.focus.height, 320);
+  assert.strictEqual(ISLAND_DIMENSIONS.expanded.focus.minHeight, 320);
 
-  // 5. Expanded music (228 px persis sesuai Figma)
-  assert.strictEqual(ISLAND_DIMENSIONS.expanded.music.width, 960);
-  assert.strictEqual(ISLAND_DIMENSIONS.expanded.music.height, 228);
-  assert.strictEqual(ISLAND_DIMENSIONS.expanded.music.minHeight, 228);
+  // 5. Expanded music (220 px persis sesuai Figma)
+  assert.strictEqual(ISLAND_DIMENSIONS.expanded.music.width, 880);
+  assert.strictEqual(ISLAND_DIMENSIONS.expanded.music.height, 220);
+  assert.strictEqual(ISLAND_DIMENSIONS.expanded.music.minHeight, 220);
   assert.strictEqual(ISLAND_DIMENSIONS.expanded.music.resizable, true);
   assert.deepStrictEqual(getIslandDimension('expanded', 'music', false), ISLAND_DIMENSIONS.expanded.music);
 });
@@ -1472,34 +1523,34 @@ runTest('Uji 42: Alur ukuran panel, bilah minimize (42), dan modal tetap konsist
 
   // 1. Fokus awal
   let dim = getIslandDimension(currentState, currentActiveTab, isModalOpen);
-  assert.strictEqual(dim.height, 332, 'Tab Fokus awal harus 332 px');
+  assert.strictEqual(dim.height, 320, 'Tab Fokus awal harus 320 px');
 
   // 2. Berpindah ke tab Musik
   currentActiveTab = 'music';
   dim = getIslandDimension(currentState, currentActiveTab, isModalOpen);
-  assert.strictEqual(dim.height, 228, 'Tab Musik harus tepat 228 px');
-  assert.strictEqual(dim.width, 960);
+  assert.strictEqual(dim.height, 220, 'Tab Musik harus tepat 220 px');
+  assert.strictEqual(dim.width, 880);
 
   // 3. Kembali ke panel fokus/istirahat
   currentActiveTab = 'focus';
   dim = getIslandDimension(currentState, currentActiveTab, isModalOpen);
-  assert.strictEqual(dim.height, 332, 'Panel fokus/istirahat harus kembali 332 px');
+  assert.strictEqual(dim.height, 320, 'Panel fokus/istirahat harus kembali 320 px');
 
   // 4. Kembali ke tab Musik
   currentActiveTab = 'music';
   dim = getIslandDimension(currentState, currentActiveTab, isModalOpen);
-  assert.strictEqual(dim.height, 228, 'Kembali ke Musik harus 228 px');
+  assert.strictEqual(dim.height, 220, 'Kembali ke Musik harus 220 px');
 
   // 5. Mengecilkan ke Compact
   currentState = 'compact';
   dim = getIslandDimension(currentState, currentActiveTab, isModalOpen);
   assert.strictEqual(dim.height, 42, 'Minimize tetap berupa bilah informasi');
-  assert.strictEqual(dim.width, 460);
+  assert.strictEqual(dim.width, 300);
 
   // 6. Mengembangkan kembali ke Expanded (aktif tab Musik)
   currentState = 'expanded';
   dim = getIslandDimension(currentState, currentActiveTab, isModalOpen);
-  assert.strictEqual(dim.height, 228, 'Expanded kembali ke tab Musik harus 228 px');
+  assert.strictEqual(dim.height, 220, 'Expanded kembali ke tab Musik harus 220 px');
 
   // 7. Membuka modal pengaturan dari tab Musik
   isModalOpen = true;
@@ -1510,13 +1561,13 @@ runTest('Uji 42: Alur ukuran panel, bilah minimize (42), dan modal tetap konsist
   // 8. Menutup modal pengaturan
   isModalOpen = false;
   dim = getIslandDimension(currentState, currentActiveTab, isModalOpen);
-  assert.strictEqual(dim.height, 228, 'Menutup modal dari tab Musik harus mengembalikan ukuran ke 228 px');
+  assert.strictEqual(dim.height, 220, 'Menutup modal dari tab Musik harus mengembalikan ukuran ke 220 px');
 });
 
 // ----------------------------------------------------------------------------
-// 10. Tampilan Lirik 3 Baris Aktif di Tengah dan Transisi Lembut
+// 10. Tampilan Lirik 5 Baris dengan Baris Aktif di Tengah dan Transisi Lembut
 // ----------------------------------------------------------------------------
-await runTestAsync('Uji 43: Gaya lirik 3 baris aktif di tengah, transisi berurutan step (180-250 ms), fade jump saat seek/ganti lagu, tiga titik pixel instrumental, dan penanganan pause/reduced-motion', async () => {
+await runTestAsync('Uji 43: Gaya lirik 5 baris dengan baris aktif di tengah, transisi berurutan step (180-250 ms), fade jump saat seek/ganti lagu, tiga titik pixel instrumental, dan penanganan pause/reduced-motion', async () => {
   const service = new LyricsService();
   const updates: Array<any> = [];
 
@@ -1619,12 +1670,13 @@ await runTestAsync('Uji 43: Gaya lirik 3 baris aktif di tengah, transisi berurut
     const html = fs.readFileSync('index.html', 'utf8');
     assert.strictEqual(html.includes('id="lyrics-viewport"'), true, 'index.html harus memuat lyrics-viewport');
     assert.strictEqual(html.includes('id="lyrics-track"'), true, 'index.html harus memuat lyrics-track');
+    assert.strictEqual(html.includes('id="music-card-line-before"'), true, 'index.html harus memuat baris lirik sebelum baris kedua sebelum highlight');
     assert.strictEqual(html.includes('id="lyrics-instrumental-dots"'), true, 'index.html harus memuat container titik pixel instrumental');
     assert.strictEqual(html.includes('pixel-dot'), true, 'index.html harus memuat elemen pixel-dot');
     assert.strictEqual(html.includes('id="music-card-highlight"'), true, 'index.html harus mempertahankan id music-card-highlight');
 
     // 9. Verifikasi CSS di src/styles.css
-    const css = fs.readFileSync('src/styles.css', 'utf8');
+    const css = fs.readFileSync('src/styles.css', 'utf8').replace(/\r\n/g, '\n');
     assert.strictEqual(css.includes('color: #A8F0C6;'), true, 'Warna baris aktif adalah mint terang #A8F0C6');
     assert.strictEqual(css.includes('color: #859F92;'), true, 'Warna baris lainnya adalah redup #859F92');
     assert.strictEqual(css.includes('@keyframes pixel-dot-gentle'), true, 'styles.css harus memiliki keyframe pixel-dot-gentle');
@@ -2561,7 +2613,7 @@ runTest('Uji 77: Panel fokus menjelaskan fase berikutnya sesuai rencana dan pref
   const short = buildPomodoroPlan(15, 25, 5);
   assert.strictEqual(getNextPhaseLabel(short, 0, DEFAULT_POMODORO_CONFIG), 'Sesi terakhir.');
   const plan = buildPomodoroPlan(60, 25, 5);
-  assert.strictEqual(getNextPhaseLabel(plan, 0, DEFAULT_POMODORO_CONFIG), 'Rehat 5 menit setelah ini');
+  assert.strictEqual(getNextPhaseLabel(plan, 0, DEFAULT_POMODORO_CONFIG), 'Rehat 5 menit setelah ini · mulai manual');
   assert.strictEqual(getNextPhaseLabel(plan, 1, { ...DEFAULT_POMODORO_CONFIG, autostartNextFocus: false }),
     'Fokus 25 menit setelah ini · mulai manual');
 });
@@ -2749,13 +2801,13 @@ runTest('Uji 88: Momo mendapat semua kegiatan santai, bergantian dengan rutinita
   const actions: string[] = [];
   let previous: string | null = null;
   let gardenTicks = 0;
-  for (let tick = 0; tick < 1200 && actions.length < 5; tick++) {
+  for (let tick = 0; tick < 1200 && actions.length < 6; tick++) {
     leisure.step(0.25, true);
     if (!leisure.action) gardenTicks++;
     if (leisure.action && leisure.action !== previous) actions.push(leisure.action);
     previous = leisure.action;
   }
-  assert.deepEqual([...actions].sort(), ['dance', 'relax', 'run', 'sing', 'sleep']);
+  assert.deepEqual([...actions].sort(), ['dance', 'eat', 'relax', 'run', 'sing', 'sleep']);
   assert.ok(gardenTicks > 100, 'Ada waktu berkebun di antara kegiatan santai');
   const before = leisure.action;
   for (let tick = 0; tick < 1000; tick++) leisure.step(0.25, false);
@@ -2906,7 +2958,7 @@ runTest('Uji 97: Setiap empat sesi memakai rehat panjang 15 menit, lalu kembali 
   const breaks = plan.phases.filter(p => p.type === 'break');
   assert.deepEqual(breaks.map(p => p.durationMin), [5, 5, 5, 15, 5, 5, 5, 15]);
   assert.deepEqual(breaks.filter(p => p.breakKind === 'long').map(p => p.id), [8, 16]);
-  assert.equal(getNextPhaseLabel(plan, 6, DEFAULT_POMODORO_CONFIG), 'Rehat panjang 15 menit setelah ini');
+  assert.equal(getNextPhaseLabel(plan, 6, DEFAULT_POMODORO_CONFIG), 'Rehat panjang 15 menit setelah ini · mulai manual');
   assert.equal(plan.totalFocusMin + plan.totalBreakMin, 260);
   const clippedPhases = buildPomodoroPlan(120, 25, 5).phases;
   const clipped = clippedPhases[clippedPhases.length - 1];
@@ -3320,6 +3372,13 @@ await runTestAsync('Uji 119: Koreksi lirik menggeser baris tanpa menggeser posis
     assert.equal((service as any).currentPositionSecs, 0.5);
     assert.equal(service.adjustTiming(0, true), true);
     assert.equal(updates[updates.length - 1]?.highlight, 'Satu');
+    globalThis.fetch = (async url => ({ ok: true, json: async () => ({ ...lyricRequestMetadata(url),
+      id: 589314, syncedLyrics: '[00:21.66]Pertama\n[00:25.66]Kedua' }) } as Response)) as typeof fetch;
+    await service.loadLyrics('When You Were Young', 'The Killers', "Sam's Town", true, 18.67, 220);
+    assert.equal(updates[updates.length - 1]?.highlight, 'Pertama');
+    assert.equal(updates[updates.length - 1]?.offsetSeconds, 3);
+    assert.equal(service.adjustTiming(0, true), true);
+    assert.equal(updates[updates.length - 1]?.isInstrumental, true);
   } finally {
     globalThis.fetch = originalFetch;
     service.clear();
@@ -3575,7 +3634,7 @@ runTest('Uji 131: Pembaruan status musik mempertahankan ikon dan label aksesibel
 });
 
 runTest('Uji 132: Kolom Momo tidak menyisakan baris kontrol sehingga karakternya center vertikal', () => {
-  const css = fs.readFileSync('src/styles.css', 'utf8');
+  const css = fs.readFileSync('src/styles.css', 'utf8').replace(/\r\n/g, '\n');
   const start = css.indexOf('#panel-music .col-right {');
   const rule = css.slice(start, css.indexOf('}', start) + 1);
   assert.ok(rule.length > 0, 'Aturan kolom kanan harus ada');
@@ -3587,7 +3646,7 @@ runTest('Uji 132: Kolom Momo tidak menyisakan baris kontrol sehingga karakternya
 });
 
 runTest('Uji 133: Kolom lirik mengisi lebar kolom tanpa margin samping', () => {
-  const css = fs.readFileSync('src/styles.css', 'utf8');
+  const css = fs.readFileSync('src/styles.css', 'utf8').replace(/\r\n/g, '\n');
   const start = css.indexOf('#panel-music .col-center {');
   const rule = css.slice(start, css.indexOf('}', start) + 1);
   assert.ok(rule.length > 0);
@@ -3638,7 +3697,7 @@ await runTestAsync('Uji 135: Tab tetap dapat dipindah setelah no-op dan kegagala
 });
 
 runTest('Uji 136: Scrollbar tidak ditampilkan dan transisi menghormati reduced motion', () => {
-  const css = fs.readFileSync('src/styles.css', 'utf8');
+  const css = fs.readFileSync('src/styles.css', 'utf8').replace(/\r\n/g, '\n');
   assert.ok(css.includes('body * {\n  scrollbar-width: none;'));
   assert.ok(css.includes('body *::-webkit-scrollbar'));
   assert.equal(css.includes('scrollbar-width: thin'), false);
@@ -3709,11 +3768,11 @@ runTest('Uji 138: Pause saat lompatan menyelesaikan settle, tetap bernapas dan b
   assert.equal(h.frames.some(frame => frame.playback === 'paused' && frame.eyes === 'closed'), false);
   h.clock.tick(300);
   assert.ok(h.frames.some(frame => frame.playback === 'paused' && frame.eyes === 'closed'));
-  assert.equal(h.frames.some(frame => frame.pose === 'finish'), false);
+  assert.equal(h.frames.some(frame => frame.playback === 'ended'), false);
   h.momo.dispose();
 });
 
-runTest('Uji 139: Aksi lucu Momo memiliki jeda dan klik kembali ke aktivitas, selesai tidak dipotong klik', () => {
+runTest('Uji 139: Aksi lucu Momo memiliki jeda dan klik kembali ke aktivitas, langsung istirahat saat selesai', () => {
   const h = momoHarness();
   h.momo.setPlayback('playing', 'record');
   h.clock.tick(4500);
@@ -3725,8 +3784,9 @@ runTest('Uji 139: Aksi lucu Momo memiliki jeda dan klik kembali ke aktivitas, se
   h.clock.tick(1300);
   assert.equal(h.latest().pose, 'nod');
   h.momo.setPlayback('ended', 'record');
+  assert.equal(h.latest().pose, 'rest');
   h.momo.interact();
-  assert.equal(h.latest().pose, 'finish');
+  assert.equal(h.latest().pose, 'shy');
   h.clock.tick(2600);
   assert.equal(h.latest().pose, 'rest');
   assert.equal(h.latest().smile, true);
@@ -3797,7 +3857,10 @@ await runTestAsync('Uji 143: Sesi putus, error polling dan pause dekat akhir buk
     payload = base; await bridge.pollNow();
     payload = null; await bridge.pollNow();
     assert.equal(ended, 0);
+    assert.equal(bridge.waitingForTrack, true);
+    assert.equal(bridge.getCurrentTrack(), null);
     payload = base; await bridge.pollNow();
+    assert.equal(bridge.waitingForTrack, false);
     error = true; await bridge.pollNow();
     assert.equal(ended, 0);
     error = false; payload = base; await bridge.pollNow();
@@ -4146,8 +4209,8 @@ runTest('Uji 161: Snap hanya di ambang 10%, termasuk batas, sudut dan monitor ne
   assert.equal(dockWithinThreshold(-1900, 60, area), 'left', 'Sudut memilih jarak relatif terdekat');
   assert.equal(dockWithinThreshold(NaN, 60, area), 'floating');
   assert.equal(isVerticalDock('floating'), false);
-  assert.equal(dockWithinThreshold(-1440, 540, area, { width: 960, height: 308 }), 'left', 'Panel menyentuh tepi dinilai dari batas jendela');
-  assert.equal(dockWithinThreshold(-960, 540, area, { width: 960, height: 308 }), 'floating');
+  assert.equal(dockWithinThreshold(-1440, 540, area, { width: 960, height: 320 }), 'left', 'Panel menyentuh tepi dinilai dari batas jendela');
+  assert.equal(dockWithinThreshold(-960, 540, area, { width: 960, height: 320 }), 'floating');
 });
 
 const petContext: PetContext = { x: 600, y: 450, cursorX: 580, cursorY: 450,

@@ -32,6 +32,24 @@ export type MediaUpdateCallback = (track: SystemMediaTrack | null) => void;
 export type SongFinishedCallback = () => void;
 
 export class SystemMediaBridge {
+  private transitionTimer: ReturnType<typeof setTimeout> | null = null;
+  public get waitingForTrack(): boolean { return this.transitionTimer !== null; }
+
+  private cancelTrackWait(): void {
+    if (this.transitionTimer !== null) clearTimeout(this.transitionTimer);
+    this.transitionTimer = null;
+  }
+
+  private trackUnavailable(): void {
+    this.wasPlaying = false;
+    if (!this.currentTrack) return;
+    this.currentTrack = null;
+    this.transitionTimer = setTimeout(() => {
+      this.transitionTimer = null;
+      this.notify(null);
+    }, 5000);
+    this.notify(null);
+  }
   private timer: number | null = null;
   private currentTrack: SystemMediaTrack | null = null;
   private wasPlaying: boolean = false;
@@ -72,6 +90,7 @@ export class SystemMediaBridge {
   }
 
   public stopPolling(): void {
+    this.cancelTrackWait();
     if (this.timer !== null) {
       clearInterval(this.timer);
       this.timer = null;
@@ -104,6 +123,7 @@ export class SystemMediaBridge {
       this.latestAppliedSequence = currentSeq;
 
       if (data && data.has_session && data.title && data.title.trim().length > 0) {
+        this.cancelTrackWait();
         // Stopped pada rekaman yang sama dan posisi akhir, bukan pause atau sesi yang hilang.
         if (this.wasPlaying && !data.is_playing && data.playback_status === 'stopped'
           && data.session_key === this.currentTrack?.session_key && data.record_key === this.currentTrack?.record_key) {
@@ -119,21 +139,13 @@ export class SystemMediaBridge {
         this.notify(data);
         return data;
       } else {
-        this.wasPlaying = false;
-        if (this.currentTrack !== null) {
-          this.currentTrack = null;
-          this.notify(null);
-        }
+        this.trackUnavailable();
         return null;
       }
     } catch {
       if (currentSeq >= this.latestAppliedSequence) {
         this.latestAppliedSequence = currentSeq;
-        this.wasPlaying = false;
-        if (this.currentTrack !== null) {
-          this.currentTrack = null;
-          this.notify(null);
-        }
+        this.trackUnavailable();
       }
       return null;
     } finally {
@@ -146,6 +158,7 @@ export class SystemMediaBridge {
   }
 
   public async selectSession(sessionKey: string | null): Promise<SystemMediaTrack | null> {
+    this.cancelTrackWait();
     this.selectedSession = sessionKey;
     this.latestAppliedSequence = ++this.pollSequence;
     this.currentTrack = null;

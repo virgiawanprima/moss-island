@@ -8,6 +8,7 @@ import { IslandSeason } from '../types';
 
 export type MomoV2Action =
   | 'idle'
+  | 'eat'
   | 'walk'
   | 'wave'
   | 'dance'
@@ -21,7 +22,7 @@ export interface MomoPathDef {
   fill: string;
 }
 
-export const MOMO_V2_FRAMES: Record<MomoV2Action, MomoPathDef[][]> = {
+const BASE_MOMO_FRAMES = {
   "idle": [
     [
       {
@@ -1206,6 +1207,22 @@ export const MOMO_V2_FRAMES: Record<MomoV2Action, MomoPathDef[][]> = {
       }
     ]
   ]
+};
+
+export const MOMO_V2_FRAMES: Record<MomoV2Action, MomoPathDef[][]> = {
+  ...BASE_MOMO_FRAMES,
+  eat: BASE_MOMO_FRAMES.idle.map((frame, index) => {
+    const bite = Math.floor(index / 2) % 2;
+    return [
+      ...frame,
+      // Tangan memegang rumpun rumput di depan mulut.
+      { d: 'M20 40H28V44H20ZM36 40H44V44H36Z', fill: '#71BA83' },
+      { d: bite ? 'M28 40H36V42H28Z' : 'M28 40H36V44H28Z', fill: '#15221A' },
+      { d: bite
+        ? 'M30 38H32V44H30ZM34 40H36V46H34Z'
+        : 'M28 34H30V42H28ZM32 36H34V44H32ZM36 34H38V42H36Z', fill: '#355E3B' },
+    ];
+  }),
 };
 
 // Cache canvas offscreen untuk render 60 FPS tanpa beban CPU

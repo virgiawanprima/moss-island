@@ -1,4 +1,4 @@
-export type LeisureAction = 'dance' | 'run' | 'sleep' | 'sing' | 'relax';
+export type LeisureAction = 'dance' | 'run' | 'sleep' | 'sing' | 'relax' | 'eat';
 
 export class MomoLeisure {
   public action: LeisureAction | null = null;
@@ -24,7 +24,7 @@ export class MomoLeisure {
     this.wait -= dt;
     if (this.wait > 0) return;
     if (!this.choices.length) {
-      this.choices = ['dance', 'run', 'sleep', 'sing', 'relax'];
+      this.choices = ['dance', 'run', 'sleep', 'sing', 'relax', 'eat'];
       for (let i = this.choices.length - 1; i > 0; i--) {
         const j = Math.floor(this.random() * (i + 1));
         [this.choices[i], this.choices[j]] = [this.choices[j], this.choices[i]];

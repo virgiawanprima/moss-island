@@ -14,9 +14,11 @@ export interface GardenWaypoint {
 export function buildGardenRoute(trees: PlantedTree[], sprout?: { r: number; c: number }, includePlant = true): GardenWaypoint[] {
   const route: GardenWaypoint[] = [];
   const stop = (r: number, c: number, action: GardenAction, treeId?: string) => {
+    // Jumlah r+c tetap agar kaki Momo sejajar dengan pangkal tanaman pada proyeksi isometrik.
+    const side = c >= r ? 1 : -1;
     route.push({
-      r: r + Math.sign(2.5 - r) * 0.65,
-      c: c + Math.sign(2.5 - c) * 0.65,
+      r: r + side * 0.65,
+      c: c - side * 0.65,
       waitFrames: action === 'plant' ? 96 : 88,
       action, targetR: r, targetC: c, treeId,
     });

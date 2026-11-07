@@ -48,7 +48,6 @@ export class IslandRenderer {
   private celebrationTimer: number = 0;
   private hydrationTimer: number = 0;
   private waveTimer: number = 0;
-  private songFinishedTimer: number = 0;
   private isMusicPlaying: boolean = false;
   private focusPaused = false;
   private inBreak = false;
@@ -290,16 +289,6 @@ export class IslandRenderer {
       maxSlots,
       totalTrees,
     };
-  }
-
-  /**
-   * Dipanggil saat lagu selesai diputar:
-   * Momo melepas headphone, meregangkan badan rileks selama ~3.5 detik
-   */
-  public triggerSongFinished(): void {
-    this.songFinishedTimer = 84; // 84 frames @ 24fps = 3.5 detik
-    this.momoMood = 'resting';
-    this.isWalking = false;
   }
 
   /**
@@ -549,10 +538,15 @@ export class IslandRenderer {
     const rect = this.canvas.getBoundingClientRect();
     const w = rect.width || 360;
     const h = rect.height || 160;
-    this.canvas.width = Math.round(w * dpr);
-    this.canvas.height = Math.round(h * dpr);
+    const pixelWidth = Math.round(w * dpr);
+    const pixelHeight = Math.round(h * dpr);
+    if (this.canvas.width === pixelWidth && this.canvas.height === pixelHeight) return;
+    this.canvas.width = pixelWidth;
+    this.canvas.height = pixelHeight;
     this.ctx.setTransform(1, 0, 0, 1, 0, 0);
     this.ctx.scale(dpr, dpr);
+    this.ctx.imageSmoothingEnabled = false;
+    if (this.isRunning && this.shouldRender()) this.draw();
   }
 
   private loop = (currentTime: number) => {
@@ -609,14 +603,6 @@ export class IslandRenderer {
     if (this.hydrationTimer > 0) {
       this.hydrationTimer--;
       if (this.hydrationTimer === 0 && this.momoMood === 'hydrated') {
-        this.momoMood = 'idle';
-      }
-    }
-
-    // Hitung mundur meregangkan badan saat lagu selesai
-    if (this.songFinishedTimer > 0) {
-      this.songFinishedTimer--;
-      if (this.songFinishedTimer === 0 && this.momoMood === 'resting') {
         this.momoMood = 'idle';
       }
     }
@@ -789,6 +775,8 @@ export class IslandRenderer {
         this.facingRight = false;
       }
     } else {
+      this.currentPos.r = targetWp.r;
+      this.currentPos.c = targetWp.c;
       this.isWalking = false;
       this.waitCounter++;
       if (targetWp.action && targetWp.targetR !== undefined && targetWp.targetC !== undefined) {
@@ -1283,6 +1271,11 @@ export class IslandRenderer {
   private drawMomo(x: number, y: number, facingRight: boolean, _yBob: number = 0, tilt: number = 0) {
     this.ctx.save();
     this.ctx.translate(Math.round(x), Math.round(y));
+    // Sejajarkan posisi sprite dan batasi skala pulau ke kelipatan setengah piksel layar.
+    const transform = this.ctx.getTransform();
+    const pixelScale = Math.max(0.5, Math.round(transform.a * 2) / 2);
+    this.ctx.setTransform(pixelScale, 0, 0, pixelScale,
+      Math.round(transform.e), Math.round(transform.f));
 
     // Bayangan elips Momo di permukaan tanah
     this.ctx.fillStyle = 'rgba(31, 64, 36, 0.28)';
@@ -1300,6 +1293,7 @@ export class IslandRenderer {
       momoTilt += Math.sin(this.seasonalActionTimer * 1.5) * 0.14;
     }
 
+    this.ctx.save();
     if (momoTilt !== 0) {
       this.ctx.rotate(momoTilt);
     }
@@ -1320,6 +1314,7 @@ export class IslandRenderer {
       action = 'idle';
     } else if (this.leisure.action) {
       action = this.leisure.action === 'run' ? 'walk'
+        : this.leisure.action === 'eat' ? 'eat'
         : this.leisure.action === 'dance' ? 'dance'
         : this.leisure.action === 'sleep' ? 'sleep'
         : this.leisure.action === 'sing' ? 'wave' : 'idle';
@@ -1331,7 +1326,7 @@ export class IslandRenderer {
       action = 'dance';
     } else if (this.hydrationTimer > 0 || this.momoMood === 'hydrated') {
       action = 'drink';
-    } else if (this.songFinishedTimer > 0 || this.momoMood === 'resting' || this.ambientMode === 'stream') {
+    } else if (this.momoMood === 'resting' || this.ambientMode === 'stream') {
       action = 'sleep';
     } else if (this.activeSprout && this.activeSprout.progress < 0.2) {
       action = 'plant';
@@ -1342,7 +1337,7 @@ export class IslandRenderer {
     const frameIdx = prefersReducedMotion || this.focusPaused ? 0
       : action === 'idle' ? idleFrameAt(this.frameCount * this.frameInterval)
       : Math.floor(this.frameCount / frameDurationTicks) % 8;
-    const scale = 0.52;
+    const scale = 0.5;
     const drawW = 64 * scale;
     const drawH = 64 * scale;
 
@@ -1373,6 +1368,7 @@ export class IslandRenderer {
     if (this.gardeningActivity && !this.focusPaused && !this.inBreak && !prefersReducedMotion) {
       this.drawGardeningTools(x, y);
     }
+    this.ctx.restore();
     if (this.leisure.action && !this.focusPaused && !this.inBreak && !prefersReducedMotion) {
       this.ctx.font = 'bold 8px monospace';
       if (this.leisure.action === 'sing') {
