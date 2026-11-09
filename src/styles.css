@@ -2677,12 +2677,14 @@ html[data-dock-edge] .view-minimal,
   touch-action: none;
 }
 .state-hidden .minimal-momo { width: 48px; height: 48px; position: relative; z-index: 1; }
-.view-minimal::after {
+.view-minimal .minimal-momo::after {
   content: '';
   position: absolute;
   width: 32px;
   height: 5px;
-  bottom: 16px;
+  bottom: -1px;
+  left: 8px;
+  z-index: -1;
   border-radius: 50%;
   background: #101b1540;
   pointer-events: none;
@@ -3027,17 +3029,23 @@ html:is([data-dock-edge="left"], [data-dock-edge="right"]) #panel-music .music-v
 html:is([data-dock-edge="left"], [data-dock-edge="right"]) #panel-music .music-controls-row { margin-top: 2px; }
 html:is([data-dock-edge="left"], [data-dock-edge="right"]) #panel-music .music-momo-stage { width: 90px; max-width: 100%; }
 html:is([data-dock-edge="left"], [data-dock-edge="right"]) #panel-music .col-right { align-items: flex-start; }
+html:is([data-dock-edge="left"], [data-dock-edge="right"]) body.is-tauri-native .island-widget.state-expanded #panel-music {
+  flex: 1 1 0;
+  min-height: 0;
+  grid-template-rows: minmax(0, 1fr) 120px;
+  row-gap: 8px;
+}
 html:not([data-dock-edge="left"], [data-dock-edge="right"]) #panel-music .music-playback-group { width: max-content; justify-self: start; }
 html:not([data-dock-edge="left"], [data-dock-edge="right"]) #panel-music .music-controls-row { justify-content: flex-start; gap: 4px; }
 html:is([data-dock-edge="left"], [data-dock-edge="right"]) #panel-music .music-controls-row { gap: 4px; }
 html:not([data-dock-edge="left"], [data-dock-edge="right"]) #panel-music .music-volume { grid-template-columns: auto minmax(0, 1fr) auto; }
 @media (min-width: 601px) {
-  html[data-dock-edge="top"] body.is-tauri-native .island-widget.state-expanded.tab-music .view-expanded {
+  html:not([data-dock-edge="left"], [data-dock-edge="right"]) body.is-tauri-native .island-widget.state-expanded.tab-music .view-expanded {
     height: 100%;
     max-height: 100%;
     padding-bottom: 14px;
   }
-  html[data-dock-edge="top"] body.is-tauri-native #panel-music {
+  html:not([data-dock-edge="left"], [data-dock-edge="right"]) body.is-tauri-native #panel-music {
     flex: 1 1 0;
     height: auto;
     min-height: 0;

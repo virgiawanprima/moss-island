@@ -4,7 +4,7 @@ use std::time::Duration;
 
 static CLIENT: LazyLock<Result<reqwest::Client, reqwest::Error>> = LazyLock::new(|| {
     reqwest::Client::builder()
-        .user_agent("MossIsland/0.1.0")
+        .user_agent("MossIsland/0.1.1")
         .timeout(Duration::from_secs(12))
         .redirect(reqwest::redirect::Policy::none())
         .build()

@@ -21,6 +21,10 @@ dist-ssr
 /public/audio/*.flac
 /public/audio/*.m4a
 
+# Dikelola di luar repo: hasil build landing page dan artefak dev preview
+/landing-page/
+/.tauri-dev-preview.json
+
 # Rust / Tauri build artifacts
 src-tauri/target
 src-tauri/gen/schemas
@@ -35,3 +39,7 @@ src-tauri/gen/schemas
 *.njsproj
 *.sln
 *.sw?
+
+# Playwright reports
+/test-results/
+/playwright-report/

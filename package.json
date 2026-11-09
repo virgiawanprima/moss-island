@@ -1,7 +1,7 @@
 {
   "name": "tauri-app",
   "private": true,
-  "version": "0.1.0",
+  "version": "0.1.1",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -10,7 +10,8 @@
     "test": "tsx tests/test_suite.ts",
     "test:audio": "tsx tests/local_audio_assets.ts",
     "lint": "eslint . --max-warnings 0",
-    "tauri": "tauri"
+    "tauri": "tauri",
+    "test:layout": "playwright test"
   },
   "dependencies": {
     "@tauri-apps/api": "^2",
@@ -24,6 +25,7 @@
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
+    "@playwright/test": "^1.65.0",
     "@tauri-apps/cli": "^2",
     "@types/node": "^26.6.5",
     "eslint": "^10.14.0",
