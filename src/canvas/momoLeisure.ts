@@ -10,7 +10,7 @@ export class MomoLeisure {
     this.wait = 10 + random() * 10;
   }
 
-  step(seconds: number, enabled: boolean): void {
+  step(seconds: number, enabled: boolean, canStart = true): void {
     if (!enabled) return;
     const dt = Math.min(0.25, Math.max(0, seconds));
     if (this.action) {
@@ -22,7 +22,7 @@ export class MomoLeisure {
       return;
     }
     this.wait -= dt;
-    if (this.wait > 0) return;
+    if (this.wait > 0 || !canStart) return;
     if (!this.choices.length) {
       this.choices = ['dance', 'run', 'sleep', 'sing', 'relax', 'eat'];
       for (let i = this.choices.length - 1; i > 0; i--) {
@@ -37,5 +37,10 @@ export class MomoLeisure {
   stop() {
     this.action = null;
     this.wait = 16 + this.random() * 16;
+  }
+
+  interrupt() {
+    // Perawatan boleh menyela, tetapi tidak mengulang waktu tunggu kegiatan santai.
+    this.action = null;
   }
 }

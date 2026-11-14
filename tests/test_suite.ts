@@ -49,6 +49,7 @@ import { coversRearTree, shouldFadeTree, coversMomo, getTreeOpacity } from '../s
 import { GardenSchedule } from '../src/canvas/gardenSchedule';
 import { FocusWeather, createPuddles } from '../src/canvas/focusWeather';
 import { MomoLeisure } from '../src/canvas/momoLeisure';
+import { buildWanderRoute } from '../src/canvas/momoWander';
 import {
   drawMomoSeasonLayer,
   getMomoFrameAnchor,
@@ -1918,13 +1919,14 @@ await runTestAsync('Uji 49: fetchArtwork tanpa Tauri mengembalikan null dan hany
 // ----------------------------------------------------------------------------
 // 14. Keseragaman Permukaan Pulau (Empat Petak Tengah)
 // ----------------------------------------------------------------------------
-runTest('Uji 50: Overlay kerikil pada empat petak tengah dihilangkan dan jalur koordinat Momo dipertahankan', () => {
+runTest('Uji 50: Overlay kerikil dihilangkan dan rute Momo mencakup pulau', () => {
   const src = fs.readFileSync('src/canvas/islandRenderer.ts', 'utf8');
   assert.strictEqual(src.includes('gravelTiles'), false, 'Lapisan visual kerikil khusus harus dihapus dari renderer');
   assert.strictEqual(src.includes('Warna kerikil lembut'), false, 'Overlay warna kerikil tidak boleh ada lagi');
   assert.strictEqual(src.includes('rgba(235, 230, 210, 0.45)'), false, 'Bintik kerikil tidak boleh digambar lagi di petak tengah');
   assert.strictEqual(src.includes('normalWaypoints'), true, 'Jalur koordinat berjalan Momo tetap dipertahankan');
-  assert.strictEqual(src.includes('{ r: 2.2, c: 2.2, waitFrames: 60 }'), true, 'Waypoint tengah pulau (di atas petak 2,2-3,3) tetap ada');
+  const route = buildWanderRoute({ r: 2, c: 2 }, [], () => 0.5);
+  assert.equal(new Set(route.map(tile => `${tile.r}:${tile.c}`)).size, 36, 'Rute baru menjangkau seluruh pulau sesuai permintaan');
   assert.strictEqual(src.includes('tileEven') && src.includes('tileOdd'), true, 'Pola selang-seling permukaan pulau tetap dipertahankan');
 });
 
@@ -2858,14 +2860,14 @@ runTest('Uji 91: Pohon menjadi solid saat dirawat dan kembali memudar setelah se
   assert.strictEqual(getTreeOpacity(tree, [tree, rear], momo, false), 0.55);
 });
 
-runTest('Uji 92: Pohon mendapat giliran setiap menit tanpa pengulangan dalam satu putaran', () => {
+runTest('Uji 92: Pohon mendapat giliran tiap90 detik tanpa pengulangan dalam satu putaran', () => {
   const schedule = new GardenSchedule(() => 0.3);
   const trees = PLANTING_SLOTS.slice(0, 4).map((slot, i) => ({ id: String(i), gridR: slot.r, gridC: slot.c, treeType: slot.type, plantedAtTimestamp: 0 }));
   const visited: string[] = [];
   for (let round = 0; round < 2; round++) {
     const cycle: string[] = [];
     for (let tree = 0; tree < 4; tree++) {
-      for (let i = 0; i < 239; i++) assert.equal(schedule.next(.25, true, trees), null);
+      for (let i = 0; i < 359; i++) assert.equal(schedule.next(.25, true, trees), null);
       const job = schedule.next(.25, true, trees);
       assert.ok(job?.treeId); cycle.push(job.treeId); schedule.finish();
       for (let i = 0; i < 1000; i++) assert.equal(schedule.next(.25, false, trees), null);
@@ -2875,7 +2877,7 @@ runTest('Uji 92: Pohon mendapat giliran setiap menit tanpa pengulangan dalam sat
   assert.equal(visited.length, 8);
 });
 
-runTest('Uji 93: Tunas baru ditanam, disiram, dan dipupuk berurutan dalam satu kunjungan', () => {
+runTest('Uji 93: Tunas langsung muncul dan hanya disiram lalu dipupuk tanpa aksi menanam', () => {
   const renderer = new IslandRenderer(createMockCanvas()) as any;
   const slot = renderer.startFocusPlanting();
   const actions = new Set<string>();
@@ -2888,18 +2890,49 @@ runTest('Uji 93: Tunas baru ditanam, disiram, dan dipupuk berurutan dalam satu k
       actions.add(task.action);
     }
   }
-  assert.deepEqual([...actions], ['plant', 'water', 'fertilize']);
+  assert.deepEqual([...actions], ['water', 'fertilize']);
   assert.strictEqual(renderer.gardenSchedule.active, false);
   assert.strictEqual(renderer.waypoints.some((wp: any) => wp.action === 'plant'), false);
   assert.strictEqual(renderer.getPlantedTrees().length, 0);
 });
 
-runTest('Uji 94: Tunas dirawat segera lalu tiap30 detik aktif tanpa tumpukan setelah pause', () => {
+runTest('Momo meninggalkan tunas setelah perawatan, berhenti saat jeda, lalu kembali menyiram', () => {
+  const renderer = new IslandRenderer(createMockCanvas()) as any;
+  renderer.weather = new FocusWeather(() => 0.99);
+  renderer.leisure = new MomoLeisure(() => 0.5);
+  renderer.startFocusPlanting();
+  for (let tick = 0; tick < 2000 && renderer.gardenSchedule.active; tick++) renderer.update();
+  assert.equal(renderer.gardenSchedule.active, false, 'Kunjungan awal harus selesai');
+  const sproutPosition = { ...renderer.currentPos };
+  let walked = false;
+  for (let tick = 0; tick < 240; tick++) {
+    renderer.update();
+    walked ||= renderer.isWalking;
+    assert.equal(renderer.gardeningActivity, null, 'Tidak merawat tanaman di sela jadwal');
+  }
+  assert.ok(walked, 'Momo berjalan di sela perawatan tunas');
+  assert.ok(Math.hypot(renderer.currentPos.r - sproutPosition.r, renderer.currentPos.c - sproutPosition.c) > 0.2,
+    'Momo harus meninggalkan posisi di samping tunas');
+  renderer.setTimerPaused(true);
+  const pausedPosition = { ...renderer.currentPos };
+  for (let tick = 0; tick < 100; tick++) renderer.update();
+  assert.deepEqual(renderer.currentPos, pausedPosition, 'Jeda menghentikan gerak');
+  renderer.setTimerPaused(false);
+  let wateredAgain = false;
+  for (let tick = 0; tick < 2200 && !wateredAgain; tick++) {
+    renderer.update();
+    wateredAgain = renderer.gardeningActivity?.action === 'water';
+  }
+  assert.ok(wateredAgain, 'Jalan santai tidak menghalangi perawatan berikutnya');
+  assert.equal(renderer.getPlantedTrees().length, 0, 'Berjalan tidak menyelesaikan fokus atau menambah pohon');
+});
+
+runTest('Uji 94: Tunas dirawat segera lalu tiap60 detik aktif tanpa tumpukan setelah pause', () => {
   const schedule = new GardenSchedule(() => 0);
   const sprout = { r: 0, c: 2 }; schedule.setSprout('new');
-  assert.deepEqual(schedule.next(0, true, [], sprout)?.actions, ['plant', 'water', 'fertilize']);
+  assert.deepEqual(schedule.next(0, true, [], sprout)?.actions, ['water', 'fertilize']);
   schedule.finish();
-  for (let i = 0; i < 119; i++) assert.equal(schedule.next(.25, true, [], sprout), null);
+  for (let i = 0; i < 239; i++) assert.equal(schedule.next(.25, true, [], sprout), null);
   for (let i = 0; i < 500; i++) assert.equal(schedule.next(.25, false, [], sprout), null);
   assert.deepEqual(schedule.next(.25, true, [], sprout)?.actions, ['water']);
   for (let i = 0; i < 500; i++) assert.equal(schedule.next(.25, true, [], sprout), null);
@@ -4407,7 +4440,7 @@ runTest('Uji 171: Beralih ke salju menghapus hujan/genangan termasuk saat pause 
   assert.equal(renderer.weather.intensity, 0, 'Musim baru tidak langsung hujan');
 });
 
-runTest('Uji 172: Momo menunda berkebun saat hujan lalu melanjutkan menanam, menyiram dan memupuk', () => {
+runTest('Uji 172: Momo menunda berkebun saat hujan lalu melanjutkan menyiram dan memupuk', () => {
   const renderer = new IslandRenderer(createMockCanvas()) as any;
   renderer.startFocusPlanting();
   renderer.updateFocusProgress(0.55);
@@ -4424,7 +4457,7 @@ runTest('Uji 172: Momo menunda berkebun saat hujan lalu melanjutkan menanam, men
     renderer.update();
     if (renderer.gardeningActivity) actions.add(renderer.gardeningActivity.action);
   }
-  assert.deepEqual([...actions].sort(), ['fertilize', 'plant', 'water']);
+  assert.deepEqual([...actions].sort(), ['fertilize', 'water']);
   assert.equal(renderer.hasActiveSprout(), true);
   assert.deepEqual(renderer.getPlantedTrees(), []);
 });
@@ -4497,12 +4530,81 @@ runTest('Uji 176: Perawatan tunas berprioritas dan antrean pohon tetap mengunjun
   const trees = PLANTING_SLOTS.slice(0, 5).map((slot, i) => ({ id: String(i), gridR: slot.r, gridC: slot.c, treeType: slot.type, plantedAtTimestamp: 0 }));
   const sprout = { r: 5, c: 4 }; schedule.setSprout('seed');
   const visited = new Set<string>(); let watered = 0;
-  for (let tick = 0; tick < 1400; tick++) {
+  for (let tick = 0; tick < 2400; tick++) {
     const job = schedule.next(.25, true, trees, sprout);
     if (job) { if (job.treeId) visited.add(job.treeId); else watered++; schedule.finish(); }
   }
   assert.equal(visited.size, trees.length);
-  assert.ok(watered >= 11);
+  assert.ok(watered >= 10 && watered <= 11, 'Perawatan tunas dibatasi sekali per menit');
+});
+
+runTest('Rute acak menjangkau seluruh petak kosong lewat langkah bertetangga', () => {
+  const start = { r: 2, c: 2 };
+  const occupied = [{ r: 1, c: 1 }, { r: 4, c: 4 }];
+  const route = buildWanderRoute(start, occupied, () => 0.37);
+  const visited = new Set([`${start.r}:${start.c}`]);
+  let previous = start;
+  for (const waypoint of route) {
+    assert.ok(waypoint.r >= 0 && waypoint.r <= 5 && waypoint.c >= 0 && waypoint.c <= 5);
+    assert.ok(!occupied.some(tile => tile.r === waypoint.r && tile.c === waypoint.c));
+    assert.equal(Math.abs(waypoint.r - previous.r) + Math.abs(waypoint.c - previous.c), 1);
+    assert.equal(waypoint.action, undefined, 'Jalan acak tidak menjalankan aksi perawatan');
+    visited.add(`${waypoint.r}:${waypoint.c}`);
+    previous = waypoint;
+  }
+  assert.equal(visited.size, 34);
+  assert.notDeepEqual(route, buildWanderRoute(start, occupied, () => 0.73));
+  assert.deepEqual(buildWanderRoute(start, Array.from({ length: 36 }, (_, i) => ({ r: Math.floor(i / 6), c: i % 6 }))), []);
+});
+
+runTest('Fokus memberi keenam kegiatan santai di sela perawatan dan menjelajahi pulau', () => {
+  const renderer = new IslandRenderer(createMockCanvas()) as any;
+  renderer.leisure = new MomoLeisure(() => 0.5);
+  renderer.weather.step = () => false;
+  renderer.startFocusPlanting();
+  const activities = new Set<string>();
+  const visited = new Set<string>();
+  let careVisits = 1;
+  let wasCaring = true;
+  for (let tick = 0; tick < 24 * 600; tick++) {
+    if (tick % 24 === 0) renderer.setMusicPlaying(false);
+    renderer.update();
+    if (renderer.leisure.action) activities.add(renderer.leisure.action);
+    const caring = renderer.gardenSchedule.active;
+    if (caring && !wasCaring) careVisits++;
+    wasCaring = caring;
+    if (!caring) visited.add(`${Math.round(renderer.currentPos.r)}:${Math.round(renderer.currentPos.c)}`);
+    assert.ok(!(renderer.leisure.action && caring), 'Kegiatan santai tidak bertumpuk dengan perawatan');
+    assert.ok(!(renderer.isWalking && renderer.gardeningActivity), 'Momo tidak berjalan sambil merawat');
+    if (renderer.leisure.action && renderer.leisure.action !== 'run') {
+      assert.equal(renderer.isWalking, false, 'Kegiatan santai selain lari dilakukan sambil berhenti');
+    }
+  }
+  assert.deepEqual([...activities].sort(), ['dance', 'eat', 'relax', 'run', 'sing', 'sleep']);
+  assert.ok(visited.size >= 20, 'Momo menjelajahi pulau di luar empat petak tengah');
+  assert.ok(careVisits <= 11, 'Kunjungan tunas tidak mendominasi fokus');
+});
+
+runTest('Aksi diam menghentikan jalan dan tidak bertumpuk dengan kegiatan santai', () => {
+  const renderer = new IslandRenderer(createMockCanvas()) as any;
+  renderer.weather.step = () => false;
+  renderer.leisure = new MomoLeisure(() => 0.5);
+  renderer.leisure.action = 'eat';
+  renderer.waveHello();
+  renderer.triggerSeasonalAction('summer_fan');
+  assert.equal(renderer.waveTimer, 0);
+  assert.equal(renderer.activeSeasonalAction, null, 'Aksi musiman tidak menyela makan');
+  renderer.celebrateBriefly(36);
+  assert.equal(renderer.leisure.action, null, 'Perayaan menyela kegiatan santai');
+  const start = { ...renderer.currentPos };
+  for (let tick = 0; tick < 20; tick++) renderer.update();
+  assert.deepEqual(renderer.currentPos, start, 'Tidak berjalan saat merayakan');
+  assert.equal(renderer.isWalking, false);
+  assert.equal(renderer.leisure.action, null);
+  renderer.setHydrated(true);
+  assert.equal(renderer.celebrationTimer, 0, 'Minum menggantikan perayaan');
+  renderer.update();
+  assert.deepEqual(renderer.currentPos, start, 'Tidak berjalan sambil minum');
 });
 
 runTest('Uji 177: Durasi pendek, jam utuh dan gabungan tidak memuat unit nol', () => {

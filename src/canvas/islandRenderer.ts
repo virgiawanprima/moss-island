@@ -7,6 +7,7 @@ import { GardenSchedule } from './gardenSchedule';
 import { buildGardenRoute, type GardenWaypoint, type GardenAction } from './gardening';
 import { FocusWeather, createPuddles, type Puddle } from './focusWeather';
 import { MomoLeisure } from './momoLeisure';
+import { buildWanderRoute } from './momoWander';
 import { idleFrameAt } from './idleTiming';
 
 export interface PlantingSlot {
@@ -78,14 +79,9 @@ export class IslandRenderer {
     isPaused: boolean;
   } | null = null;
 
-  // Walking path & waypoints for Momo (mengikuti jalan setapak di tengah)
+  // Rute acak Momo di seluruh petak kosong pulau.
   private gardeningActivity: { action: GardenAction; targetR: number; targetC: number } | null = null;
-  private normalWaypoints: GardenWaypoint[] = [
-    { r: 2.2, c: 2.2, waitFrames: 60 },
-    { r: 2.8, c: 2.2, waitFrames: 45 },
-    { r: 2.8, c: 2.8, waitFrames: 50 },
-    { r: 2.2, c: 2.8, waitFrames: 60 },
-  ];
+  private normalWaypoints: GardenWaypoint[] = buildWanderRoute({ r: 2.2, c: 2.2 }, []);
   private waypoints = this.normalWaypoints;
   private currentWaypointIndex: number = 0;
   private currentPos = { r: 2.2, c: 2.2 };
@@ -234,13 +230,20 @@ export class IslandRenderer {
     this.rebuildGardenRoute();
   }
 
-  private rebuildGardenRoute(includePlant = true) {
+  private rebuildGardenRoute() {
     const slot = this.activeSprout ? PLANTING_SLOTS[this.activeSprout.slotIndex] : undefined;
-    const route = buildGardenRoute(this.getCurrentGenTrees(), slot, includePlant);
+    const route = buildGardenRoute(this.getCurrentGenTrees(), slot);
     this.waypoints = route.length ? route : this.normalWaypoints;
     this.currentWaypointIndex = 0;
     this.waitCounter = 0;
     this.gardeningActivity = null;
+  }
+
+  private refreshWanderRoute() {
+    const occupied = this.getCurrentGenTrees().map(tree => ({ r: tree.gridR, c: tree.gridC }));
+    if (this.activeSprout) occupied.push(PLANTING_SLOTS[this.activeSprout.slotIndex]);
+    this.normalWaypoints = buildWanderRoute(this.currentPos, occupied);
+    this.leisureRunIndex = 0;
   }
 
   private dispatchCare(seconds: number) {
@@ -251,10 +254,10 @@ export class IslandRenderer {
     const job = this.gardenSchedule.next(seconds, enabled, this.getCurrentGenTrees(), slot);
     if (!job) return;
     const route = buildGardenRoute(job.treeId ? [{ id: job.treeId, gridR: job.target.r, gridC: job.target.c,
-      treeType: 'mango', plantedAtTimestamp: 0 }] : [], job.treeId ? undefined : job.target, job.actions.includes('plant'));
+      treeType: 'mango', plantedAtTimestamp: 0 }] : [], job.treeId ? undefined : job.target);
     this.waypoints = route.filter(wp => wp.action && job.actions.includes(wp.action));
     this.currentWaypointIndex = 0; this.waitCounter = 0;
-    this.leisure.stop(); this.activeSeasonalAction = null; this.seasonalActionTimer = 0; this.waveTimer = 0;
+    this.leisure.interrupt(); this.activeSeasonalAction = null; this.seasonalActionTimer = 0; this.waveTimer = 0;
     this.momoMood = 'idle';
   }
 
@@ -310,7 +313,7 @@ export class IslandRenderer {
 
   /**
    * Dipanggil saat fokus dimulai:
-   * Momo berjalan ke petak kosong lalu menanam benih
+   * Tunas muncul di petak kosong; Momo hanya menyiram dan memupuknya.
    */
   public startFocusPlanting(): { r: number; c: number; slotIndex: number } {
     this.focusPaused = false;
@@ -431,12 +434,24 @@ export class IslandRenderer {
   }
 
   public celebrateBriefly(frames: number = 36) {
+    this.leisure.interrupt();
+    this.waveTimer = 0;
+    this.activeSeasonalAction = null;
+    this.seasonalActionTimer = 0;
+    this.hydrationTimer = 0;
+    this.isWalking = false;
     this.momoMood = 'happy';
     this.celebrationTimer = frames;
   }
 
   public setHydrated(hydrated: boolean) {
     if (hydrated) {
+      this.leisure.interrupt();
+      this.waveTimer = 0;
+      this.activeSeasonalAction = null;
+      this.seasonalActionTimer = 0;
+      this.celebrationTimer = 0;
+      this.isWalking = false;
       this.momoMood = 'hydrated';
       this.hydrationTimer = 72; // ~3 detik efek segar minum air
     } else {
@@ -475,8 +490,8 @@ export class IslandRenderer {
     if (this.focusPaused) return;
     if (!playing) {
       this.musicNotes = [];
-      // Musik dijeda: Momo berhenti menari lalu duduk santai
-      this.momoMood = 'resting';
+      // Musik dijeda tidak boleh menghentikan aktivitas sesi Fokus yang masih berjalan.
+      this.momoMood = this.activeSprout && !this.inBreak ? 'idle' : 'resting';
       this.isWalking = false;
     } else {
       this.momoMood = 'idle';
@@ -484,13 +499,14 @@ export class IslandRenderer {
   }
 
   public waveHello(frames: number = 40) {
-    if (this.gardenSchedule.active || this.isWalking) return;
+    if (this.gardenSchedule.active || this.isWalking || this.leisure.action || this.hasStationaryAction()) return;
     this.momoMood = 'happy';
     this.waveTimer = frames;
   }
 
   public triggerSeasonalAction(action?: MomoSeasonalAction): void {
-    if (this.gardenSchedule.active || this.isWalking) return;
+    if (this.gardenSchedule.active || this.isWalking || this.leisure.action || this.waveTimer > 0
+      || this.hydrationTimer > 0 || this.celebrationTimer > 0 || this.rainJoyTimer > 0) return;
     if (action) {
       this.activeSeasonalAction = action;
     } else {
@@ -563,6 +579,11 @@ export class IslandRenderer {
     }
   };
 
+  private hasStationaryAction(): boolean {
+    return this.waveTimer > 0 || this.activeSeasonalAction !== null || this.hydrationTimer > 0
+      || this.celebrationTimer > 0 || this.rainJoyTimer > 0;
+  }
+
   private update() {
     this.frameCount++;
     this.gardeningActivity = null;
@@ -580,8 +601,17 @@ export class IslandRenderer {
     }
     this.dispatchCare(this.frameInterval / 1000);
     const oldLeisure = this.leisure.action;
-    this.leisure.step(this.frameInterval / 1000, weatherEnabled && !reducedMotion && this.rainJoyTimer === 0 && !this.gardenSchedule.active);
-    if (oldLeisure !== this.leisure.action && this.leisure.action === 'run') this.leisureRunIndex = 0;
+    this.leisure.step(this.frameInterval / 1000, weatherEnabled && !reducedMotion && this.rainJoyTimer === 0,
+      !this.gardenSchedule.active && !this.hasStationaryAction());
+    if (oldLeisure !== this.leisure.action && this.leisure.action === 'run') {
+      this.refreshWanderRoute();
+      this.waypoints = this.normalWaypoints;
+      this.currentWaypointIndex = 0;
+      this.waitCounter = 0;
+    } else if (oldLeisure === 'run' && !this.leisure.action && !this.gardenSchedule.active) {
+      this.currentWaypointIndex = this.leisureRunIndex;
+      this.waitCounter = 0;
+    }
 
     // Hitung mundur perayaan selesai fokus
     if (this.celebrationTimer > 0) {
@@ -726,7 +756,7 @@ export class IslandRenderer {
     }
 
     if (prefersReducedMotion || this.focusPaused || this.inBreak || this.rainJoyTimer > 0
-      || this.weather.intensity > 0.15 || this.momoMood === 'resting') {
+      || this.weather.intensity > 0.15 || this.momoMood === 'resting' || this.hasStationaryAction()) {
       this.isWalking = false;
       return;
     }
@@ -735,6 +765,7 @@ export class IslandRenderer {
       this.isWalking = false;
       if (this.leisure.action === 'run') {
         const target = this.normalWaypoints[this.leisureRunIndex];
+        if (!target) return;
         const dr = target.r - this.currentPos.r;
         const dc = target.c - this.currentPos.c;
         const distance = Math.hypot(dr, dc);
@@ -744,15 +775,23 @@ export class IslandRenderer {
           this.isWalking = true;
           if (Math.abs(dc - dr) > 0.01) this.facingRight = dc - dr > 0;
         } else {
-          this.leisureRunIndex = (this.leisureRunIndex + 1) % this.normalWaypoints.length;
+          this.leisureRunIndex++;
+          if (this.leisureRunIndex >= this.normalWaypoints.length) {
+            this.refreshWanderRoute();
+            this.waypoints = this.normalWaypoints;
+            this.currentWaypointIndex = 0;
+          }
         }
       }
       return;
     }
 
-    if (!this.gardenSchedule.active) {
-      this.isWalking = false;
-      return;
+    if (!this.gardenSchedule.active && this.waypoints !== this.normalWaypoints) {
+      // Kembali ke jalan setapak di sela perawatan, tanpa mengulang aksi tanaman.
+      this.refreshWanderRoute();
+      this.waypoints = this.normalWaypoints;
+      this.currentWaypointIndex = 0;
+      this.waitCounter = 0;
     }
 
     // Momo walking logic
@@ -821,6 +860,7 @@ export class IslandRenderer {
         this.currentWaypointIndex++;
         if (this.currentWaypointIndex >= this.waypoints.length) {
           this.gardenSchedule.finish();
+          this.refreshWanderRoute();
           this.waypoints = this.normalWaypoints;
           this.currentWaypointIndex = 0;
         }
@@ -1145,7 +1185,8 @@ export class IslandRenderer {
     let musicTilt = 0;
 
     if ((this.isMusicPlaying || this.leisure.action === 'dance') && motion
-      && !this.focusPaused && !this.inBreak && !this.gardeningActivity && this.leisure.action !== 'sleep') {
+      && !this.focusPaused && !this.inBreak && !this.gardenSchedule.active && !this.isWalking
+      && !this.hasStationaryAction() && (!this.leisure.action || this.leisure.action === 'dance')) {
       const dancePhase = Math.floor((this.frameCount % 360) / 120);
       if (dancePhase === 0) {
         // Variasi 1: Mengangguk (head-bobbing naik turun ritmis)
@@ -1295,7 +1336,8 @@ export class IslandRenderer {
 
     this.ctx.save();
     if (momoTilt !== 0) {
-      this.ctx.rotate(momoTilt);
+      // Goyang bertahap menjaga piksel sprite tetap sejajar, tanpa tepi miring yang kabur.
+      this.ctx.translate(Math.round(momoTilt * 12 * pixelScale) / pixelScale, 0);
     }
 
     // Tentukan aksi Momo v2 dari state animasi aktif
@@ -1328,8 +1370,6 @@ export class IslandRenderer {
       action = 'drink';
     } else if (this.momoMood === 'resting' || this.ambientMode === 'stream') {
       action = 'sleep';
-    } else if (this.activeSprout && this.activeSprout.progress < 0.2) {
-      action = 'plant';
     } else if (this.momoMood === 'happy') {
       action = 'celebrate';
     }
@@ -1383,8 +1423,8 @@ export class IslandRenderer {
       }
     }
 
-    // Satu atau dua not musik pixel melayang saat musik diputar
-    if (this.isMusicPlaying) {
+    // Not mengikuti tarian, tidak menumpuk di atas jalan, berkebun, atau kegiatan lain.
+    if (this.isMusicPlaying && action === 'dance') {
       for (const note of this.musicNotes) {
         this.ctx.fillStyle = `rgba(196, 245, 155, ${note.opacity})`;
         this.ctx.font = 'bold 9px monospace';

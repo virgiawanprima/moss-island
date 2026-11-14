@@ -5,7 +5,7 @@ export class GardenSchedule {
   public active = false;
   private clock = 0;
   private sproutDue = Infinity;
-  private treeDue = 60;
+  private treeDue = 90;
   private sproutKey: string | null = null;
   private initial = false;
   private bag: string[] = [];
@@ -22,8 +22,8 @@ export class GardenSchedule {
     this.clock += Number.isFinite(seconds) ? Math.min(0.25, Math.max(0, seconds)) : 0;
     if (this.active) return null;
     if (sprout && this.sproutKey !== null && this.clock + 1e-7 >= this.sproutDue) {
-      const actions: GardenAction[] = this.initial ? ['plant', 'water', 'fertilize'] : ['water'];
-      this.initial = false; this.sproutDue = this.clock + 30; this.active = true;
+      const actions: GardenAction[] = this.initial ? ['water', 'fertilize'] : ['water'];
+      this.initial = false; this.sproutDue = this.clock + 60; this.active = true;
       return { target: sprout, actions };
     }
     if (trees.length && this.clock + 1e-7 >= this.treeDue) {
@@ -37,7 +37,7 @@ export class GardenSchedule {
       }
       const id = this.bag.shift()!;
       const tree = trees.find(tree => tree.id === id)!;
-      this.treeDue = this.clock + 60; this.active = true;
+      this.treeDue = this.clock + 90; this.active = true;
       return { target: { r: tree.gridR, c: tree.gridC }, actions: ['water', 'fertilize'], treeId: id };
     }
     return null;

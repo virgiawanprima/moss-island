@@ -1227,6 +1227,7 @@ export const MOMO_V2_FRAMES: Record<MomoV2Action, MomoPathDef[][]> = {
 
 // Cache canvas offscreen untuk render 60 FPS tanpa beban CPU
 const canvasCache = new Map<string, HTMLCanvasElement>();
+let seasonCanvas: HTMLCanvasElement | null = null;
 
 export function getMomoV2Canvas(action: MomoV2Action, frameIndex: number): HTMLCanvasElement | null {
   if (typeof document === 'undefined') return null;
@@ -1272,6 +1273,24 @@ export function drawMomoV2(
   const frameCanvas = getMomoV2Canvas(action, frameIndex);
   if (!frameCanvas) return;
 
+  let sprite = frameCanvas;
+  if (season) {
+    // Rasterkan aksesori pada grid yang sama dengan tubuh sebelum pengecilan pixel art.
+    if (!seasonCanvas) {
+      seasonCanvas = document.createElement('canvas');
+      seasonCanvas.width = 64;
+      seasonCanvas.height = 64;
+    }
+    const layer = seasonCanvas.getContext('2d');
+    if (layer) {
+      layer.imageSmoothingEnabled = false;
+      layer.clearRect(0, 0, 64, 64);
+      layer.drawImage(frameCanvas, 0, 0);
+      drawMomoSeasonLayer(layer, action, frameIndex, season, seasonOptions);
+      sprite = seasonCanvas;
+    }
+  }
+
   ctx.save();
   ctx.imageSmoothingEnabled = false;
   const drawW = 64 * scale;
@@ -1280,22 +1299,10 @@ export function drawMomoV2(
   if (flipX) {
     ctx.translate(destX + drawW, destY);
     ctx.scale(-1, 1);
-    ctx.drawImage(frameCanvas, 0, 0, drawW, drawH);
-    if (season) {
-      ctx.save();
-      ctx.scale(scale, scale);
-      drawMomoSeasonLayer(ctx, action, frameIndex, season, seasonOptions);
-      ctx.restore();
-    }
+    ctx.drawImage(sprite, 0, 0, drawW, drawH);
   } else {
     ctx.translate(destX, destY);
-    ctx.drawImage(frameCanvas, 0, 0, drawW, drawH);
-    if (season) {
-      ctx.save();
-      ctx.scale(scale, scale);
-      drawMomoSeasonLayer(ctx, action, frameIndex, season, seasonOptions);
-      ctx.restore();
-    }
+    ctx.drawImage(sprite, 0, 0, drawW, drawH);
   }
   ctx.restore();
 }

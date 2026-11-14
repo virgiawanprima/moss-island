@@ -1,6 +1,6 @@
 import type { PlantedTree } from '../types';
 
-export type GardenAction = 'plant' | 'water' | 'fertilize';
+export type GardenAction = 'water' | 'fertilize';
 export interface GardenWaypoint {
   r: number;
   c: number;
@@ -11,7 +11,7 @@ export interface GardenWaypoint {
   treeId?: string;
 }
 
-export function buildGardenRoute(trees: PlantedTree[], sprout?: { r: number; c: number }, includePlant = true): GardenWaypoint[] {
+export function buildGardenRoute(trees: PlantedTree[], sprout?: { r: number; c: number }): GardenWaypoint[] {
   const route: GardenWaypoint[] = [];
   const stop = (r: number, c: number, action: GardenAction, treeId?: string) => {
     // Jumlah r+c tetap agar kaki Momo sejajar dengan pangkal tanaman pada proyeksi isometrik.
@@ -19,12 +19,11 @@ export function buildGardenRoute(trees: PlantedTree[], sprout?: { r: number; c: 
     route.push({
       r: r + side * 0.65,
       c: c - side * 0.65,
-      waitFrames: action === 'plant' ? 96 : 88,
+      waitFrames: 88,
       action, targetR: r, targetC: c, treeId,
     });
   };
   if (sprout) {
-    if (includePlant) stop(sprout.r, sprout.c, 'plant');
     stop(sprout.r, sprout.c, 'water');
     stop(sprout.r, sprout.c, 'fertilize');
   }
