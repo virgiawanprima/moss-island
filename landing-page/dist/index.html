@@ -1,0 +1,431 @@
+<!doctype html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#101917">
+  <meta name="description" content="Moss Island — pendamping kecil untuk fokus, rehat, dan menumbuhkan pulau. Timer Pomodoro, kebun pixel art, Momo, musik, dan lirik untuk Windows.">
+  <title>Moss Island — Pendamping kecil untuk fokus</title>
+  <link rel="icon" href="../../src/assets/figma_svg/momo_v2/momo_v2_wave_01.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+  <!-- HEADER -->
+  <header class="site-header">
+    <div class="wrap header-inner">
+      <a class="brand" href="#" aria-label="Moss Island — beranda">
+        <img src="../../src/assets/figma_svg/momo_v2/momo_v2_wave_01.svg" width="32" height="32" alt="">
+        <span>moss island</span>
+      </a>
+      <nav aria-label="Navigasi utama">
+        <a href="#fitur">Fitur</a>
+        <a href="#momo">Momo</a>
+        <a href="#musim">Musim</a>
+        <a href="#unduh" class="btn-nav-dl">Unduh <span aria-hidden="true">↓</span></a>
+      </nav>
+    </div>
+  </header>
+
+  <main>
+
+    <!-- HERO -->
+    <section class="hero" id="hero">
+      <div class="wrap hero-inner">
+        <div class="hero-copy">
+          <p class="eyebrow">PULAU KECIL DI DESKTOPMU</p>
+          <h1>Sedikit fokus.<br><em>Satu pulau tumbuh.</em></h1>
+          <p class="lead">Selesaikan satu sesi, tumbuhkan satu pohon. Momo menemani dan merawat kebunmu sementara kamu mengerjakan hal yang penting.</p>
+          <div class="hero-actions">
+            <a href="#unduh" class="btn btn-primary">
+              <span aria-hidden="true">↓</span> Unduh untuk Windows
+            </a>
+            <span class="platform-note">Windows x64 · v0.1.2 · Gratis</span>
+          </div>
+        </div>
+        <div class="hero-art" aria-label="Ilustrasi pulau Moss Island">
+          <div class="island-stage">
+            <img class="island-base" src="../../src/assets/figma_svg/isometric_island_base.svg" alt="Pulau Moss Island isometrik">
+            <img class="hero-tree tree-a" src="../../src/assets/figma_svg/tree_mature.svg" alt="">
+            <img class="hero-tree tree-b" src="../../src/assets/figma_svg/tree_mature.svg" alt="">
+            <img class="hero-tree tree-c" src="../../src/assets/figma_svg/tree_sprout.svg" alt="">
+            <div class="hero-momo" id="heroMomo" aria-label="Momo berjalan di pulau"></div>
+          </div>
+          <p class="hero-label">Kebunmu tumbuh setiap sesi.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- FITUR UTAMA OVERVIEW -->
+    <section class="features-overview" id="fitur">
+      <div class="wrap">
+        <p class="eyebrow">SATU APLIKASI, BANYAK TEMAN</p>
+        <h2>Semua yang kamu butuhkan<br>untuk hari yang lebih bermakna.</h2>
+        <div class="feature-grid">
+
+          <div class="feature-card">
+            <div class="feature-icon">
+              <svg width="32" height="32" viewBox="0 0 32 32" fill="none" aria-hidden="true">
+                <circle cx="16" cy="16" r="12" stroke="#C4F59B" stroke-width="2" fill="none"/>
+                <path d="M16 10v6l4 2" stroke="#C4F59B" stroke-width="2" stroke-linecap="round"/>
+              </svg>
+            </div>
+            <h3>Fokus &amp; Pomodoro</h3>
+            <p>Atur durasi fokus dan istirahat sesuai ritme kerjamu. Lingkaran waktu menunjukkan sisa sesi secara visual, tanpa angka yang mengganggumu.</p>
+          </div>
+
+          <div class="feature-card">
+            <div class="feature-icon">
+              <img src="../../src/assets/figma_svg/tree_mature.svg" width="32" alt="" aria-hidden="true">
+            </div>
+            <h3>Kebun &amp; Pohon</h3>
+            <p>Setiap sesi fokus yang selesai menumbuhkan satu pohon. Lima jenis pohon tropis: pisang, mangga, durian, sawit, dan jambu — masing-masing tampil sesuai musim aktif.</p>
+          </div>
+
+          <div class="feature-card">
+            <div class="feature-icon">
+              <svg width="32" height="32" viewBox="0 0 32 32" fill="none" aria-hidden="true">
+                <rect x="4" y="8" width="24" height="16" rx="2" stroke="#C4F59B" stroke-width="2" fill="none"/>
+                <circle cx="16" cy="16" r="3" fill="#C4F59B"/>
+                <path d="M8 16h5M19 16h5" stroke="#A6B3A6" stroke-width="1.5" stroke-linecap="round"/>
+              </svg>
+            </div>
+            <h3>Musik &amp; Lirik</h3>
+            <p>Playlist audio lokal dengan artwork, timeline, dan kontrol sesi media Windows. Lirik bertimestamp dari LRCLIB muncul selaras dengan lagu, lengkap dengan koreksi waktu per rekaman.</p>
+          </div>
+
+          <div class="feature-card">
+            <div class="feature-icon">
+              <svg width="32" height="32" viewBox="0 0 32 32" fill="none" aria-hidden="true">
+                <rect x="2" y="12" width="28" height="8" rx="4" stroke="#C4F59B" stroke-width="2" fill="none"/>
+                <rect x="6" y="4" width="6" height="8" rx="1" stroke="#A6B3A6" stroke-width="1.5" fill="none"/>
+                <rect x="20" y="4" width="6" height="8" rx="1" stroke="#A6B3A6" stroke-width="1.5" fill="none"/>
+              </svg>
+            </div>
+            <h3>Mode Tampilan</h3>
+            <p>Panel penuh, bilah minimize, atau pet desktop. Momo berjalan menghadap kiri-kanan dan perlahan menjauhi kursor saat mode pet aktif.</p>
+          </div>
+
+          <div class="feature-card">
+            <div class="feature-icon">
+              <svg width="32" height="32" viewBox="0 0 32 32" fill="none" aria-hidden="true">
+                <path d="M8 24 Q16 10 24 24" stroke="#C5BAF4" stroke-width="2" fill="none" stroke-linecap="round"/>
+                <circle cx="8" cy="24" r="2" fill="#C5BAF4"/>
+                <circle cx="24" cy="24" r="2" fill="#C5BAF4"/>
+              </svg>
+            </div>
+            <h3>Istirahat Bermakna</h3>
+            <p>Saat istirahat, Moss Island menyajikan pengingat minum air, ajakan meregangkan tubuh, dan momen bersama Momo sebelum kembali ke sesi berikutnya.</p>
+          </div>
+
+          <div class="feature-card">
+            <div class="feature-icon">
+              <svg width="32" height="32" viewBox="0 0 32 32" fill="none" aria-hidden="true">
+                <path d="M4 28 L4 10 L16 4 L28 10 L28 28" stroke="#A8D9E6" stroke-width="2" fill="none" stroke-linejoin="round"/>
+                <rect x="11" y="18" width="10" height="10" stroke="#A8D9E6" stroke-width="1.5" fill="none"/>
+              </svg>
+            </div>
+            <h3>Snap &amp; Tray</h3>
+            <p>Jendela mengambang bebas dan menempel ke tepi layar secara otomatis dalam ambang 10%. Akses cepat lewat tray dan shortcut global Ctrl+Shift+M.</p>
+          </div>
+
+        </div>
+      </div>
+    </section>
+
+    <!-- MOMO SECTION -->
+    <section class="momo-section" id="momo">
+      <div class="wrap momo-inner">
+        <div class="momo-portrait-col">
+          <div class="momo-anim-stage">
+            <div class="momo-sprite-row">
+              <img src="../../src/assets/figma_svg/momo_v2/momo_v2_idle_01.svg" width="64" height="64" alt="Momo idle" class="momo-sprite active" id="ms0">
+              <img src="../../src/assets/figma_svg/momo_v2/momo_v2_idle_02.svg" width="64" height="64" alt="" class="momo-sprite" id="ms1">
+              <img src="../../src/assets/figma_svg/momo_v2/momo_v2_idle_03.svg" width="64" height="64" alt="" class="momo-sprite" id="ms2">
+              <img src="../../src/assets/figma_svg/momo_v2/momo_v2_idle_04.svg" width="64" height="64" alt="" class="momo-sprite" id="ms3">
+              <img src="../../src/assets/figma_svg/momo_v2/momo_v2_idle_05.svg" width="64" height="64" alt="" class="momo-sprite" id="ms4">
+              <img src="../../src/assets/figma_svg/momo_v2/momo_v2_idle_06.svg" width="64" height="64" alt="" class="momo-sprite" id="ms5">
+              <img src="../../src/assets/figma_svg/momo_v2/momo_v2_idle_07.svg" width="64" height="64" alt="" class="momo-sprite" id="ms6">
+              <img src="../../src/assets/figma_svg/momo_v2/momo_v2_idle_08.svg" width="64" height="64" alt="" class="momo-sprite" id="ms7">
+            </div>
+            <div class="momo-name-tag">MOMO</div>
+          </div>
+          <div class="momo-action-tabs" role="group" aria-label="Pilih aksi Momo">
+            <button class="momo-tab active" data-action="idle">Diam</button>
+            <button class="momo-tab" data-action="walk">Jalan</button>
+            <button class="momo-tab" data-action="dance">Menari</button>
+            <button class="momo-tab" data-action="celebrate">Merayakan</button>
+            <button class="momo-tab" data-action="drink">Minum</button>
+            <button class="momo-tab" data-action="sleep">Tidur</button>
+            <button class="momo-tab" data-action="wave">Melambaikan</button>
+          </div>
+        </div>
+        <div class="momo-copy">
+          <p class="eyebrow">KENALAN DENGAN TEMAN KECILMU</p>
+          <h2>Ia sibuk merawat kebun.<br>Kamu, satu hal dulu.</h2>
+          <p>Momo berjalan acak menjelajahi petak kosong pulau, menyiram tunas tiap 60 detik aktif, merawat pohon tiap 90 detik. Di antara jadwal berkebun, ia menari, tidur, makan, menyanyi, atau sekadar beristirahat.</p>
+          <p>Momo juga bereaksi terhadap musim aktif: mengipas-ipas saat panas, menghangatkan tangan saat dingin, mengagumi daun gugur musim gugur, dan menginspeksi bunga musim semi.</p>
+          <div class="momo-actions-list">
+            <span class="momo-badge">idle</span>
+            <span class="momo-badge">walk</span>
+            <span class="momo-badge">dance</span>
+            <span class="momo-badge">celebrate</span>
+            <span class="momo-badge">drink</span>
+            <span class="momo-badge">sleep</span>
+            <span class="momo-badge">wave</span>
+            <span class="momo-badge">plant</span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- PERTUMBUHAN POHON -->
+    <section class="growth-section">
+      <div class="wrap">
+        <p class="eyebrow">DARI TUNAS KE POHON</p>
+        <h2>Setiap sesi meninggalkan bekas.</h2>
+        <div class="growth-timeline">
+          <div class="growth-step">
+            <div class="growth-img">
+              <img src="../../src/assets/figma_svg/tree_sprout.svg" width="64" height="64" alt="Tunas">
+            </div>
+            <span class="growth-label">Tunas</span>
+            <p class="growth-desc">Langsung muncul saat sesi fokus dimulai. Momo segera datang untuk menyiram dan memupuk.</p>
+          </div>
+          <div class="growth-arrow" aria-hidden="true">→</div>
+          <div class="growth-step">
+            <div class="growth-img">
+              <img src="../../src/assets/figma_svg/tree_sapling.svg" width="64" height="64" alt="Bibit">
+            </div>
+            <span class="growth-label">Bibit</span>
+            <p class="growth-desc">Tumbuh setelah sesi selesai. Dijadwalkan disiram rutin setiap 30 detik aktif.</p>
+          </div>
+          <div class="growth-arrow" aria-hidden="true">→</div>
+          <div class="growth-step">
+            <div class="growth-img">
+              <img src="../../src/assets/figma_svg/tree_mature.svg" width="64" height="64" alt="Pohon dewasa">
+            </div>
+            <span class="growth-label">Dewasa</span>
+            <p class="growth-desc">Pohon matang dikunjungi tiap 60 detik aktif. Tampil berbeda sesuai musim dan spesies.</p>
+          </div>
+        </div>
+        <p class="growth-note">Lima spesies: pisang, mangga, durian, sawit, jambu — masing-masing dengan detail bunga, buah, dan aksen musiman yang unik.</p>
+      </div>
+    </section>
+
+    <!-- MUSIM -->
+    <section class="seasons-section" id="musim">
+      <div class="wrap">
+        <p class="eyebrow">EMPAT MUSIM DI PULAUMU</p>
+        <h2>Pulau yang ikut berubah<br>bersamamu.</h2>
+        <div class="seasons-grid">
+          <div class="season-card season-spring">
+            <div class="season-header">
+              <span class="season-icon">🌱</span>
+              <h3>Semi</h3>
+            </div>
+            <ul>
+              <li>Gerimis sesekali di latar belakang</li>
+              <li>Momo menginspeksi bunga baru</li>
+              <li>Pohon tampil dengan bunga lembut</li>
+              <li>Spora melayang di udara</li>
+            </ul>
+          </div>
+          <div class="season-card season-summer">
+            <div class="season-header">
+              <span class="season-icon">☀️</span>
+              <h3>Panas</h3>
+            </div>
+            <ul>
+              <li>Hujan singkat dan jarang</li>
+              <li>Momo mengipas diri saat terik</li>
+              <li>Pohon dipenuhi buah matang</li>
+              <li>Tanah kering lebih cepat</li>
+            </ul>
+          </div>
+          <div class="season-card season-autumn">
+            <div class="season-header">
+              <span class="season-icon">🍂</span>
+              <h3>Gugur</h3>
+            </div>
+            <ul>
+              <li>Hujan lebih lama dan sering</li>
+              <li>Momo mengagumi daun jatuh</li>
+              <li>Pohon tropis mempertahankan daun</li>
+              <li>Genangan mengering bertahap</li>
+            </ul>
+          </div>
+          <div class="season-card season-winter">
+            <div class="season-header">
+              <span class="season-icon">❄️</span>
+              <h3>Dingin</h3>
+            </div>
+            <ul>
+              <li>Salju menumpuk di pohon dan tanah</li>
+              <li>Momo menghangatkan tangan</li>
+              <li>Tanpa hujan atau genangan</li>
+              <li>Momo mengguncang salju dari tubuh</li>
+            </ul>
+          </div>
+        </div>
+        <p class="season-note">Musim berganti otomatis setiap satu sesi fokus selesai: semi → panas → gugur → dingin → kembali semi.</p>
+      </div>
+    </section>
+
+    <!-- MUSIK -->
+    <section class="music-section" id="musik">
+      <div class="wrap music-inner">
+        <div class="music-copy">
+          <p class="eyebrow">MUSIK YANG MENEMANI</p>
+          <h2>Putar musik.<br>Lihat lirik mengalir.</h2>
+          <p>Moss Island memutar playlist audio lokal dan mengambil alih kendali sesi media Windows aktif. Artwork, judul, artis, dan timeline tersinkronisasi otomatis. Lirik bertimestamp dari LRCLIB muncul selaras dengan lagu — bisa dikoreksi waktunya per rekaman.</p>
+          <ul class="music-features">
+            <li>Playlist lokal dengan tiga trek bawaan</li>
+            <li>Kendali sesi media Windows (Spotify, YouTube Music, dsb.)</li>
+            <li>Lirik bertimestamp dari LRCLIB</li>
+            <li>Koreksi waktu lirik per rekaman</li>
+            <li>Artwork album dari metadata atau URL</li>
+          </ul>
+        </div>
+        <div class="music-visual">
+          <div class="music-player-mockup">
+            <div class="player-header">
+              <img src="../../public/audio/lofi-cover.svg" width="52" height="52" alt="Cover lofi">
+              <div>
+                <div class="player-title">lofi hip hop</div>
+                <div class="player-artist">Musik bawaan · Mood</div>
+              </div>
+            </div>
+            <div class="player-progress">
+              <div class="progress-bar"><div class="progress-fill" style="width:38%"></div></div>
+              <div class="progress-times"><span>1:26</span><span>3:44</span></div>
+            </div>
+            <div class="player-controls">
+              <button class="ctrl-btn" aria-label="Sebelumnya">⏮</button>
+              <button class="ctrl-btn ctrl-play" aria-label="Putar">▶</button>
+              <button class="ctrl-btn" aria-label="Berikutnya">⏭</button>
+            </div>
+            <div class="player-covers">
+              <img src="../../public/audio/guitar-cover.svg" width="40" height="40" alt="Guitar cover">
+              <img src="../../public/audio/piano-cover.svg" width="40" height="40" alt="Piano cover">
+            </div>
+          </div>
+          <div class="lyrics-mockup">
+            <div class="lyric-line lyric-past">the city lights are fading</div>
+            <div class="lyric-line lyric-active">and i find peace in the rain</div>
+            <div class="lyric-line lyric-next">every moment slowly changing</div>
+            <div class="lyric-line lyric-future">into something we can't name</div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- MODE DESKTOP -->
+    <section class="modes-section">
+      <div class="wrap">
+        <p class="eyebrow">TIGA CARA HADIR</p>
+        <h2>Moss Island menyesuaikan<br>cara kamu bekerja.</h2>
+        <div class="modes-grid">
+          <div class="mode-card">
+            <div class="mode-preview mode-full">
+              <div class="mock-window">
+                <div class="mock-titlebar">
+                  <span class="mock-dot"></span>
+                  <span class="mock-title">Moss Island</span>
+                </div>
+                <div class="mock-content">
+                  <div class="mock-tabs">
+                    <span class="mock-tab active">Fokus</span>
+                    <span class="mock-tab">Musik</span>
+                    <span class="mock-tab">Pengaturan</span>
+                  </div>
+                  <div class="mock-body">
+                    <div class="mock-timer-ring"></div>
+                    <div class="mock-island-mini">
+                      <img src="../../src/assets/figma_svg/isometric_island_base.svg" width="80" alt="">
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <h3>Panel Penuh</h3>
+            <p>Tampilan utama dengan tab Fokus, Musik, dan Pengaturan. Kebun, Momo, dan timer terlihat sekaligus.</p>
+          </div>
+          <div class="mode-card">
+            <div class="mode-preview mode-bar">
+              <div class="mock-bar">
+                <img src="../../src/assets/figma_svg/momo_v2/momo_v2_walk_01.svg" width="20" height="20" alt="">
+                <div class="mock-bar-timer">25:00</div>
+                <div class="mock-bar-trees">
+                  <img src="../../src/assets/figma_svg/tree_mature.svg" width="14" height="14" alt="">
+                  <img src="../../src/assets/figma_svg/tree_mature.svg" width="14" height="14" alt="">
+                  <img src="../../src/assets/figma_svg/tree_sprout.svg" width="14" height="14" alt="">
+                </div>
+              </div>
+            </div>
+            <h3>Bilah Minimize</h3>
+            <p>Menyusut menjadi bilah tipis. Momo, timer, dan pohon-pohon terlihat tanpa memakan ruang layar.</p>
+          </div>
+          <div class="mode-card">
+            <div class="mode-preview mode-pet">
+              <div class="mock-pet-stage">
+                <div class="mock-pet-momo">
+                  <img src="../../src/assets/figma_svg/momo_v2/momo_v2_idle_01.svg" width="48" height="48" alt="Momo pet">
+                </div>
+                <div class="mock-pet-shadow"></div>
+              </div>
+            </div>
+            <h3>Pet Desktop</h3>
+            <p>Momo berjalan bebas di sudut layar, bereaksi saat musik berputar, dan perlahan menjauhi kursor.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- DOWNLOAD -->
+    <section class="download-section" id="unduh">
+      <div class="wrap download-inner">
+        <div class="dl-copy">
+          <p class="eyebrow">BAWA SEDIKIT HIJAU KE DESKTOPMU</p>
+          <h2>Mulai dari<br>satu sesi.</h2>
+          <p>Gratis, ringan, dan tidak ada akun yang diperlukan. Semua berjalan lokal di komputermu.</p>
+        </div>
+        <div class="dl-box">
+          <img src="../../src/assets/figma_svg/momo_v2/momo_v2_wave_01.svg" width="56" height="56" alt="">
+          <h3>moss island</h3>
+          <p class="dl-version">Windows x64 · v0.1.2</p>
+          <a class="btn btn-primary dl-btn"
+             href="https://github.com/virgiawanprima/moss-island/releases/download/v0.1.2/moss-island_0.1.2_x64-setup.exe">
+            <span aria-hidden="true">↓</span> Unduh Installer (.exe)
+          </a>
+          <p class="dl-meta">Berkas installer NSIS · SHA-256 tersedia di <a href="https://github.com/virgiawanprima/moss-island/releases/tag/v0.1.2" target="_blank" rel="noopener">halaman rilis</a></p>
+          <details class="dl-install">
+            <summary>Cara memasang</summary>
+            <ol>
+              <li>Unduh berkas installer di atas.</li>
+              <li>Jalankan berkas <code>.exe</code> dan ikuti petunjuk pemasangan.</li>
+              <li>Buka Moss Island dari Start Menu atau tray.</li>
+              <li>Atur durasi fokus dan mulai sesi pertamamu.</li>
+            </ol>
+          </details>
+        </div>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- FOOTER -->
+  <footer class="site-footer">
+    <div class="wrap footer-inner">
+      <a class="brand" href="#">
+        <img src="../../src/assets/figma_svg/momo_v2/momo_v2_wave_01.svg" width="24" height="24" alt="">
+        <span>moss island</span>
+      </a>
+      <p>Tumbuh pelan-pelan, satu sesi setiap kali.</p>
+      <a href="https://github.com/virgiawanprima/moss-island" target="_blank" rel="noopener noreferrer">GitHub ↗</a>
+    </div>
+  </footer>
+
+  <script src="script.js"></script>
+</body>
+</html>
