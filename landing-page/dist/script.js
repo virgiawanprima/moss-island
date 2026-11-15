@@ -1,14 +1,14 @@
-// Landing page interaktif: animasi Momo, navigasi aktif
+﻿// Landing page interaktif: animasi Momo, navigasi aktif
 
 // ── Animasi sprite Momo ──────────────────────────────────────────────────────
 const SPRITE_PATHS = {
-  idle:      Array.from({length: 8}, (_, i) => `../../src/assets/figma_svg/momo_v2/momo_v2_idle_0${i + 1}.svg`),
-  walk:      Array.from({length: 8}, (_, i) => `../../src/assets/figma_svg/momo_v2/momo_v2_walk_0${i + 1}.svg`),
-  dance:     Array.from({length: 8}, (_, i) => `../../src/assets/figma_svg/momo_v2/momo_v2_dance_0${i + 1}.svg`),
-  celebrate: Array.from({length: 8}, (_, i) => `../../src/assets/figma_svg/momo_v2/momo_v2_celebrate_0${i + 1}.svg`),
-  drink:     Array.from({length: 8}, (_, i) => `../../src/assets/figma_svg/momo_v2/momo_v2_drink_0${i + 1}.svg`),
-  sleep:     Array.from({length: 8}, (_, i) => `../../src/assets/figma_svg/momo_v2/momo_v2_sleep_0${i + 1}.svg`),
-  wave:      Array.from({length: 8}, (_, i) => `../../src/assets/figma_svg/momo_v2/momo_v2_wave_0${i + 1}.svg`),
+  idle:      Array.from({length: 8}, (_, i) => `assets/momo_v2/momo_v2_idle_0${i + 1}.svg`),
+  walk:      Array.from({length: 8}, (_, i) => `assets/momo_v2/momo_v2_walk_0${i + 1}.svg`),
+  dance:     Array.from({length: 8}, (_, i) => `assets/momo_v2/momo_v2_dance_0${i + 1}.svg`),
+  celebrate: Array.from({length: 8}, (_, i) => `assets/momo_v2/momo_v2_celebrate_0${i + 1}.svg`),
+  drink:     Array.from({length: 8}, (_, i) => `assets/momo_v2/momo_v2_drink_0${i + 1}.svg`),
+  sleep:     Array.from({length: 8}, (_, i) => `assets/momo_v2/momo_v2_sleep_0${i + 1}.svg`),
+  wave:      Array.from({length: 8}, (_, i) => `assets/momo_v2/momo_v2_wave_0${i + 1}.svg`),
 };
 
 const FPS = { idle: 6, walk: 10, dance: 10, celebrate: 10, drink: 8, sleep: 4, wave: 8 };
