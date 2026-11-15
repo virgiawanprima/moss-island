@@ -30,6 +30,7 @@ src-tauri/target
 src-tauri/gen/schemas
 
 # Editor directories and files
+.codex/
 .vscode/*
 !.vscode/extensions.json
 .idea
