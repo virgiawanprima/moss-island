@@ -41,16 +41,38 @@ jobs:
         run: |
           npm run tauri -- build --bundles nsis --ci
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Test Windows installation
+        id: installer
+        run: |
+          $version = (Get-Content package.json -Raw | ConvertFrom-Json).version
+          if ($version -notmatch '^\d+\.\d+\.\d+$') { throw 'Invalid release version' }
+          $installer = "src-tauri/target/release/bundle/nsis/moss-island_${version}_x64-setup.exe"
+          $installerPath = (Resolve-Path -LiteralPath $installer -ErrorAction Stop).Path
+          $installDir = Join-Path $env:RUNNER_TEMP 'Moss Island installation test'
+          $process = Start-Process -FilePath $installerPath -ArgumentList "/S /D=$installDir" -PassThru
+          if (!$process.WaitForExit(120000)) {
+            Stop-Process -Id $process.Id -ErrorAction SilentlyContinue
+            throw 'Installer timed out'
+          }
+          if ($process.ExitCode -ne 0) { throw "Installer exited with code $($process.ExitCode)" }
+          $appPath = Join-Path $installDir 'moss-island.exe'
+          if (!(Test-Path -LiteralPath $appPath -PathType Leaf)) { throw 'Installed application missing' }
+          $app = Start-Process -FilePath $appPath -PassThru
+          if ($app.WaitForExit(5000)) {
+            throw "Installed app exited during startup with code $($app.ExitCode)"
+          }
+          Stop-Process -Id $app.Id
+          "tag=v$version" >> $env:GITHUB_OUTPUT
+          "path=$installer" >> $env:GITHUB_OUTPUT
       - name: Upload installer and publish release
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
+          RELEASE_TAG: ${{ steps.installer.outputs.tag }}
+          INSTALLER_PATH: ${{ steps.installer.outputs.path }}
         run: |
-          $version = (Get-Content package.json -Raw | ConvertFrom-Json).version
-          if ($version -notmatch '^\d+\.\d+\.\d+$') { throw 'Invalid release version' }
-          $tag = "v$version"
-          $installer = "src-tauri/target/release/bundle/nsis/moss-island_${version}_x64-setup.exe"
-          if (!(Test-Path -LiteralPath $installer)) { throw 'Installer missing' }
+          $tag = $env:RELEASE_TAG
+          $installer = $env:INSTALLER_PATH
           $checksum = "src-tauri/target/release/bundle/nsis/SHA256SUMS-$tag.txt"
           $hash = (Get-FileHash -LiteralPath $installer -Algorithm SHA256).Hash.ToLowerInvariant()
           "$hash  $([IO.Path]::GetFileName($installer))" | Set-Content -LiteralPath $checksum -Encoding ascii
