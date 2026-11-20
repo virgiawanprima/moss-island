@@ -18,3 +18,5 @@ Workflow **Build Windows release** hanya menerbitkan rilis dari `main`. Installe
 3. Jalankan **Build Windows release** dari `main` setelah CI lulus. Workflow menerbitkan installer dan checksum SHA-256 hanya setelah pengujian berhasil. GitHub membuat tag rilis pada commit yang diuji.
 
 Tanda tangan mengidentifikasi penerbit dan membantu mendeteksi perubahan pada file. Checksum memeriksa integritas unduhan, bukan identitas penerbit. SmartScreen masih bisa menampilkan peringatan berdasarkan reputasi file atau kebijakan perangkat; jangan nonaktifkan perlindungan Windows.
+
+Untuk pengujian tanpa akun signing, aktifkan `unsigned_preview` saat menjalankan workflow dari `main`. Jalur ini memakai environment `windows-preview`, tetap menjalankan uji pemasangan, dan menerbitkan tag terpisah `v<VERSION>-preview.1` sebagai prarilis tanpa mengganti rilis stabil terbaru.

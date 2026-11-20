@@ -2,6 +2,11 @@ name: Build Windows release
 
 on:
   workflow_dispatch:
+    inputs:
+      unsigned_preview:
+        description: Publish an unsigned Windows testing prerelease
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -14,7 +19,7 @@ jobs:
   installer:
     if: github.ref == 'refs/heads/main'
     runs-on: windows-latest
-    environment: windows-release
+    environment: ${{ inputs.unsigned_preview && 'windows-preview' || 'windows-release' }}
     timeout-minutes: 60
     env:
       CARGO_BUILD_JOBS: '1'
@@ -27,6 +32,7 @@ jobs:
         shell: pwsh
     steps:
       - name: Check signing configuration
+        if: ${{ !inputs.unsigned_preview }}
         env:
           SIGNING_ENDPOINT: ${{ vars.WINDOWS_SIGNING_ENDPOINT }}
           SIGNING_ACCOUNT: ${{ vars.WINDOWS_SIGNING_ACCOUNT }}
@@ -59,6 +65,7 @@ jobs:
           rustup toolchain install 1.99.1 --profile minimal
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Configure Windows signing
+        if: ${{ !inputs.unsigned_preview }}
         env:
           SIGNING_ENDPOINT: ${{ vars.WINDOWS_SIGNING_ENDPOINT }}
           SIGNING_ACCOUNT: ${{ vars.WINDOWS_SIGNING_ACCOUNT }}
@@ -71,6 +78,7 @@ jobs:
           } } }
           $config | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath src-tauri/tauri.release.conf.json -Encoding utf8
       - name: Build and sign installer
+        if: ${{ !inputs.unsigned_preview }}
         env:
           AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
           AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
@@ -78,13 +86,25 @@ jobs:
         run: |
           npm run tauri -- build --bundles nsis --ci --config src-tauri/tauri.release.conf.json -- --locked
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Build unsigned preview installer
+        if: ${{ inputs.unsigned_preview }}
+        run: |
+          npm run tauri -- build --bundles nsis --ci --no-sign -- --locked
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Test Windows installation
         id: installer
         env:
           SIGNING_SUBJECT: ${{ vars.WINDOWS_SIGNING_SUBJECT }}
+          UNSIGNED_PREVIEW: ${{ inputs.unsigned_preview }}
         run: |
           function Assert-ReleaseSignature([string]$path) {
             $signature = Get-AuthenticodeSignature -LiteralPath $path
+            if ($env:UNSIGNED_PREVIEW -ceq 'true') {
+              if ($signature.Status -ne 'NotSigned') {
+                throw "Expected an unsigned preview file: $path ($($signature.Status))."
+              }
+              return
+            }
             if ($signature.Status -ne 'Valid' -or !$signature.TimeStamperCertificate -or
                 $signature.SignerCertificate.Subject -cne $env:SIGNING_SUBJECT) {
               throw "Signature verification failed for $path ($($signature.Status)): expected publisher and timestamp."
@@ -113,7 +133,9 @@ jobs:
             throw "Installed app exited during startup with code $($app.ExitCode)"
           }
           Stop-Process -Id $app.Id
-          $checksum = "src-tauri/target/release/bundle/nsis/SHA256SUMS-v$version.txt"
+          $tag = "v$version"
+          if ($env:UNSIGNED_PREVIEW -ceq 'true') { $tag = "$tag-preview.1" }
+          $checksum = "src-tauri/target/release/bundle/nsis/SHA256SUMS-$tag.txt"
           $hash = (Get-FileHash -LiteralPath $installer -Algorithm SHA256).Hash.ToLowerInvariant()
           "$hash  $([IO.Path]::GetFileName($installer))" | Set-Content -LiteralPath $checksum -Encoding ascii
           "installer=$installer" >> $env:GITHUB_OUTPUT
@@ -147,11 +169,13 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
           RELEASE_VERSION: ${{ needs.installer.outputs.version }}
+          UNSIGNED_PREVIEW: ${{ inputs.unsigned_preview }}
         shell: pwsh
         run: |
           $version = $env:RELEASE_VERSION
           if ($version -notmatch '\A\d+\.\d+\.\d+\z') { throw 'Invalid release version' }
           $tag = "v$version"
+          if ($env:UNSIGNED_PREVIEW -ceq 'true') { $tag = "$tag-preview.1" }
           $file = "moss-island_${version}_x64-setup.exe"
           $installer = Join-Path release-assets $file
           $checksum = Join-Path release-assets "SHA256SUMS-$tag.txt"
@@ -162,7 +186,13 @@ jobs:
           $existingTag = git ls-remote --tags origin "refs/tags/$tag"
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           if ($existingTag) { throw "Tag already exists: $tag" }
-          gh release create $tag $installer $checksum --target $env:GITHUB_SHA --draft --title "Moss Island $tag" --notes-file "docs/releases/$tag.md"
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          gh release edit $tag --draft=false --latest
+          if ($env:UNSIGNED_PREVIEW -ceq 'true') {
+            gh release create $tag $installer $checksum --target $env:GITHUB_SHA --draft --prerelease --latest=false --title "Moss Island $tag (unsigned Windows preview)" --notes-file "docs/releases/windows-preview.md"
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+            gh release edit $tag --draft=false --prerelease --latest=false
+          } else {
+            gh release create $tag $installer $checksum --target $env:GITHUB_SHA --draft --title "Moss Island $tag" --notes-file "docs/releases/$tag.md"
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+            gh release edit $tag --draft=false --latest
+          }
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
