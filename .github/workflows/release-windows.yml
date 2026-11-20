@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
   group: windows-release
@@ -12,7 +12,9 @@ concurrency:
 
 jobs:
   installer:
+    if: github.ref == 'refs/heads/main'
     runs-on: windows-latest
+    environment: windows-release
     timeout-minutes: 60
     env:
       CARGO_BUILD_JOBS: '1'
@@ -24,10 +26,27 @@ jobs:
       run:
         shell: pwsh
     steps:
-      - uses: actions/checkout@v6
+      - name: Check signing configuration
+        env:
+          SIGNING_ENDPOINT: ${{ vars.WINDOWS_SIGNING_ENDPOINT }}
+          SIGNING_ACCOUNT: ${{ vars.WINDOWS_SIGNING_ACCOUNT }}
+          SIGNING_PROFILE: ${{ vars.WINDOWS_SIGNING_PROFILE }}
+          SIGNING_SUBJECT: ${{ vars.WINDOWS_SIGNING_SUBJECT }}
+          AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+          AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
+          AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+        run: |
+          if ($env:SIGNING_ENDPOINT -cnotmatch '\Ahttps://[a-z0-9]+\.codesigning\.azure\.net/?\z' -or
+              $env:SIGNING_ACCOUNT -cnotmatch '\A[a-zA-Z0-9-]+\z' -or
+              $env:SIGNING_PROFILE -cnotmatch '\A[a-zA-Z0-9-]+\z' -or
+              [string]::IsNullOrWhiteSpace($env:SIGNING_SUBJECT) -or
+              !$env:AZURE_CLIENT_ID -or !$env:AZURE_CLIENT_SECRET -or !$env:AZURE_TENANT_ID) {
+            throw 'Configure the windows-release environment and its Azure Artifact Signing Public Trust profile.'
+          }
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           persist-credentials: false
-      - uses: actions/setup-node@v7
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
         with:
           node-version: '22'
           cache: npm
@@ -35,21 +54,52 @@ jobs:
         run: |
           npm ci
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          npm audit --audit-level=high
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           rustup toolchain install 1.99.1 --profile minimal
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-      - name: Build installer
+      - name: Configure Windows signing
+        env:
+          SIGNING_ENDPOINT: ${{ vars.WINDOWS_SIGNING_ENDPOINT }}
+          SIGNING_ACCOUNT: ${{ vars.WINDOWS_SIGNING_ACCOUNT }}
+          SIGNING_PROFILE: ${{ vars.WINDOWS_SIGNING_PROFILE }}
         run: |
-          npm run tauri -- build --bundles nsis --ci
+          cargo install artifact-signing-cli --version '=0.12.0' --locked
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $config = @{ bundle = @{ windows = @{
+            signCommand = "artifact-signing-cli -e $env:SIGNING_ENDPOINT -a $env:SIGNING_ACCOUNT -c $env:SIGNING_PROFILE -d Moss-Island %1"
+          } } }
+          $config | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath src-tauri/tauri.release.conf.json -Encoding utf8
+      - name: Build and sign installer
+        env:
+          AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+          AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
+          AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+        run: |
+          npm run tauri -- build --bundles nsis --ci --config src-tauri/tauri.release.conf.json -- --locked
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Test Windows installation
         id: installer
+        env:
+          SIGNING_SUBJECT: ${{ vars.WINDOWS_SIGNING_SUBJECT }}
         run: |
+          function Assert-ReleaseSignature([string]$path) {
+            $signature = Get-AuthenticodeSignature -LiteralPath $path
+            if ($signature.Status -ne 'Valid' -or !$signature.TimeStamperCertificate -or
+                $signature.SignerCertificate.Subject -cne $env:SIGNING_SUBJECT) {
+              throw "Signature verification failed for $path ($($signature.Status)): expected publisher and timestamp."
+            }
+          }
           $version = (Get-Content package.json -Raw | ConvertFrom-Json).version
-          if ($version -notmatch '^\d+\.\d+\.\d+$') { throw 'Invalid release version' }
+          $tauriVersion = (Get-Content src-tauri/tauri.conf.json -Raw | ConvertFrom-Json).version
+          if ($version -notmatch '\A\d+\.\d+\.\d+\z' -or $tauriVersion -cne $version) {
+            throw 'Package and Tauri release versions must match.'
+          }
           $installer = "src-tauri/target/release/bundle/nsis/moss-island_${version}_x64-setup.exe"
           $installerPath = (Resolve-Path -LiteralPath $installer -ErrorAction Stop).Path
+          Assert-ReleaseSignature $installerPath
           $installDir = Join-Path $env:RUNNER_TEMP 'Moss Island installation test'
-          $process = Start-Process -FilePath $installerPath -ArgumentList "/S /D=$installDir" -PassThru
+          $process = Start-Process -FilePath $installerPath -ArgumentList "/S /D=$installDir" -WindowStyle Hidden -PassThru
           if (!$process.WaitForExit(120000)) {
             Stop-Process -Id $process.Id -ErrorAction SilentlyContinue
             throw 'Installer timed out'
@@ -57,25 +107,61 @@ jobs:
           if ($process.ExitCode -ne 0) { throw "Installer exited with code $($process.ExitCode)" }
           $appPath = Join-Path $installDir 'moss-island.exe'
           if (!(Test-Path -LiteralPath $appPath -PathType Leaf)) { throw 'Installed application missing' }
-          $app = Start-Process -FilePath $appPath -PassThru
+          Assert-ReleaseSignature $appPath
+          $app = Start-Process -FilePath $appPath -WindowStyle Hidden -PassThru
           if ($app.WaitForExit(5000)) {
             throw "Installed app exited during startup with code $($app.ExitCode)"
           }
           Stop-Process -Id $app.Id
-          "tag=v$version" >> $env:GITHUB_OUTPUT
-          "path=$installer" >> $env:GITHUB_OUTPUT
+          $checksum = "src-tauri/target/release/bundle/nsis/SHA256SUMS-v$version.txt"
+          $hash = (Get-FileHash -LiteralPath $installer -Algorithm SHA256).Hash.ToLowerInvariant()
+          "$hash  $([IO.Path]::GetFileName($installer))" | Set-Content -LiteralPath $checksum -Encoding ascii
+          "installer=$installer" >> $env:GITHUB_OUTPUT
+          "checksum=$checksum" >> $env:GITHUB_OUTPUT
+          "version=$version" >> $env:GITHUB_OUTPUT
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: verified-windows-installer
+          if-no-files-found: error
+          path: |
+            ${{ steps.installer.outputs.installer }}
+            ${{ steps.installer.outputs.checksum }}
+    outputs:
+      version: ${{ steps.installer.outputs.version }}
+
+  publish:
+    needs: installer
+    runs-on: windows-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
+        with:
+          name: verified-windows-installer
+          path: release-assets
       - name: Upload installer and publish release
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
-          RELEASE_TAG: ${{ steps.installer.outputs.tag }}
-          INSTALLER_PATH: ${{ steps.installer.outputs.path }}
+          RELEASE_VERSION: ${{ needs.installer.outputs.version }}
+        shell: pwsh
         run: |
-          $tag = $env:RELEASE_TAG
-          $installer = $env:INSTALLER_PATH
-          $checksum = "src-tauri/target/release/bundle/nsis/SHA256SUMS-$tag.txt"
+          $version = $env:RELEASE_VERSION
+          if ($version -notmatch '\A\d+\.\d+\.\d+\z') { throw 'Invalid release version' }
+          $tag = "v$version"
+          $file = "moss-island_${version}_x64-setup.exe"
+          $installer = Join-Path release-assets $file
+          $checksum = Join-Path release-assets "SHA256SUMS-$tag.txt"
           $hash = (Get-FileHash -LiteralPath $installer -Algorithm SHA256).Hash.ToLowerInvariant()
-          "$hash  $([IO.Path]::GetFileName($installer))" | Set-Content -LiteralPath $checksum -Encoding ascii
+          if ((Get-Content -LiteralPath $checksum -Raw).TrimEnd() -cne "$hash  $file") {
+            throw 'Downloaded installer checksum does not match the tested installer.'
+          }
+          $existingTag = git ls-remote --tags origin "refs/tags/$tag"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          if ($existingTag) { throw "Tag already exists: $tag" }
           gh release create $tag $installer $checksum --target $env:GITHUB_SHA --draft --title "Moss Island $tag" --notes-file "docs/releases/$tag.md"
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           gh release edit $tag --draft=false --latest
