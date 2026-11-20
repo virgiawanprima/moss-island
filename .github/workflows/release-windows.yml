@@ -125,8 +125,11 @@ jobs:
             throw 'Installer timed out'
           }
           if ($process.ExitCode -ne 0) { throw "Installer exited with code $($process.ExitCode)" }
-          $appPath = Join-Path $installDir 'moss-island.exe'
-          if (!(Test-Path -LiteralPath $appPath -PathType Leaf)) { throw 'Installed application missing' }
+          $appPath = Join-Path $installDir 'tauri-app.exe'
+          if (!(Test-Path -LiteralPath $appPath -PathType Leaf)) {
+            $files = (Get-ChildItem -LiteralPath $installDir -Name -ErrorAction SilentlyContinue) -join ', '
+            throw "Installed application missing at $appPath. Files found: $files"
+          }
           Assert-ReleaseSignature $appPath
           $app = Start-Process -FilePath $appPath -WindowStyle Hidden -PassThru
           if ($app.WaitForExit(5000)) {
